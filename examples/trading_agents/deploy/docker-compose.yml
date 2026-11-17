@@ -1,0 +1,17 @@
+# docker compose -f examples/trading_agents/deploy/docker-compose.yml up -d --build
+services:
+  bot:
+    build:
+      context: ../../..
+      dockerfile: examples/trading_agents/deploy/Dockerfile
+    restart: unless-stopped
+    env_file: bot.env           # claves (chmod 600). Plantilla: bot.env.example
+    volumes:
+      - ./data:/data            # memoria, campeona, cartera e historial
+    # Fase 1 (20 días): papel.
+    command: ["live", "--exchange", "papel", "--auto-optimize", "--llm"]
+    # Fase 2 (SOLO si `gate` dice APTO): comenta la línea de arriba y usa esta.
+    # command: ["live", "--exchange", "real", "--confirm-real-money", "--max-capital", "100", "--auto-optimize", "--llm"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
