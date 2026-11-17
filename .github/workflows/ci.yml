@@ -17,14 +17,16 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v7
+      # uv installs any CPython (python-build-standalone) on any runner image.
+      # actions/setup-python no longer ships 3.9 for ubuntu-latest (26.04), which
+      # turned the 3.9 job red without a code change.
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
+          activate-environment: true
       - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv pip install -e ".[dev]"
       - name: Lint
         run: ruff check src tests examples
       - name: Test
