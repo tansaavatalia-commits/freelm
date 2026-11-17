@@ -3,6 +3,39 @@
 All notable changes to `freelm` are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); versioning is [SemVer](https://semver.org/).
 
+## [0.6.0] - 2026-11-17
+
+Coding agents on free models.
+
+### Added
+- **`freelm serve` speaks the Anthropic Messages API** (`POST /v1/messages`,
+  `/v1/messages/count_tokens`) **and the OpenAI Responses API**
+  (`POST /v1/responses`), JSON and streaming, tool calls and images included.
+  Claude Code, the Anthropic SDKs and Responses-API clients now run on the
+  same pool with the same failover. Both are translated to chat completions in
+  `protocols.py` / `protocols.ts`.
+- **`freelm run <command>`** starts a private endpoint on a free port and runs
+  the command with `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` (and a one-time
+  key) pointing at it: `freelm run claude`. `ANTHROPIC_API_KEY` is blanked for
+  the tool, so it cannot fall back to a paid account.
+- **Agent model ids never go upstream.** On the two new routes a model no free
+  provider lists (`claude-sonnet-4-5`, `gpt-5-codex`) is served by a model
+  that fits the request: `vision` when it carries images, `tools` when it
+  carries tools, `fast` for a small-model id (haiku / mini / nano / flash),
+  then `auto`. `max_tokens` is capped at 8192 there (agents ask for 32K+,
+  which free tiers reject).
+- **Exact rate-limit resets.** A 429 without `Retry-After` now reads
+  `x-ratelimit-reset-requests` / `-tokens` (Groq, Cerebras durations such as
+  `1m26.4s`) and `X-RateLimit-Reset` (OpenRouter's unix-ms timestamp) for the
+  windows that are at zero, instead of falling back to a guess.
+
+### Notes
+- Not translated (dropped, never an error): Anthropic server tools and
+  thinking blocks; Responses built-in and custom tools, reasoning items.
+  `previous_response_id` is refused with a 400: the server keeps no state.
+- Anthropic clients get `529 overloaded_error` when every provider is
+  exhausted, which is what they back off and retry on.
+
 ## [0.5.2] - 2026-10-10
 
 ### Fixed

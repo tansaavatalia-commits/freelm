@@ -167,6 +167,43 @@ const has = (low: string, hints: string[]) => hints.some((h) => low.includes(h))
 /** Map an HTTP error response to the right error. Nothing here aborts a call on
  * its own: even an unrecognised 4xx is a BadRequest that fails over (the engine
  * raises only once several providers reject the same request). */
+const DURATION_RE = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?$/;
+export const MAX_RESET_WAIT = 86400;
+
+/** Seconds until a rate-limit window resets, from an `x-ratelimit-reset*`
+ * header: a duration ("1m26.4s", "350ms" — Groq, Cerebras), seconds, or a unix
+ * timestamp in seconds or milliseconds (OpenRouter). */
+export function parseReset(value: string | null | undefined, now?: number): number | null {
+  const v = (value ?? "").trim().toLowerCase();
+  if (!v) return null;
+  if (!/^\d+(\.\d+)?$/.test(v)) {
+    const m = DURATION_RE.exec(v);
+    if (!m) return null;
+    const [h, mi, sec, ms] = m.slice(1).map((g) => (g ? Number(g) : 0));
+    return h * 3600 + mi * 60 + sec + ms / 1000;
+  }
+  const n = Number(v);
+  // an absolute time: ms after 1e11, else seconds
+  if (n > 1e9) return Math.max(0, (n > 1e11 ? n / 1000 : n) - (now ?? Date.now() / 1000));
+  return n;
+}
+
+/** How long a 429 asks us to wait, from `x-ratelimit-*` headers, when it sent
+ * no Retry-After: the reset of every window that is at zero (requests, tokens,
+ * or the single window OpenRouter reports). */
+export function rateLimitReset(headers: Record<string, string> | null | undefined, now?: number): number | null {
+  const h: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers ?? {})) h[k.toLowerCase()] = v;
+  const waits: number[] = [];
+  for (const kind of ["-requests", "-tokens", ""]) {
+    const left = (h[`x-ratelimit-remaining${kind}`] ?? "").trim();
+    const spent = /^-?\d+(\.\d+)?$/.test(left) && Number(left) <= 0;
+    const wait = spent ? parseReset(h[`x-ratelimit-reset${kind}`], now) : null;
+    if (wait !== null) waits.push(wait);
+  }
+  return waits.length ? Math.min(Math.max(...waits), MAX_RESET_WAIT) : null;
+}
+
 export function classify(status: number, headers: Record<string, string> | null | undefined, body: string, provider: string): ProviderError {
   let retryAfter = parseRetryAfter(headers?.["retry-after"]);
   if (retryAfter === null && body) {
@@ -182,6 +219,7 @@ export function classify(status: number, headers: Record<string, string> | null 
   if (status === 402) return new QuotaExhausted(provider, status, msg);
   if (status === 429) {
     if (has(low, MONTHLY_HINTS)) return new QuotaExhausted(provider, status, msg);
+    if (retryAfter === null) retryAfter = rateLimitReset(headers); // the exact reset beats a guess
     if (retryAfter === null && has(low, DAILY_HINTS)) retryAfter = DAILY_QUOTA_RETRY;
     else if (has(low, DAILY_QUOTA_IDS)) retryAfter = Math.max(retryAfter ?? 0, DAILY_QUOTA_RETRY);
     return new RateLimited(provider, status, msg, retryAfter);

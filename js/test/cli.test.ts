@@ -195,3 +195,34 @@ it("doctor shows Cloudflare's error messages", async () => {
   expect(line).toContain("key rejected (401): Authentication error");
 });
 
+
+it("run points a tool at a private endpoint and returns its exit code", async () => {
+  process.env.OPENROUTER_API_KEY = "k";
+  process.env.ANTHROPIC_API_KEY = "sk-ant-real";
+  process.env.NO_PROXY = "example.com";
+  const child = `
+    const e = process.env;
+    const ok = e.OPENAI_BASE_URL === e.ANTHROPIC_BASE_URL + "/v1" && e.OPENAI_API_BASE === e.OPENAI_BASE_URL &&
+      e.ANTHROPIC_API_KEY === "" && e.ANTHROPIC_AUTH_TOKEN === e.OPENAI_API_KEY && e.NO_PROXY === "example.com,127.0.0.1,localhost";
+    const http = require("node:http");
+    const get = (headers) => new Promise((r) => http.get(e.OPENAI_BASE_URL, { headers }, (res) => { res.resume(); r(res.statusCode); }));
+    (async () => {
+      const authed = await get({ Authorization: "Bearer " + e.OPENAI_API_KEY });
+      const anon = await get({});
+      process.exit(ok && authed === 200 && anon === 401 ? 7 : 1);
+    })();`;
+  try {
+    expect(await main(["run", "--", process.execPath, "-e", child])).toBe(7);
+    expect(err.join("")).toContain("openrouter");
+  } finally {
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.NO_PROXY;
+  }
+});
+
+it("run needs a command, and reports one it cannot start", async () => {
+  process.env.OPENROUTER_API_KEY = "k";
+  expect(await main(["run"])).toBe(2);
+  expect(await main(["run", "definitely-not-a-real-command-xyz"])).toBe(127);
+  expect(err.join("")).toContain("cannot run");
+});

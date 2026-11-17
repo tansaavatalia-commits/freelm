@@ -1,10 +1,11 @@
-/** freelm CLI — chat / models / health / doctor / serve (npx freelm ...).
+/** freelm CLI — chat / models / health / doctor / serve / run (npx freelm ...).
  *
  *   freelm chat "explain failover in one line" [--model auto] [--stream] [--strategy smart]
  *   freelm models [--provider openrouter]
  *   freelm health
  *   freelm doctor [--json]                    # live-check every key, with fixes
- *   freelm serve [--port 4000] [--api-key K]  # local OpenAI-compatible endpoint
+ *   freelm serve [--port 4000] [--api-key K]  # local OpenAI + Anthropic compatible endpoint
+ *   freelm run claude                         # run a tool on free models
  *   freelm --version
  *
  * Keys come from the environment (same vars as the library). Zero deps.
@@ -37,7 +38,10 @@ usage:
   freelm health                 per-key state of this process (no network)
   freelm doctor [--json]        live-check every configured key, with fixes
   freelm serve [--host 127.0.0.1] [--port 4000] [--api-key <k>] [--cors] [--no-fallback] [--quiet]
-                                local OpenAI-compatible endpoint (/v1/chat/completions, /v1/models)
+                                local endpoint speaking the OpenAI (chat + responses) and Anthropic APIs
+  freelm run [--strategy <s>] <command> [args...]
+                                run a tool (claude, aider, your script...) on free models: starts a
+                                private endpoint and points the tool's Anthropic/OpenAI variables at it
   freelm --version
 
 strategies: ${STRATEGIES.join(" | ")}
@@ -262,7 +266,45 @@ const COMMANDS: Record<string, (argv: string[]) => Promise<number> | number> = {
   health: cmdHealth,
   doctor: cmdDoctor,
   serve: cmdServe,
+  run: cmdRun,
 };
+
+async function cmdRun(argv: string[]): Promise<number> {
+  let rest = argv;
+  let strategy: string | undefined;
+  if (rest[0] === "--strategy") [strategy, rest] = [rest[1], rest.slice(2)];
+  else if (rest[0]?.startsWith("--strategy=")) [strategy, rest] = [rest[0].slice(11), rest.slice(1)];
+  if (rest[0] === "--") rest = rest.slice(1);
+  if (!rest.length) throw new UsageError("freelm run <command> [args...]   e.g. freelm run claude");
+  const { spawn } = await import("node:child_process");
+  const { randomBytes } = await import("node:crypto");
+  const { agentEnv, createServer } = await import("./server.js");
+  const provs = providersFromEnv(keyless());
+  const token = randomBytes(16).toString("hex"); // only the launched tool can use this endpoint
+  const server = createServer(new FreeLLM(provs, { strategy: strategyOf(strategy) }), { apiKey: token });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const port = (server.address() as any).port;
+  process.stderr.write(`freelm: ${rest[0]} -> http://127.0.0.1:${port} (${provs.map((p) => p.name).join(", ")})\n`);
+  const ignore = () => {}; // Ctrl+C goes to the tool too: wait for it to exit
+  process.on("SIGINT", ignore);
+  try {
+    return await new Promise<number>((resolve) => {
+      const child = spawn(rest[0], rest.slice(1), { stdio: "inherit", env: agentEnv(port, token) as NodeJS.ProcessEnv });
+      child.on("error", (e) => {
+        process.stderr.write(`error: cannot run '${rest[0]}': ${e.message}\n`);
+        resolve(127);
+      });
+      child.on("exit", (code, signal) => resolve(code ?? (signal ? 130 : 1)));
+    });
+  } finally {
+    process.off("SIGINT", ignore);
+    (server as any).closeAllConnections?.();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
 
 export async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;
@@ -279,7 +321,7 @@ export async function main(argv: string[]): Promise<number> {
     process.stderr.write(`unknown command '${cmd}'\n\n${HELP}`);
     return 2;
   }
-  if (rest.includes("--help") || rest.includes("-h")) {
+  if (cmd !== "run" && (rest.includes("--help") || rest.includes("-h"))) {
     process.stdout.write(HELP);
     return 0;
   }
