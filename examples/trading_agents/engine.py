@@ -217,7 +217,8 @@ class Engine:
     def __init__(self, cfg: Optional[Config] = None, state: Optional[dict] = None, cash: float = 10_000.0,
                  executor: Any = None, llm: Optional[LLMAnalystAgent] = None,
                  cache: Optional[Dict[tuple, dict]] = None, swarm: Optional[Sequence[Agent]] = None,
-                 sentiment: Optional[Dict[str, int]] = None) -> None:
+                 sentiment: Optional[Dict[str, int]] = None,
+                 funding: Optional[Dict[str, List[Tuple[int, float]]]] = None) -> None:
         state = state or {}
         self.cfg = cfg or Config.from_dict(state.get("config"))
         groups = group_swarm(swarm)
@@ -243,6 +244,7 @@ class Engine:
         self.llm = llm
         self.cache = cache
         self.sentiment = sentiment
+        self.funding = funding
         self.track_stats = True  # el optimizador lo apaga: no necesita estadísticas por agente
         self.warmup = min(WINDOW, max(a.warmup for t in self.teams.values() for a in t.agents) + 1)
         self._pending: Dict[str, tuple] = {}
@@ -463,7 +465,7 @@ class Engine:
         t_key = ("ctx", next(iter(windows.values()))[-1].time)
         mctx = self.cache.get(t_key) if self.cache is not None else None
         if mctx is None:
-            mctx = market_context(windows, self.sentiment)
+            mctx = market_context(windows, self.sentiment, funding=self.funding)
             if self.cache is not None:
                 self.cache[t_key] = mctx
         for sym, window in windows.items():

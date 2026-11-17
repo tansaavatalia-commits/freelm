@@ -38,9 +38,9 @@ flowchart LR
 
 | Nodo | Qué hace |
 |---|---|
-| `observar` | 100 agentes por símbolo analizan la ventana. Con 8 monedas son ≈ 850 señales por vela, a más de 30.000 señales/segundo. |
+| `observar` | 105 agentes por símbolo analizan la ventana. Con 8 monedas son ≈ 900 señales por vela, a más de 30.000 señales/segundo. |
 | `equipo:*` | Cada equipo vota con pesos aprendidos (algoritmo *Hedge*), separados por régimen de mercado. |
-| `consejo` | Confronta a los 6 equipos (tendencia, reversión, flujo, volatilidad, multi-marco y mercado), también con pesos aprendidos. |
+| `consejo` | Confronta a los 7 equipos (tendencia, reversión, flujo, volatilidad, multi-marco, mercado y posicionamiento), también con pesos aprendidos. |
 | `escéptico` | Veta si hay desacuerdo entre equipos, si el régimen es volátil, si habría que comprar bajo la EMA 200 o si todo el mercado está en fase bajista (BTC bajo su media 200 y menos del 35 % de monedas al alza). |
 | `filtro_ventaja` | Solo deja pasar tipos de señal con ventaja neta demostrada en la sombra. |
 | `registrar_sombra` | Prueba cada señal sin dinero real, con stop, objetivo y comisiones. |
@@ -54,6 +54,25 @@ flowchart LR
 - **Amplitud**: qué parte del mercado está al alza.
 - **BTC como guía**: su tendencia de fondo y su último día.
 - **Sentimiento**: el índice Fear & Greed (alternative.me, gratis), leído a la contra. El miedo extremo suma a favor de comprar y la codicia extrema, en contra. Solo se usa con datos reales; `--no-sentiment` lo desactiva.
+
+**Equipo «posicionamiento»**: quién empuja el precio y quién está apalancado.
+
+- **Flujo comprador agresivo (taker)** a 6, 24 y 72 velas: qué parte del volumen
+  se compró «a mercado». Viene gratis en cada vela de Binance (antes se descartaba).
+- **Funding rate de los futuros perpetuos**, leído a la contra: un funding muy
+  alto significa largos apalancados y sobrecompra; uno muy negativo, cortos
+  apalancados. Se descarga del archivo público `data.binance.vision`, sin
+  claves ni bloqueo geográfico; el tramo más reciente sale de la API de futuros
+  o, si está bloqueada, de OKX o Bybit vía ccxt. `--no-funding` lo desactiva.
+
+**Capacidad predictiva de cada agente** (IC, al estilo alphalens): `backtest`
+y `status` muestran qué agentes predicen de verdad el retorno siguiente
+(|t| > 2) y cuáles son ruido. `status --all-agents` da la tabla completa.
+
+**Informe profesional** (al estilo quantstats, sin dependencias): Sortino,
+Calmar, duración de la peor caída, días positivos, mejor y peor día,
+rendimiento por meses, esperanza por operación y rachas. Aparece en
+`backtest`, en `report`, en GitHub y en Telegram.
 
 Los nodos se añaden o se quitan con `Graph.add` / `Graph.remove`. El orden de
 ejecución se calcula solo, a partir de lo que cada nodo necesita y produce.

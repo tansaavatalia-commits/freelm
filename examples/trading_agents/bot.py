@@ -25,15 +25,17 @@ import os
 import sys
 import time
 from dataclasses import asdict
+from types import SimpleNamespace
 from typing import Dict, List, Optional
 
 from agents import LLMAnalystAgent
 from engine import WINDOW, Config, Engine, metrics, run_backtest, stress_test, trade_stats
 from exchange import CcxtExecutor, check_gate, load_track, record_equity
-from learning import REGIMES, Calibrator
-from market import DEFAULT_SYMBOLS, Candle, align, fetch_candles, fetch_fear_greed, load_csv, synthetic
+from learning import REGIMES, AgentStats, Calibrator
+from market import DEFAULT_SYMBOLS, Candle, align, fetch_candles, fetch_fear_greed, fetch_funding, load_csv, synthetic
 from notify import Notifier
 from optimize import Optimizer, load_champion, save_result
+from report import format_performance, performance
 from risk import ClosedTrade, Position
 
 STATE_DIR = os.environ.get("FREELM_TRADING_DIR", os.path.join(os.path.expanduser("~"), ".cache", "freelm-trading"))
@@ -119,6 +121,27 @@ def load_sentiment(args: argparse.Namespace) -> Optional[Dict[str, int]]:
         return None
 
 
+def load_funding(args: argparse.Namespace, symbols: List[str], start_ms: int) -> Optional[Dict[str, list]]:
+    """Funding rate de futuros para el equipo «posicionamiento» (solo con datos reales).
+    Se pide desde 40 días antes de la primera vela, para poder calcular su z-score."""
+    if args.source == "synthetic" or args.no_funding:
+        return None
+    out = {}
+    for s in symbols:
+        try:
+            out[s] = fetch_funding(s, start_ms - 40 * 86_400_000)
+        except Exception as e:  # noqa: BLE001 - el funding es opcional
+            print(f"[aviso] {s}: sin funding ({type(e).__name__})", file=sys.stderr)
+    got = sum(1 for v in out.values() if v)
+    if got < len(symbols):
+        print(f"[aviso] funding disponible para {got}/{len(symbols)} monedas", file=sys.stderr)
+    return out
+
+
+def _first_ms(data: Dict[str, List[Candle]]) -> int:
+    return min(cs[0].time for cs in data.values())
+
+
 def print_stress(trades: List[ClosedTrade]) -> None:
     st = stress_test([t.equity_return for t in trades], 1.0)
     if not st.get("paths"):
@@ -127,6 +150,34 @@ def print_stress(trades: List[ClosedTrade]) -> None:
     print(f"  prueba de estrés ({st['paths']:,} órdenes al azar de las mismas {st['trades']} operaciones): "
           f"caída típica {st['dd_p50']:.1%}, mala racha (peor 5 %) {st['dd_p95']:.1%}, "
           f"prob. de acabar en pérdidas {st['p_loss']:.0%}")
+
+
+def agent_ic_table(state: dict) -> List[tuple]:
+    """(agente, equipo, observaciones, IC, t) de cada agente, del más al menos predictivo."""
+    rows = []
+    for team, t in state.get("teams", {}).items():
+        for name, st in t.get("stats", {}).items():
+            a = AgentStats(**st)
+            if a.ic_n > 2:
+                rows.append((name, team, a.ic_n, a.ic, a.ic_t))
+    return sorted(rows, key=lambda r: -r[4])
+
+
+def print_ic(state: dict, k: int = 6, full: bool = False) -> None:
+    rows = agent_ic_table(state)
+    if not rows:
+        return
+    useful = sum(1 for r in rows if r[4] > 2)
+    harmful = sum(1 for r in rows if r[4] < -2)
+    print("\nCapacidad predictiva por agente (IC = correlación con el retorno siguiente; |t| > 2 = no es azar)")
+    print(f"  {useful} agentes con IC positivo significativo, {harmful} con IC negativo significativo, "
+          f"{len(rows) - useful - harmful} indistinguibles del ruido (de {len(rows)})")
+    show = rows if full else rows[:k] + ([("…", "", 0, 0.0, 0.0)] if len(rows) > 2 * k else []) + rows[-k:]
+    for name, team, n, ic, t in show:
+        if name == "…":
+            print("  …")
+            continue
+        print(f"  {name:<18}{team:<16}IC {ic:+.3f}  t {t:+6.1f}  ({n:,} obs.)")
 
 
 def print_learning(state: dict, top: int = 3) -> None:
@@ -171,7 +222,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         raise SystemExit("sin datos")
     path = state_file(args)
     eng = Engine(config_for(args), load_json(path), cash=args.cash, llm=build_llm(args.llm, args.llm_model),
-                 sentiment=load_sentiment(args))
+                 sentiment=load_sentiment(args), funding=load_funding(args, list(data), _first_ms(data)))
     n = min(len(v) for v in data.values())
     split = eng.warmup + int((n - eng.warmup) * args.train)
     if n - split < 50:
@@ -195,6 +246,11 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     ts = trade_stats(eng.pf.closed)
     print(f"\nAprendizaje sin operar: {split - eng.warmup} velas · validación operando en papel: {n - split} velas")
     print_result("Validación fuera de muestra", m, ts, out["buy_hold"])
+    s0 = next(iter(data))
+    times = [data[s0][split].time] + [data[s0][i].time for i in range(split, n)]
+    for line in format_performance(performance(out["equity"], times, PERIODS_PER_YEAR.get(args.interval, 8_760),
+                                               eng.pf.closed)):
+        print(line)
     print(f"  señales procesadas: {eng.total_signals:,} a {eng.signals_per_second:,.0f}/s")
     print_stress(eng.pf.closed)
     vetoes = sorted(eng.veto_counts.items(), key=lambda kv: -kv[1])
@@ -205,6 +261,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
           + ("  [datos sintéticos]" if args.source == "synthetic" else ""))
     print()
     print_learning(eng.state())
+    print_ic(eng.state())
     if path:
         save_json(path, eng.state())
         print(f"\nMemoria guardada en {path}")
@@ -218,7 +275,8 @@ def cmd_optimize(args: argparse.Namespace) -> int:
     champ_path, hist_path = p(args, "champion.json"), p(args, "optimize_history.jsonl")
     champ = None if args.default_config else load_champion(champ_path)
     opt = Optimizer(data, PERIODS_PER_YEAR.get(args.interval, 8_760), cash=args.cash, seed=args.seed,
-                    min_trades=args.min_trades, workers=args.workers, sentiment=load_sentiment(args))
+                    min_trades=args.min_trades, workers=args.workers, sentiment=load_sentiment(args),
+                    funding=load_funding(args, list(data), _first_ms(data)))
     sp = {"aprender": opt.val_from - opt.start, "validación": opt.test_from - opt.val_from,
           "examen": opt.n - opt.test_from}
     print(f"Optimizando sobre {', '.join(data)} ({args.source}, {args.interval}): "
@@ -305,8 +363,11 @@ def cmd_live(args: argparse.Namespace) -> int:
         print(f"Conectado a {executor.name}. Capital de trabajo: {cash:.2f} (tope {args.max_capital:.2f})")
     path = state_file(args) or p(args, f"memoria-binance-{args.interval}.json")
     book_path, track_path = _book_path(args), _track_path(args)
+    fund_from = int(time.time() * 1000) - WINDOW * 3_600_000
     eng = Engine(config_for(args), load_json(path), cash=cash, executor=executor,
-                 llm=build_llm(args.llm, args.llm_model), sentiment=load_sentiment(args))
+                 llm=build_llm(args.llm, args.llm_model), sentiment=load_sentiment(args),
+                 funding=load_funding(args, syms, fund_from))
+    fund_try = time.time()
     book = load_json(book_path)
     if book:  # recuperar la cartera
         eng.pf.cash = book["cash"]
@@ -360,6 +421,9 @@ def cmd_live(args: argparse.Namespace) -> int:
                         and time.time() - sent_try > 3600):
                     sent_try = time.time()
                     eng.sentiment = load_sentiment(args) or eng.sentiment
+                if time.time() - fund_try > 4 * 3600:  # el funding se liquida cada 8 h
+                    fund_try = time.time()
+                    eng.funding = load_funding(args, syms, fund_from) or eng.funding
                 if tg.enabled and day != last_summary and time.gmtime().tm_hour >= args.summary_hour:
                     last_summary = day
                     tg.send(build_report(args, markdown=False))
@@ -414,6 +478,10 @@ def build_report(args: argparse.Namespace, markdown: bool = True) -> str:
                   f"- Rendimiento: **{ret:+.2%}** · últimas 24 h {eq[-1] / day_ago[0] - 1:+.2%} · "
                   f"semanal equivalente {weekly:+.2%} (meta +18 %)",
                   f"- Caída máxima: {mdd:.2%} (límite 10 %)"]
+        if days >= 2:  # informe profesional (estilo quantstats) a partir de 2 días de historial
+            trades = [SimpleNamespace(pnl=c["pnl"]) for c in book.get("closed", [])]
+            perf = performance(eq, [r["t"] * 1000 for r in track], PERIODS_PER_YEAR.get(args.interval, 8_760), trades)
+            lines += ["-" + x[1:] for x in format_performance(perf)]
     else:
         lines.append("- Aún sin historial en vivo.")
     closed = book.get("closed", [])
@@ -461,7 +529,8 @@ def _reoptimize(args: argparse.Namespace, eng: Engine, path: str) -> Engine:
     cfg = config_for(args)
     if cfg == eng.cfg:
         return eng
-    new = Engine(cfg, eng.state(), cash=eng.pf.cash, executor=eng.executor, llm=eng.llm, sentiment=eng.sentiment)
+    new = Engine(cfg, eng.state(), cash=eng.pf.cash, executor=eng.executor, llm=eng.llm, sentiment=eng.sentiment,
+                 funding=eng.funding)
     new.pf, new.risk.peak_equity, new.risk.halted = eng.pf, eng.risk.peak_equity, eng.risk.halted
     new.risk.losing_streak, new.risk.pause_left = eng.risk.losing_streak, eng.risk.pause_left
     save_json(path, new.state())
@@ -487,6 +556,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     if state:
         print()
         print_learning(state, top=5)
+        print_ic(state, full=args.all_agents)
     return 0
 
 
@@ -511,6 +581,7 @@ def parser() -> argparse.ArgumentParser:
         sp.add_argument("--llm", action="store_true", help="la IA (freelm) revisa cada operación antes de abrirla")
         sp.add_argument("--llm-model", default="chat:fast")
         sp.add_argument("--no-sentiment", action="store_true", help="no descargar el índice Fear & Greed")
+        sp.add_argument("--no-funding", action="store_true", help="no descargar el funding rate de futuros")
 
     b = sub.add_parser("backtest", help="aprender y validar fuera de muestra")
     common(b)
@@ -561,6 +632,7 @@ def parser() -> argparse.ArgumentParser:
 
     st = sub.add_parser("status", help="ver lo aprendido y la campeona")
     common(st)
+    st.add_argument("--all-agents", action="store_true", help="tabla de IC de todos los agentes")
     st.set_defaults(func=cmd_status)
     return ap
 

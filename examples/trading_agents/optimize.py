@@ -148,7 +148,8 @@ def _eval_in_worker(cfg: Config) -> dict:
 class Optimizer:
     def __init__(self, data: Dict[str, List[Candle]], periods_per_year: int = 8_760, cash: float = 10_000.0,
                  seed: int = 0, min_trades: int = 10, log: Callable[[str], None] = print,
-                 workers: int = 0, sentiment: Optional[Dict[str, int]] = None) -> None:
+                 workers: int = 0, sentiment: Optional[Dict[str, int]] = None,
+                 funding: Optional[Dict[str, list]] = None) -> None:
         self.data = data
         self.ppy = periods_per_year
         self.cash = cash
@@ -168,10 +169,11 @@ class Optimizer:
             raise ValueError(f"pocas velas ({n}); hacen falta al menos ~{self.start + 500}")
         self.evals = 0
         self.sentiment = sentiment
+        self.funding = funding
         self.workers = max(1, workers if workers else min(MAX_AUTO_WORKERS, _usable_cpus()))
 
     def evaluate(self, cfg: Config, holdout: bool = False) -> dict:
-        eng = Engine(cfg, cash=self.cash, cache=self.cache, sentiment=self.sentiment)
+        eng = Engine(cfg, cash=self.cash, cache=self.cache, sentiment=self.sentiment, funding=self.funding)
         eng.track_stats = False
         stop = self.n if holdout else self.test_from
         trade_from = self.test_from if holdout else self.val_from
@@ -192,7 +194,7 @@ class Optimizer:
         (la parte cara). Después, cada simulación solo repite las decisiones."""
         s0 = next(iter(self.data))
         if (s0, self.data[s0][self.n - 1].time) not in self.cache:
-            eng = Engine(Config(), cash=self.cash, cache=self.cache, sentiment=self.sentiment)
+            eng = Engine(Config(), cash=self.cash, cache=self.cache, sentiment=self.sentiment, funding=self.funding)
             eng.track_stats = False
             run_backtest(eng, self.data, self.start, self.n, self.n - 1)
 

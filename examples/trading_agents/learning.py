@@ -43,10 +43,43 @@ class AgentStats:
     n: int = 0
     hits: int = 0
     reward: float = 0.0
+    # sumas para el IC (coeficiente de información, como alphalens): correlación entre
+    # lo que dijo el agente (score x confianza) y el retorno siguiente normalizado por volatilidad
+    ic_n: int = 0
+    sx: float = 0.0
+    sy: float = 0.0
+    sxx: float = 0.0
+    syy: float = 0.0
+    sxy: float = 0.0
 
     @property
     def hit_rate(self) -> float:
         return self.hits / self.n if self.n else 0.0
+
+    def add_ic(self, x: float, y: float) -> None:
+        self.ic_n += 1
+        self.sx += x
+        self.sy += y
+        self.sxx += x * x
+        self.syy += y * y
+        self.sxy += x * y
+
+    @property
+    def ic(self) -> float:
+        n = self.ic_n
+        if n < 3:
+            return 0.0
+        vx = self.sxx - self.sx * self.sx / n
+        vy = self.syy - self.sy * self.sy / n
+        if vx <= 1e-12 or vy <= 1e-12:
+            return 0.0
+        return (self.sxy - self.sx * self.sy / n) / math.sqrt(vx * vy)
+
+    @property
+    def ic_t(self) -> float:
+        """Significación del IC: |t| > 2 = poco probable que sea casualidad."""
+        ic, n = self.ic, self.ic_n
+        return ic * math.sqrt(max(n - 2, 0) / max(1e-12, 1 - ic * ic)) if n > 2 else 0.0
 
 
 @dataclass
@@ -101,6 +134,7 @@ class Coordinator:
                 st.n += 1
                 st.hits += int((s.score > 0) == (ret > 0))
             st.reward += reward
+            st.add_ic(s.value, max(-5.0, min(5.0, ret / scale)))
         self._normalize(regime)
         n = len(w)
         for a in w:
@@ -144,12 +178,14 @@ class Coordinator:
             w[a] = x * k + b
         if track:
             up = ret > 0
-            for a, s, c, r in zip(agents, scores, confs, rewards):
+            y = max(-5.0, min(5.0, m))  # retorno siguiente en unidades de volatilidad
+            for a, s, c, r, v in zip(agents, scores, confs, rewards, values):
                 st = self.stats[a]
                 if c > 0 and s != 0:
                     st.n += 1
                     st.hits += (s > 0) == up
                 st.reward += r
+                st.add_ic(v, y)
         self.updates += 1
 
     def _normalize(self, regime: str) -> None:
