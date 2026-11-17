@@ -234,6 +234,20 @@ el tramo fuera de muestra:
   0,75 % con una sola operación. Ahora una campeona debe **ganar dinero**,
   ganar más que la anterior y hacerlo con al menos 3 operaciones en el examen final.
 
+**Segunda ronda, con esos ajustes** (mismos datos y costes):
+
+| Prueba | Bot | Comprar y mantener la cesta |
+|---|---|---|
+| 1 h, configuración por defecto | **+2,42 %** (16 operaciones, acierto 62 %, factor de beneficio 1,47, caída 2,4 %) | −21,5 % |
+| 4 h, configuración por defecto | 0,00 % (0 operaciones) | −20,0 % |
+
+- El optimizador **rechazó** esta vez una aspirante que perdía (−0,84 % con 1
+  operación): la corrección funciona.
+- **16 operaciones son pocas.** La prueba de estrés da un 31 % de
+  probabilidad de acabar en pérdidas con esas mismas operaciones. Es una
+  señal prometedora en un mercado bajista, no una ventaja demostrada. Para
+  eso están los 20 días en vivo.
+
 ## Resultados de referencia (datos sintéticos, NO reales)
 
 Mismo backtest, mismos datos sintéticos, antes y después de añadir el equipo
