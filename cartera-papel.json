@@ -1,0 +1,23 @@
+{
+ "cash": 100.0,
+ "positions": {},
+ "risk": {
+  "risk_per_trade": 0.01,
+  "stop_atr": 1.5,
+  "target_atr": 3.0,
+  "max_positions": 4,
+  "max_exposure": 0.3,
+  "max_drawdown": 0.1,
+  "max_losing_streak": 3,
+  "cooldown": 24,
+  "exit_score": -0.2,
+  "peak_equity": 100.0,
+  "losing_streak": 0,
+  "pause_left": 0,
+  "halted": false
+ },
+ "closed": [],
+ "last_time": 1794952800000,
+ "last_optimize": "",
+ "last_summary": ""
+}
