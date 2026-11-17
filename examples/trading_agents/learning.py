@@ -1,49 +1,39 @@
-"""El aprendizaje: un coordinador que aprende en línea cuánto fiarse de cada agente.
+"""Aprendizaje: en quién confiar (Coordinator) y qué señales tienen ventaja real (Calibrator).
 
-Algoritmo: *Hedge* (pesos multiplicativos, Freund & Schapire) con *fixed share*
-(Herbster & Warmuth), y pesos separados por **régimen de mercado**:
+Coordinator: algoritmo *Hedge* (pesos multiplicativos, Freund & Schapire) con
+*fixed share* (Herbster & Warmuth) y pesos separados por **régimen de mercado**.
+Tras cada vela, cada agente recibe ``value * retorno / volatilidad``: acertar
+con convicción suma, fallar con convicción resta, ``w *= exp(eta * r)``. La
+mezcla uniforme ``alpha`` deja que un agente castigado se recupere cuando el
+mercado cambia. Se usa en dos niveles: dentro de cada equipo (agentes) y en
+el consejo (equipos).
 
-1. En cada vela, cada agente da su ``Signal``.
-2. La decisión es la media ponderada de ``score * confidence``.
-3. Cuando llega la vela siguiente se conoce el retorno real ``r``. La
-   recompensa de cada agente es ``value * r / volatilidad`` (acierta la
-   dirección y con convicción → gana; se equivoca con convicción → pierde).
-4. ``w_i *= exp(eta * recompensa_i)`` y luego se mezcla una fracción ``alpha``
-   uniforme: así un agente castigado puede recuperarse cuando el mercado
-   cambia (lo que en finanzas pasa siempre).
-
-El régimen se detecta con el *efficiency ratio* de Kaufman: en tendencia ganan
-peso los seguidores de tendencia; en lateral, los de reversión. Nadie lo
-programa: lo descubre el propio bot.
+Calibrator: el filtro anti-"señales sin sentido". Cada señal candidata se
+opera **en la sombra** (con el mismo stop y objetivo que una real, y
+comisiones) aunque no se ejecute. El resultado, en múltiplos de riesgo R, se
+acumula por (régimen, fuerza, acuerdo). Solo se permite operar de verdad un
+tipo de señal cuando su esperanza neta está demostrada con suficientes muestras.
 """
 from __future__ import annotations
 
-import json
 import math
-import os
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from agents import Signal
-from market import Candle
+from features import Features
 
 REGIMES = ("tendencia", "lateral", "volátil")
 
 
-def detect_regime(candles: Sequence[Candle], lookback: int = 30) -> str:
-    if len(candles) <= lookback:
+def detect_regime(f: Features, lookback: int = 30) -> str:
+    closes = f.closes
+    if len(closes) <= lookback:
         return "lateral"
-    all_closes = [c.close for c in candles]
-    closes = all_closes[-lookback - 1:]
-    path = sum(abs(closes[i] - closes[i - 1]) for i in range(1, len(closes))) or 1e-12
-    er = abs(closes[-1] - closes[0]) / path  # 1 = tendencia perfecta, 0 = ruido
-
-    def _vol(xs: Sequence[float]) -> float:
-        rets = [math.log(xs[i] / xs[i - 1]) for i in range(1, len(xs))]
-        return math.sqrt(sum(x * x for x in rets) / len(rets))
-
-    # volátil = la volatilidad reciente supera 1.5x la de toda la ventana
-    if len(all_closes) > 2 * lookback and _vol(closes) > 1.5 * _vol(all_closes):
+    tail = closes[-lookback - 1:]
+    path = sum(abs(tail[i] - tail[i - 1]) for i in range(1, len(tail))) or 1e-12
+    er = abs(tail[-1] - tail[0]) / path  # efficiency ratio de Kaufman: 1 = tendencia limpia, 0 = ruido
+    if len(closes) > 2 * lookback and f.vol(lookback) > 1.5 * f.vol(len(closes) - 1):
         return "volátil"
     return "tendencia" if er > 0.3 else "lateral"
 
@@ -73,20 +63,32 @@ class Coordinator:
             w = self.weights.setdefault(reg, {})
             for a in self.agents:
                 w.setdefault(a, 1.0 / len(self.agents))
+            for a in [a for a in w if a not in self.agents]:
+                del w[a]
             self._normalize(reg)
         for a in self.agents:
             self.stats.setdefault(a, AgentStats())
 
-    # -- decisión -----------------------------------------------------------
-    def combine(self, signals: Sequence[Signal], regime: str) -> float:
+    def combine(self, signals: Sequence[Signal], regime: str) -> Tuple[float, float]:
+        """Devuelve (decisión en [-1, 1], acuerdo ponderado en [0, 1])."""
         w = self.weights[regime]
-        num = sum(w.get(s.agent, 0.0) * s.value for s in signals)
-        den = sum(w.get(s.agent, 0.0) for s in signals) or 1.0
-        return max(-1.0, min(1.0, num / den))
+        num = den = 0.0
+        for s in signals:
+            wi = w.get(s.agent, 0.0)
+            num += wi * s.value
+            den += wi
+        score = max(-1.0, min(1.0, num / (den or 1.0)))
+        if score == 0:
+            return 0.0, 0.0
+        agree = tot = 0.0
+        for s in signals:
+            wi = w.get(s.agent, 0.0) * s.confidence
+            tot += wi
+            if s.score * score > 0:
+                agree += wi
+        return score, agree / (tot or 1.0)
 
-    # -- aprendizaje --------------------------------------------------------
     def learn(self, signals: Sequence[Signal], regime: str, ret: float, vol: float) -> None:
-        """``ret``: retorno logarítmico realizado; ``vol``: volatilidad típica por vela."""
         scale = max(vol, 1e-4)
         w = self.weights[regime]
         for s in signals:
@@ -114,25 +116,104 @@ class Coordinator:
     def ranking(self, regime: str) -> List[tuple]:
         return sorted(self.weights[regime].items(), key=lambda kv: -kv[1])
 
-    # -- memoria ------------------------------------------------------------
     def to_dict(self) -> dict:
         return {"eta": self.eta, "alpha": self.alpha, "updates": self.updates, "weights": self.weights,
                 "stats": {a: vars(s) for a, s in self.stats.items()}}
 
-    def save(self, path: str) -> None:
-        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w") as fh:
-            json.dump(self.to_dict(), fh, indent=2, ensure_ascii=False)
-        os.replace(tmp, path)
+    @classmethod
+    def from_dict(cls, d: Optional[dict], agents: List[str], **kw: float) -> "Coordinator":
+        if not d:
+            return cls(agents, **kw)
+        stats = {a: AgentStats(**s) for a, s in d.get("stats", {}).items() if a in agents}
+        weights = {reg: dict(ws) for reg, ws in d.get("weights", {}).items()}
+        return cls(agents, eta=d.get("eta", kw.get("eta", 0.5)), alpha=d.get("alpha", kw.get("alpha", 0.02)),
+                   weights=weights, stats=stats, updates=d.get("updates", 0))
+
+
+def bucket(regime: str, strength: float, agreement: float) -> str:
+    s = 0 if strength < 0.3 else 1 if strength < 0.45 else 2
+    a = "alto" if agreement >= 0.75 else "medio"
+    return f"{regime}|f{s}|{a}"
+
+
+@dataclass
+class Shadow:
+    key: str
+    entry: float
+    stop: float
+    target: float
+    expires: int  # velas restantes
+
+
+@dataclass
+class Calibrator:
+    """Esperanza neta (en R) de cada tipo de señal, medida en la sombra."""
+    min_samples: int = 40
+    min_edge: float = 0.15  # exige al menos +0.15R netos de media
+    horizon: int = 48
+    fee: float = 0.001
+    results: Dict[str, List[float]] = field(default_factory=dict)  # key -> [n, suma_R, suma_R2, ganadas]
+    open: Dict[str, List[Shadow]] = field(default_factory=dict)  # por símbolo
+
+    def record(self, symbol: str, key: str, entry: float, stop: float, target: float) -> None:
+        book = self.open.setdefault(symbol, [])
+        if len(book) < 200:
+            book.append(Shadow(key, entry, stop, target, self.horizon))
+
+    def update(self, symbol: str, high: float, low: float, close: float) -> None:
+        keep = []
+        for s in self.open.get(symbol, []):
+            s.expires -= 1
+            risk = s.entry - s.stop
+            if low <= s.stop:
+                exit_px = s.stop
+            elif high >= s.target:
+                exit_px = s.target
+            elif s.expires <= 0:
+                exit_px = close
+            else:
+                keep.append(s)
+                continue
+            r = (exit_px - s.entry - self.fee * (s.entry + exit_px)) / risk
+            st = self.results.setdefault(s.key, [0, 0.0, 0.0, 0])
+            st[0] += 1
+            st[1] += r
+            st[2] += r * r
+            st[3] += int(r > 0)
+        self.open[symbol] = keep
+
+    def edge(self, key: str) -> Tuple[float, int]:
+        """(esperanza conservadora en R, muestras). Resta un error estándar: solo
+        cuenta la ventaja que sobrevive a la mala suerte."""
+        st = self.results.get(key)
+        if not st or st[0] < 2:
+            return 0.0, int(st[0]) if st else 0
+        n, s, s2 = st[0], st[1], st[2]
+        mean = s / n
+        sd = math.sqrt(max(0.0, s2 / n - mean * mean))
+        return mean - sd / math.sqrt(n), int(n)
+
+    def approved(self, key: str) -> Tuple[bool, str]:
+        e, n = self.edge(key)
+        if n < self.min_samples:
+            return False, f"sin historial suficiente ({n}/{self.min_samples})"
+        if e < self.min_edge:
+            return False, f"sin ventaja demostrada ({e:+.2f}R)"
+        return True, f"ventaja {e:+.2f}R en {n} casos"
+
+    def table(self) -> List[tuple]:
+        rows = []
+        for k, st in self.results.items():
+            e, n = self.edge(k)
+            rows.append((k, n, st[1] / st[0], st[3] / st[0], e))
+        return sorted(rows, key=lambda r: -r[4])
+
+    def to_dict(self) -> dict:
+        return {"results": self.results}
 
     @classmethod
-    def load(cls, path: Optional[str], agents: List[str], **kw: float) -> "Coordinator":
-        if path and os.path.exists(path):
-            with open(path) as fh:
-                d = json.load(fh)
-            weights = {reg: {a: v for a, v in ws.items() if a in agents} for reg, ws in d.get("weights", {}).items()}
-            stats = {a: AgentStats(**s) for a, s in d.get("stats", {}).items() if a in agents}
-            return cls(agents, eta=d.get("eta", kw.get("eta", 0.5)), alpha=d.get("alpha", kw.get("alpha", 0.02)),
-                       weights=weights, stats=stats, updates=d.get("updates", 0))
-        return cls(agents, **kw)
+    def from_dict(cls, d: Optional[dict], **kw: float) -> "Calibrator":
+        c = cls(**kw)  # type: ignore[arg-type]
+        if d:
+            c.results = {k: list(v) for k, v in d.get("results", {}).items()}
+        return c

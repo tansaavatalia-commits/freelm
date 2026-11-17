@@ -78,12 +78,15 @@ def bollinger(closes: Sequence[float], period: int = 20, k: float = 2.0) -> Tupl
     mid = sma(closes, period)
     up: Series = [None] * len(closes)
     lo: Series = [None] * len(closes)
-    for i in range(period - 1, len(closes)):
-        window = closes[i - period + 1: i + 1]
+    s2 = 0.0  # suma móvil de cuadrados: varianza = E[x²] - media²  (O(n) en vez de O(n·period))
+    for i, x in enumerate(closes):
+        s2 += x * x
+        if i >= period:
+            s2 -= closes[i - period] ** 2
         m = mid[i]
-        assert m is not None
-        sd = math.sqrt(sum((x - m) ** 2 for x in window) / period)
-        up[i], lo[i] = m + k * sd, m - k * sd
+        if m is not None:
+            sd = math.sqrt(max(0.0, s2 / period - m * m))
+            up[i], lo[i] = m + k * sd, m - k * sd
     return lo, mid, up
 
 

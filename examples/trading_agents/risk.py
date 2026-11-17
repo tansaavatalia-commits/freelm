@@ -1,101 +1,144 @@
-"""Gestor de riesgo + bróker de papel (dinero simulado, NUNCA órdenes reales).
+"""Gestión de riesgo y cartera de papel multi-símbolo (dinero simulado, NUNCA órdenes reales).
 
-Reglas (las que repiten todos los bots serios de GitHub):
-- Solo largo (spot): comprar o quedarse en liquidez.
-- Tamaño por riesgo: se arriesga como mucho ``risk_per_trade`` del capital
-  hasta el stop (2 x ATR), con exposición máxima ``max_exposure``.
-- Stop dinámico (*trailing*) a 2 x ATR bajo el máximo desde la entrada.
-- Interruptor de emergencia: si la caída desde el máximo del capital supera
-  ``max_drawdown``, el bot deja de operar.
-- Comisión ``fee`` por operación (0,1% como en la mayoría de exchanges).
+Reglas:
+- Solo largo (spot), sin apalancamiento.
+- Riesgo fijo por operación: ``risk_per_trade`` (1%) del capital entre la entrada
+  y el stop (``stop_atr`` x ATR). Objetivo a ``target_atr`` x ATR, es decir, una
+  relación beneficio/riesgo mínima de 2:1.
+- Cuando el precio avanza 1R, el stop sube a la entrada (break-even); después
+  persigue al máximo a ``stop_atr`` x ATR. Una operación ganadora no vuelve a pérdidas.
+- Como mucho ``max_positions`` posiciones a la vez y ``max_exposure`` del capital
+  en cada una.
+- Tras ``max_losing_streak`` pérdidas seguidas, pausa de ``cooldown`` velas.
+- Interruptor: si el capital cae ``max_drawdown`` desde su máximo, se cierra todo
+  y se deja de operar.
+- Comisión ``fee`` (0,1%) en cada lado.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
-class Trade:
-    time: int
-    side: str
-    price: float
+class Position:
+    symbol: str
     qty: float
+    entry: float
+    stop: float
+    target: float
+    risk_per_unit: float
+    opened: int
+    high: float
     reason: str
 
 
 @dataclass
-class PaperBroker:
+class ClosedTrade:
+    symbol: str
+    opened: int
+    closed: int
+    entry: float
+    exit: float
+    qty: float
+    pnl: float
+    r: float
+    why: str
+
+
+@dataclass
+class Portfolio:
     cash: float = 10_000.0
     fee: float = 0.001
-    qty: float = 0.0
-    trades: List[Trade] = field(default_factory=list)
+    positions: Dict[str, Position] = field(default_factory=dict)
+    closed: List[ClosedTrade] = field(default_factory=list)
 
-    def equity(self, price: float) -> float:
-        return self.cash + self.qty * price
+    def equity(self, prices: Dict[str, float]) -> float:
+        return self.cash + sum(p.qty * prices.get(s, p.entry) for s, p in self.positions.items())
 
-    def buy(self, time: int, price: float, notional: float, reason: str) -> None:
-        notional = min(notional, self.cash)
-        if notional <= 1e-9:
-            return
-        q = notional * (1 - self.fee) / price
-        self.cash -= notional
-        self.qty += q
-        self.trades.append(Trade(time, "BUY", price, q, reason))
+    def open(self, pos: Position) -> None:
+        cost = pos.qty * pos.entry
+        self.cash -= cost * (1 + self.fee)
+        self.positions[pos.symbol] = pos
 
-    def sell_all(self, time: int, price: float, reason: str) -> None:
-        if self.qty <= 0:
-            return
-        self.cash += self.qty * price * (1 - self.fee)
-        self.trades.append(Trade(time, "SELL", price, self.qty, reason))
-        self.qty = 0.0
+    def close(self, symbol: str, price: float, time: int, why: str) -> ClosedTrade:
+        p = self.positions.pop(symbol)
+        proceeds = p.qty * price * (1 - self.fee)
+        self.cash += proceeds
+        pnl = proceeds - p.qty * p.entry * (1 + self.fee)
+        t = ClosedTrade(symbol, p.opened, time, p.entry, price, p.qty, pnl, pnl / (p.qty * p.risk_per_unit), why)
+        self.closed.append(t)
+        return t
 
 
 @dataclass
 class RiskManager:
-    enter: float = 0.15
-    exit: float = -0.05
-    risk_per_trade: float = 0.02
-    max_exposure: float = 1.0
-    atr_mult: float = 2.0
-    max_drawdown: float = 0.25
+    risk_per_trade: float = 0.01
+    stop_atr: float = 1.5
+    target_atr: float = 3.0
+    max_positions: int = 4
+    max_exposure: float = 0.30
+    max_drawdown: float = 0.12
+    max_losing_streak: int = 3
+    cooldown: int = 24
+    exit_score: float = -0.2
     peak_equity: float = 0.0
-    stop: Optional[float] = None
-    high_since_entry: float = 0.0
+    losing_streak: int = 0
+    pause_left: int = 0
     halted: bool = False
 
-    def act(self, broker: PaperBroker, time: int, price: float, low: float, atr: Optional[float],
-            decision: float) -> Optional[str]:
-        eq = broker.equity(price)
-        self.peak_equity = max(self.peak_equity, eq)
-        if self.peak_equity and eq < self.peak_equity * (1 - self.max_drawdown):
-            if not self.halted:
-                self.halted = True
-                broker.sell_all(time, price, "interruptor de emergencia: drawdown máximo")
-                return "HALT"
-            return None
+    def levels(self, price: float, atr: float) -> tuple:
+        return price - self.stop_atr * atr, price + self.target_atr * atr
+
+    def can_open(self, pf: Portfolio) -> Optional[str]:
         if self.halted:
-            return None
+            return "interruptor activado"
+        if self.pause_left > 0:
+            return f"pausa tras {self.max_losing_streak} pérdidas ({self.pause_left} velas)"
+        if len(pf.positions) >= self.max_positions:
+            return "máximo de posiciones"
+        return None
 
-        if broker.qty > 0:
-            self.high_since_entry = max(self.high_since_entry, price)
+    def size(self, pf: Portfolio, equity: float, price: float, atr: float) -> float:
+        stop_dist = self.stop_atr * atr
+        qty = equity * self.risk_per_trade / stop_dist
+        qty = min(qty, equity * self.max_exposure / price, pf.cash / (price * (1 + pf.fee)))
+        return max(0.0, qty)
+
+    def manage(self, pf: Portfolio, symbol: str, time: int, high: float, low: float, close: float,
+               atr: Optional[float], score: float) -> Optional[ClosedTrade]:
+        """Revisa una posición abierta con la vela nueva. El stop se evalúa antes
+        que el objetivo (supuesto pesimista cuando ambos caben en la vela)."""
+        p = pf.positions.get(symbol)
+        if not p:
+            return None
+        t: Optional[ClosedTrade] = None
+        if low <= p.stop:
+            t = pf.close(symbol, p.stop, time, "stop" if p.stop < p.entry else "stop de protección")
+        elif high >= p.target:
+            t = pf.close(symbol, p.target, time, "objetivo alcanzado")
+        elif score < self.exit_score:
+            t = pf.close(symbol, close, time, f"el consejo gira bajista ({score:+.2f})")
+        else:
+            p.high = max(p.high, high)
+            if p.high >= p.entry + p.risk_per_unit:
+                p.stop = max(p.stop, p.entry * (1 + 2 * pf.fee))  # break-even cubriendo comisiones
             if atr:
-                self.stop = max(self.stop or 0.0, self.high_since_entry - self.atr_mult * atr)
-            if self.stop is not None and low <= self.stop:
-                broker.sell_all(time, min(price, self.stop), f"stop {self.stop:.2f}")
-                self.stop = None
-                return "STOP"
-            if decision < self.exit:
-                broker.sell_all(time, price, f"consenso bajista {decision:+.2f}")
-                self.stop = None
-                return "SELL"
-            return None
+                p.stop = max(p.stop, p.high - self.stop_atr * atr) if p.stop >= p.entry else p.stop
+        if t:
+            self.losing_streak = self.losing_streak + 1 if t.pnl < 0 else 0
+            if self.losing_streak >= self.max_losing_streak:
+                self.pause_left, self.losing_streak = self.cooldown, 0
+        return t
 
-        if decision > self.enter and atr:
-            stop_dist = self.atr_mult * atr / price
-            frac = min(self.max_exposure, self.risk_per_trade / max(stop_dist, 1e-6)) * min(1.0, decision / 0.5)
-            broker.buy(time, price, eq * frac, f"consenso alcista {decision:+.2f}")
-            self.high_since_entry = price
-            self.stop = price - self.atr_mult * atr
-            return "BUY"
+    def tick(self, pf: Portfolio, equity: float, prices: Dict[str, float], time: int) -> Optional[str]:
+        """Una vez por paso: pausa y control de drawdown global."""
+        if self.pause_left > 0:
+            self.pause_left -= 1
+        self.peak_equity = max(self.peak_equity, equity)
+        if not self.halted and self.peak_equity and equity < self.peak_equity * (1 - self.max_drawdown):
+            self.halted = True
+            for s in list(pf.positions):
+                pf.close(s, prices[s], time, "interruptor de emergencia")
+            return "HALT"
         return None
