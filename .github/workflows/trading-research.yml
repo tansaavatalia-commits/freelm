@@ -24,6 +24,11 @@ concurrency:
   group: trading-research-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    # «shell: bash» añade -o pipefail: si el bot falla, «| tee» no lo esconde y el paso sale en rojo
+    shell: bash
+
 jobs:
   research:
     runs-on: ubuntu-latest
@@ -40,13 +45,15 @@ jobs:
       - name: Instalar
         run: uv pip install -e . ccxt
       - name: "1. Backtest 1 h, configuración por defecto (100 €)"
-        run: python "$BOT" backtest --source binance --limit "$LIMIT" --cash 100 --no-memory --default-config --dir r | tee bt-1h.txt
+        run: python "$BOT" backtest --source binance --limit "$LIMIT" --cash 100 --no-memory --default-config --dir r 2>&1 | tee bt-1h.txt
       - name: "2. Backtest 4 h, configuración por defecto (100 €)"
-        run: python "$BOT" backtest --source binance --interval 4h --limit 3000 --cash 100 --no-memory --default-config --dir r | tee bt-4h.txt
+        run: python "$BOT" backtest --source binance --interval 4h --limit 3000 --cash 100 --no-memory --default-config --dir r 2>&1 | tee bt-4h.txt
       - name: "3. Ronda de optimización (1 h)"
-        run: python "$BOT" optimize --source binance --limit "$LIMIT" --cash 100 --default-config --population 16 --generations 6 --dir r | tee opt.txt
-      - name: "4. Backtest 1 h con la campeona"
-        run: python "$BOT" backtest --source binance --limit "$LIMIT" --cash 100 --no-memory --dir r | tee bt-champ.txt
+        run: python "$BOT" optimize --source binance --limit "$LIMIT" --cash 100 --default-config --population 16 --generations 6 --dir r 2>&1 | tee opt.txt
+      # --train 0.8 = mismo punto que el examen final del optimizador: así solo opera
+      # en velas que el optimizador NO usó para elegir la configuración
+      - name: "4. Backtest 1 h con la campeona (solo el examen final)"
+        run: python "$BOT" backtest --source binance --limit "$LIMIT" --cash 100 --no-memory --train 0.8 --dir r 2>&1 | tee bt-champ.txt
       - name: Resumen
         if: always()
         run: |

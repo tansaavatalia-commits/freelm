@@ -135,11 +135,15 @@ def market_context(windows: Dict[str, Sequence[Candle]], sentiment: Optional[Dic
                 ranks[s][lb] = i / (len(order) - 1)
     above = [cs[-1] > sum(cs[-50:]) / len(cs[-50:]) for cs in closes.values() if len(cs) >= 50]
     breadth = sum(above) / len(above) if above else 0.5
-    lead = leader if leader in closes else syms[0]
-    lc = closes[lead]
-    btc_gap = lc[-1] / (sum(lc[-200:]) / len(lc[-200:])) - 1 if len(lc) >= 200 else 0.0
-    btc_ret24 = lc[-1] / lc[-25] - 1 if len(lc) > 24 else 0.0
-    day = time.strftime("%Y-%m-%d", time.gmtime(windows[lead][-1].time / 1000))
+    # sin BTC en el universo (o si su descarga falló) no hay líder: los agentes y el
+    # veto de «mercado bajista» se quedan neutrales en vez de usar otra moneda como si fuera BTC
+    btc_gap: Optional[float] = None
+    btc_ret24: Optional[float] = None
+    if leader in closes:
+        lc = closes[leader]
+        btc_gap = lc[-1] / (sum(lc[-200:]) / len(lc[-200:])) - 1 if len(lc) >= 200 else 0.0
+        btc_ret24 = lc[-1] / lc[-25] - 1 if len(lc) > 24 else 0.0
+    day = time.strftime("%Y-%m-%d", time.gmtime(windows[syms[0]][-1].time / 1000))
     fng = (sentiment or {}).get(day)
     return {s: {"rank": ranks[s], "breadth": breadth, "btc_gap": btc_gap, "btc_ret24": btc_ret24, "fng": fng,
                 "n": len(syms)} for s in syms}

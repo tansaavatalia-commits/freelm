@@ -31,6 +31,7 @@ class Position:
     opened: int
     high: float
     reason: str
+    risk_frac: float = 0.0  # fracción del capital arriesgada al abrir (qty * distancia al stop / capital)
 
 
 @dataclass
@@ -44,6 +45,12 @@ class ClosedTrade:
     pnl: float
     r: float
     why: str
+    risk_frac: float = 0.0
+
+    @property
+    def equity_return(self) -> float:
+        """Efecto de la operación sobre el capital (r x fracción arriesgada de verdad)."""
+        return self.r * self.risk_frac
 
 
 @dataclass
@@ -66,7 +73,8 @@ class Portfolio:
         proceeds = p.qty * price * (1 - self.fee)
         self.cash += proceeds
         pnl = proceeds - p.qty * p.entry * (1 + self.fee)
-        t = ClosedTrade(symbol, p.opened, time, p.entry, price, p.qty, pnl, pnl / (p.qty * p.risk_per_unit), why)
+        t = ClosedTrade(symbol, p.opened, time, p.entry, price, p.qty, pnl, pnl / (p.qty * p.risk_per_unit), why,
+                        p.risk_frac)
         self.closed.append(t)
         return t
 

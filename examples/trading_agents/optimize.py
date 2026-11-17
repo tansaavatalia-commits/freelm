@@ -24,6 +24,7 @@ solo repite el aprendizaje y las decisiones.
 """
 from __future__ import annotations
 
+import gc
 import json
 import math
 import multiprocessing as mp
@@ -31,6 +32,8 @@ import os
 import random
 import statistics
 import time
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import replace
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -90,10 +93,13 @@ def fitness(m: Dict[str, float], n_trades: int, min_trades: int,
     if m["max_drawdown"] > MAX_DD:
         return -1.0 - m["max_drawdown"]
     if n_trades < min_trades:
-        return -0.5 + 0.01 * n_trades
+        return -0.6 + 0.01 * min(n_trades, 9)  # nivel «pocas operaciones»: siempre en [-0,6, -0,51]
     base = 0.5 * statistics.median(folds) + 0.5 * min(folds) if folds else m["return"]
     # prueba de estrés: si en una mala racha (peor 5 %) la caída superaría el 10 %, se penaliza
-    return base - 2.0 * max(0.0, dd_p95 - MAX_DD)
+    penalty = min(0.4, 2.0 * max(0.0, dd_p95 - MAX_DD))
+    # una configuración válida nunca puntúa por debajo de los niveles «pocas operaciones» (-0,5)
+    # ni «descalificada» (< -1): el orden de los límites duros se mantiene
+    return max(-0.5, base - penalty)
 
 
 def fold_returns(equity: List[float], k: int = FOLDS) -> List[float]:
@@ -105,6 +111,17 @@ def fold_returns(equity: List[float], k: int = FOLDS) -> List[float]:
 
 
 MIN_HOLDOUT_TRADES = 3
+MAX_AUTO_WORKERS = 4  # cada proceso acaba copiando parte de la caché (~400 MB con 8 monedas x 5000 velas)
+
+
+def _usable_cpus() -> int:
+    """CPUs que este proceso puede usar de verdad (en contenedores, ``os.cpu_count``
+    devuelve las del servidor entero)."""
+    if hasattr(os, "process_cpu_count"):
+        return os.process_cpu_count() or 1  # Python 3.13+
+    if hasattr(os, "sched_getaffinity"):
+        return len(os.sched_getaffinity(0)) or 1
+    return os.cpu_count() or 1
 
 
 def should_accept(cand: dict, champ: dict) -> bool:
@@ -112,8 +129,12 @@ def should_accept(cand: dict, champ: dict) -> bool:
     nunca vistos): GANA dinero, gana más que la campeona, respeta la caída
     máxima y lo hace con al menos 3 operaciones. Perder menos no es ganar; una
     sola operación es suerte, no evidencia."""
-    return (cand["max_drawdown"] <= MAX_DD and cand["trades"] >= MIN_HOLDOUT_TRADES
-            and cand["return"] > max(0.0, champ["return"]))
+    if not (cand["max_drawdown"] <= MAX_DD and cand["trades"] >= MIN_HOLDOUT_TRADES and cand["return"] > 0):
+        return False
+    champ_valid = champ["max_drawdown"] <= MAX_DD and champ["trades"] >= MIN_HOLDOUT_TRADES
+    # una campeona que rompe el límite del 10 % o cuyo resultado es de 1-2 operaciones (suerte)
+    # no protege su puesto: cualquier aspirante válida que gane dinero la sustituye
+    return cand["return"] > champ["return"] if champ_valid else True
 
 
 _WORKER: Optional["Optimizer"] = None
@@ -144,10 +165,10 @@ class Optimizer:
         self.val_from = self.start + int(usable * 0.40)
         self.test_from = self.start + int(usable * 0.80)
         if n - self.test_from < 100:
-            raise ValueError(f"pocas velas ({n}); hacen falta al menos ~{self.start + 400}")
+            raise ValueError(f"pocas velas ({n}); hacen falta al menos ~{self.start + 500}")
         self.evals = 0
         self.sentiment = sentiment
-        self.workers = max(1, workers if workers else (os.cpu_count() or 1))
+        self.workers = max(1, workers if workers else min(MAX_AUTO_WORKERS, _usable_cpus()))
 
     def evaluate(self, cfg: Config, holdout: bool = False) -> dict:
         eng = Engine(cfg, cash=self.cash, cache=self.cache, sentiment=self.sentiment)
@@ -158,7 +179,7 @@ class Optimizer:
         m = metrics(out["equity"], self.ppy)
         ts = trade_stats(eng.pf.closed)
         folds = None if holdout else fold_returns(out["equity"])
-        st = stress_test([t.r for t in eng.pf.closed], cfg.risk_per_trade, n_paths=400, seed=1)
+        st = stress_test([t.equity_return for t in eng.pf.closed], 1.0, n_paths=400, seed=1)
         dd95 = st.get("dd_p95", 0.0)
         self.evals += 1
         return {"fitness": fitness(m, ts["n"], self.min_trades, folds, dd95), **m, "trades": ts["n"], "folds": folds,
@@ -176,20 +197,28 @@ class Optimizer:
             run_backtest(eng, self.data, self.start, self.n, self.n - 1)
 
     def evaluate_many(self, cfgs: List[Config]) -> List[dict]:
-        """Evalúa en paralelo con todos los núcleos. Los procesos hijos heredan
-        la caché sin copiarla (fork); en sistemas sin fork, en serie."""
+        """Evalúa en paralelo (fork: los procesos hijos heredan la caché). ``gc.freeze``
+        evita que el recolector toque las páginas heredadas y las copie. Si un
+        proceso hijo muere (p. ej. por falta de memoria), en vez de colgarse se
+        repite la tanda en serie."""
         if self.workers <= 1 or len(cfgs) <= 1 or "fork" not in mp.get_all_start_methods():
             return [self.evaluate(c) for c in cfgs]
         global _WORKER
         self.warm()
         _WORKER = self
+        gc.collect()
+        gc.freeze()
         try:
-            with mp.get_context("fork").Pool(min(self.workers, len(cfgs))) as pool:
-                out = pool.map(_eval_in_worker, cfgs, chunksize=1)
+            with ProcessPoolExecutor(min(self.workers, len(cfgs)), mp_context=mp.get_context("fork")) as ex:
+                out = list(ex.map(_eval_in_worker, cfgs))
+            self.evals += len(cfgs)
+            return out
+        except BrokenProcessPool:
+            self.log("  [aviso] un proceso paralelo murió (¿memoria?); repitiendo esta tanda en serie")
+            return [self.evaluate(c) for c in cfgs]
         finally:
             _WORKER = None
-        self.evals += len(cfgs)
-        return out
+            gc.unfreeze()
 
     def run(self, champion: Optional[Config] = None, population: int = 12, generations: int = 6,
             elite: int = 3) -> dict:

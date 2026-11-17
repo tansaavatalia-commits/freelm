@@ -17,6 +17,17 @@ from market import Candle, align, synthetic  # noqa: E402
 from risk import Portfolio, Position, RiskManager  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    """AGENTS.md: nada de red en los tests unitarios. El índice Fear & Greed se
+    descarga en modo vivo/binance; aquí se sustituye por un fallo inmediato."""
+    def offline(*a, **k):
+        raise ConnectionError("red desactivada en los tests")
+    import market as _m
+    monkeypatch.setattr(_m, "fetch_fear_greed", offline)
+    monkeypatch.setattr(bot, "fetch_fear_greed", offline)
+
+
 def test_indicators_basic():
     xs = [float(i) for i in range(1, 41)]
     assert ta.sma(xs, 5)[4] == 3.0
@@ -437,5 +448,86 @@ def test_champion_needs_real_profit_on_holdout():
     assert not should_accept({"return": -0.0075, "max_drawdown": 0.012, "trades": 1}, base)
     assert not should_accept({"return": 0.05, "max_drawdown": 0.02, "trades": 1}, base)      # 1 op = suerte
     assert not should_accept({"return": 0.05, "max_drawdown": 0.12, "trades": 9}, base)      # caída > 10 %
-    assert not should_accept({"return": 0.02, "max_drawdown": 0.02, "trades": 9}, {**base, "return": 0.03})
+    assert not should_accept({"return": 0.02, "max_drawdown": 0.02, "trades": 9},
+                             {"return": 0.03, "max_drawdown": 0.02, "trades": 9})
     assert should_accept({"return": 0.02, "max_drawdown": 0.02, "trades": 9}, base)
+
+
+# ---------------------------------------------------------------- correcciones de la revisión exhaustiva
+
+def test_reoptimize_from_live_args_does_not_crash(tmp_path, monkeypatch, capsys):
+    """live --auto-optimize: cmd_optimize leía args.workers, que live no define."""
+    series = {s: synthetic(900, seed=i, structure=1.0) for i, s in enumerate(["BTCUSDT", "ETHUSDT"])}
+    monkeypatch.setattr(bot, "fetch_candles", lambda s, interval, limit: series[s][-limit:])
+    args = bot.parser().parse_args(["live", "--symbols", "BTCUSDT,ETHUSDT", "--dir", str(tmp_path),
+                                    "--optimize-limit", "900"])
+    eng = Engine(Config(), cash=100.0, sentiment={"2026-01-01": 40})
+    monkeypatch.setattr(bot, "cmd_optimize", lambda a: (a.workers, a.population) and 0)
+    assert bot._reoptimize(args, eng, str(tmp_path / "m.json")) is eng  # misma config: no rehace el motor
+    assert "omitida" not in capsys.readouterr().err
+    # si sale una campeona nueva, el motor nuevo conserva el sentimiento y la cartera
+    monkeypatch.setattr(bot, "config_for", lambda a: Config(enter=0.3))
+    new = bot._reoptimize(args, eng, str(tmp_path / "m.json"))
+    assert new is not eng and new.sentiment == eng.sentiment and new.pf is eng.pf
+
+
+def test_should_accept_replaces_invalid_champion():
+    from optimize import should_accept
+    good = {"return": 0.05, "max_drawdown": 0.04, "trades": 9}
+    assert should_accept(good, {"return": 0.08, "max_drawdown": 0.14, "trades": 12})  # campeona rompió el 10 %
+    assert should_accept(good, {"return": 0.06, "max_drawdown": 0.01, "trades": 1})   # campeona = 1 op (suerte)
+    assert not should_accept(good, {"return": 0.06, "max_drawdown": 0.02, "trades": 9})
+
+
+def test_stress_penalty_is_capped_above_hard_tiers():
+    m = {"return": -0.02, "max_drawdown": 0.05}
+    assert fitness(m, 50, 10, None, dd_p95=0.9) > fitness(m, 9, 10)  # válida > «pocas operaciones»
+
+
+def test_stress_uses_risk_actually_taken():
+    pf = Portfolio(cash=1000, fee=0.0)
+    pf.open(Position("X", 1, 100, 95, 110, 5, 0, 100, "", risk_frac=0.005))
+    t = pf.close("X", 110, 1, "objetivo")
+    assert t.r == pytest.approx(2.0) and t.equity_return == pytest.approx(0.01)
+
+
+def test_market_context_without_btc_has_no_fake_leader():
+    up = [Candle(i, 100 + i, 101 + i, 99 + i, 100 + i, 1) for i in range(220)]
+    ctx = market.market_context({"ETHUSDT": up, "SOLUSDT": up})
+    assert ctx["ETHUSDT"]["btc_gap"] is None
+    f = Features(up, "ETHUSDT")
+    f.ctx = ctx["ETHUSDT"]
+    assert agents.BtcLeaderAgent().analyze(f).value == 0
+    d = engine_mod.Decision("ETHUSDT", 0.8, 0.9, "tendencia", "k")
+    eng = Engine(Config(trend_filter=False))
+    sk = next(n for n in eng.symbol_graph.nodes if n.name == "escéptico")
+    sk.fn({"decision": d, "market": {"long_ema": None}, "candle": up[-1], "mctx": {**ctx["ETHUSDT"], "breadth": 0}})
+    assert not any("bajista" in v for v in d.vetoes)
+
+
+def test_allocation_stops_at_heat_budget_before_asking_llm():
+    calls = []
+    llm = SimpleNamespace(peer_signals=[], analyze=lambda f: calls.append(1) or agents.Signal("llm", 1, 1, ""))
+    eng = Engine(Config(max_heat=0.01, max_positions=6, risk_per_trade=0.02, max_exposure=1.0), cash=1000, llm=llm)
+    rep = engine_mod.StepReport()
+    cands = [(1.0, s, engine_mod.Decision(s, .8, .9, "tendencia", "k"), 0.7, {"features": None, "window": synthetic(30)})
+             for s in ("A", "B", "C")]
+    eng.portfolio_graph.run({"prices": {"A": 100, "B": 100, "C": 100}, "time": 0, "candidates": cands, "report": rep})
+    assert len(eng.pf.positions) == 1 and len(calls) == 1  # ATR 0,7 deja residuos de coma flotante: debe cortar igual
+    assert "límite de riesgo total alcanzado" in rep.notes
+
+
+def test_paper_slippage_never_overspends_cash():
+    eng = Engine(Config(max_positions=6, max_exposure=1.0, risk_per_trade=0.5, max_heat=1.0), cash=100.0)
+    rep = engine_mod.StepReport()
+    cands = [(1.0, "A", engine_mod.Decision("A", .8, .9, "tendencia", "k"), 1.0, {"features": None, "window": []})]
+    eng.portfolio_graph.run({"prices": {"A": 100}, "time": 0, "candidates": cands, "report": rep})
+    assert eng.pf.positions and eng.pf.cash >= -1e-9
+
+
+def test_sentiment_history_covers_the_interval(monkeypatch):
+    asked = []
+    monkeypatch.setattr(bot, "fetch_fear_greed", lambda limit: asked.append(limit) or {})
+    args = bot.parser().parse_args(["backtest", "--source", "binance", "--interval", "4h", "--limit", "3000"])
+    bot.load_sentiment(args)
+    assert asked[0] >= 500  # 3000 velas de 4 h = 500 días (antes pedía 135)

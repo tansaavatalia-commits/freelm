@@ -154,6 +154,7 @@ def _mid(s: str) -> str:
 
 # --------------------------------------------------------------------------- ejecución
 
+MIN_ORDER = 6.0  # mínimo de orden habitual en exchanges (~5 USDT) con margen
 SLIPPAGE = 0.0005  # 0,05 % por lado: deslizamiento conservador de una orden a mercado en monedas líquidas
 
 
@@ -329,7 +330,8 @@ class Engine:
                 if cfg.trend_filter and m["long_ema"] is not None and ctx["candle"].close < m["long_ema"]:
                     self._veto(d, "contra la tendencia mayor (EMA200)")
                 mc = ctx["mctx"]
-                if cfg.riskoff and mc.get("btc_gap", 0) < 0 and mc.get("breadth", 1) < cfg.riskoff_breadth:
+                gap = mc.get("btc_gap")
+                if cfg.riskoff and gap is not None and gap < 0 and mc.get("breadth", 1) < cfg.riskoff_breadth:
                     self._veto(d, f"mercado en fase bajista (amplitud {mc['breadth']:.0%})")
             ctx["skeptic"] = True
 
@@ -403,6 +405,17 @@ class Engine:
             for _, sym, d, atr, sctx in sorted(ctx["candidates"], key=lambda x: -x[0]):
                 if self.risk.can_open(self.pf):
                     break
+                price = ctx["prices"][sym]
+                # presupuesto de riesgo primero: si no cabe ni una orden mínima, no se consulta a la IA
+                heat = sum(q.qty * max(0.0, q.entry - q.stop) for q in self.pf.positions.values())
+                room = self.cfg.max_heat * ctx["equity"] - heat
+                qty = min(self.risk.size(self.pf, ctx["equity"], price, atr),
+                          max(0.0, room) / (self.risk.stop_atr * atr))
+                if qty * price < MIN_ORDER:
+                    if room < MIN_ORDER * self.risk.stop_atr * atr / price:  # el límite total ya no deja abrir nada
+                        rep.notes.append("límite de riesgo total alcanzado")
+                        break
+                    continue
                 if self.llm is not None:
                     self.llm.peer_signals = d.teams
                     s = self.llm.analyze(sctx["features"] or Features(sctx["window"], sym))
@@ -410,22 +423,15 @@ class Engine:
                         self.llm_vetoes += 1
                         d.vetoes.append(f"IA en contra: {s.reason}")
                         continue
-                price = ctx["prices"][sym]
-                qty = self.risk.size(self.pf, ctx["equity"], price, atr)
-                heat = sum(q.qty * max(0.0, q.entry - q.stop) for q in self.pf.positions.values())
-                room = self.cfg.max_heat * ctx["equity"] - heat
-                if room <= 0:
-                    rep.notes.append("límite de riesgo total alcanzado")
-                    break
-                qty = min(qty, room / (self.risk.stop_atr * atr))
-                if qty * price < 6:  # mínimo de orden habitual en exchanges (~5 USDT)
-                    continue
                 qty, fill = self.executor.buy(sym, qty, price)
-                if qty <= 0:
+                # el deslizamiento encarece la compra: nunca gastar más caja de la que hay
+                qty = min(qty, self.pf.cash / (fill * (1 + self.pf.fee)))
+                if qty <= 0 or qty * fill < MIN_ORDER:
                     continue
                 stop, target = self.risk.levels(fill, atr)
                 pos = Position(sym, qty, fill, stop, target, fill - stop, ctx["time"], fill,
-                               f"consejo {d.score:+.2f}, acuerdo {d.agreement:.0%}, {d.edge_note}")
+                               f"consejo {d.score:+.2f}, acuerdo {d.agreement:.0%}, {d.edge_note}",
+                               risk_frac=qty * (fill - stop) / ctx["equity"] if ctx["equity"] > 0 else 0.0)
                 self.pf.open(pos)
                 self.executor.protect(sym, qty, stop)
                 rep.opened.append(pos)

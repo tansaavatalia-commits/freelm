@@ -111,14 +111,16 @@ def load_sentiment(args: argparse.Namespace) -> Optional[Dict[str, int]]:
     if args.source == "synthetic" or args.no_sentiment:
         return None
     try:
-        return fetch_fear_greed(limit=max(30, args.limit // 24 + 10))
+        # días que cubren las velas pedidas en su intervalo real (1 h, 4 h, 1 d...), con margen
+        days = args.limit * 365 // PERIODS_PER_YEAR.get(args.interval, 8_760) + 10
+        return fetch_fear_greed(limit=max(30, days))
     except Exception as e:  # noqa: BLE001 - el sentimiento es opcional
         print(f"[aviso] sin Fear & Greed: {type(e).__name__}", file=sys.stderr)
         return None
 
 
-def print_stress(trades: List[ClosedTrade], risk: float) -> None:
-    st = stress_test([t.r for t in trades], risk)
+def print_stress(trades: List[ClosedTrade]) -> None:
+    st = stress_test([t.equity_return for t in trades], 1.0)
     if not st.get("paths"):
         print("  prueba de estrés: hacen falta al menos 5 operaciones")
         return
@@ -194,7 +196,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     print(f"\nAprendizaje sin operar: {split - eng.warmup} velas · validación operando en papel: {n - split} velas")
     print_result("Validación fuera de muestra", m, ts, out["buy_hold"])
     print(f"  señales procesadas: {eng.total_signals:,} a {eng.signals_per_second:,.0f}/s")
-    print_stress(eng.pf.closed, eng.cfg.risk_per_trade)
+    print_stress(eng.pf.closed)
     vetoes = sorted(eng.veto_counts.items(), key=lambda kv: -kv[1])
     print("  vetos: " + ", ".join(f"{k} {v:,}" for k, v in vetoes[:5]))
     ok_dd = m["max_drawdown"] <= 0.10
@@ -316,7 +318,7 @@ def cmd_live(args: argparse.Namespace) -> int:
     last_opt = book.get("last_optimize", "") if book else ""
     last_summary = book.get("last_summary", "") if book else ""
     tg = Notifier()
-    sent_day = time.strftime("%Y-%m-%d", time.gmtime())
+    sent_try = time.time()  # se acaba de descargar al crear el motor
     tag = "" if mode_is_paper(args) else "💶 REAL " if args.exchange == "real" else "🧪 TESTNET "
     mode = {"paper": "papel"}.get(args.exchange, args.exchange)
     print(f"Modo vivo ({eng.executor.name}): {', '.join(syms)} {args.interval}. Ctrl+C para salir.")
@@ -352,8 +354,11 @@ def cmd_live(args: argparse.Namespace) -> int:
                                       "last_time": t, "last_optimize": last_opt, "last_summary": last_summary})
                 record_equity(track_path, eq, mode)
                 day = time.strftime("%Y-%m-%d", time.gmtime())
-                if day != sent_day:  # el sentimiento es diario: refrescarlo al cambiar de día
-                    sent_day = day
+                # el índice es diario y se publica a lo largo del día: reintentar (como mucho
+                # una vez por hora) mientras falte el dato de hoy
+                if (not args.no_sentiment and day not in (eng.sentiment or {})
+                        and time.time() - sent_try > 3600):
+                    sent_try = time.time()
                     eng.sentiment = load_sentiment(args) or eng.sentiment
                 if tg.enabled and day != last_summary and time.gmtime().tm_hour >= args.summary_hour:
                     last_summary = day
@@ -413,7 +418,8 @@ def build_report(args: argparse.Namespace, markdown: bool = True) -> str:
         lines.append("- Aún sin historial en vivo.")
     closed = book.get("closed", [])
     if len(closed) >= 5:
-        st = stress_test([c["r"] for c in closed], config_for(args).risk_per_trade)
+        risk = config_for(args).risk_per_trade  # historiales antiguos sin risk_frac
+        st = stress_test([c["r"] * (c.get("risk_frac") or risk) for c in closed], 1.0)
         lines.append(f"- Prueba de estrés: caída típica {st['dd_p50']:.1%}, mala racha (peor 5 %) {st['dd_p95']:.1%}")
     if closed:
         wins = sum(1 for c in closed if c["pnl"] > 0)
@@ -443,8 +449,10 @@ def _reoptimize(args: argparse.Namespace, eng: Engine, path: str) -> Engine:
     """Ronda diaria de mejora dentro del propio bucle en vivo. Si sale una nueva
     campeona, el motor se reconstruye con ella conservando cartera y memoria."""
     print("\n[autopiloto] ronda diaria de optimización...")
+    # todas las opciones que lee cmd_optimize (live no define --workers: antes fallaba aquí cada día)
     oargs = argparse.Namespace(**{**vars(args), "source": "binance", "limit": args.optimize_limit,
-                                  "population": 16, "generations": 8, "min_trades": 10, "seed": int(time.time())})
+                                  "population": 16, "generations": 8, "min_trades": 10, "seed": int(time.time()),
+                                  "workers": getattr(args, "workers", 0)})
     try:
         cmd_optimize(oargs)
     except (Exception, SystemExit) as e:  # noqa: BLE001 - optimizar es opcional, operar no se detiene
@@ -453,7 +461,7 @@ def _reoptimize(args: argparse.Namespace, eng: Engine, path: str) -> Engine:
     cfg = config_for(args)
     if cfg == eng.cfg:
         return eng
-    new = Engine(cfg, eng.state(), cash=eng.pf.cash, executor=eng.executor, llm=eng.llm)
+    new = Engine(cfg, eng.state(), cash=eng.pf.cash, executor=eng.executor, llm=eng.llm, sentiment=eng.sentiment)
     new.pf, new.risk.peak_equity, new.risk.halted = eng.pf, eng.risk.peak_equity, eng.risk.halted
     new.risk.losing_streak, new.risk.pause_left = eng.risk.losing_streak, eng.risk.pause_left
     save_json(path, new.state())
