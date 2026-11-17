@@ -1,0 +1,69 @@
+# Investigación con DATOS REALES de mercado (Binance, API pública) en los servidores de GitHub.
+# Responde a la pregunta que importa: ¿el bot tiene ventaja fuera de muestra en el
+# mercado real, no solo con datos sintéticos? No opera ni guarda nada.
+#
+# Se ejecuta al cambiar el bot en un pull request y a mano (Actions > Run workflow).
+# Los resultados aparecen en el resumen de la ejecución.
+name: trading-research (datos reales)
+
+on:
+  pull_request:
+    paths:
+      - "examples/trading_agents/**"
+      - ".github/workflows/trading-research.yml"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Velas por moneda (1 h)"
+        default: "5000"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trading-research-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    # «shell: bash» añade -o pipefail: si el bot falla, «| tee» no lo esconde y el paso sale en rojo
+    shell: bash
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BOT: examples/trading_agents/bot.py
+      LIMIT: ${{ inputs.limit || '5000' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          activate-environment: true
+      - name: Instalar
+        run: uv pip install -e . ccxt
+      - name: "1. Backtest 1 h, configuración por defecto (100 €)"
+        run: python "$BOT" backtest --source binance --limit "$LIMIT" --cash 100 --no-memory --default-config --dir r 2>&1 | tee bt-1h.txt
+      - name: "2. Backtest 4 h, configuración por defecto (100 €)"
+        run: python "$BOT" backtest --source binance --interval 4h --limit 3000 --cash 100 --no-memory --default-config --dir r 2>&1 | tee bt-4h.txt
+      - name: "3. Ronda de optimización (1 h)"
+        run: python "$BOT" optimize --source binance --limit "$LIMIT" --cash 100 --default-config --population 16 --generations 6 --dir r 2>&1 | tee opt.txt
+      # --train 0.8 = mismo punto que el examen final del optimizador: así solo opera
+      # en velas que el optimizador NO usó para elegir la configuración
+      - name: "4. Backtest 1 h con la campeona (solo el examen final)"
+        run: python "$BOT" backtest --source binance --limit "$LIMIT" --cash 100 --no-memory --train 0.8 --dir r 2>&1 | tee bt-champ.txt
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "## Investigación con datos reales de Binance"
+            for f in bt-1h.txt bt-4h.txt opt.txt bt-champ.txt; do
+              [ -f "$f" ] || continue
+              echo "### $f"
+              echo '```'
+              grep -vE "^\s*$" "$f" | head -60
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -109,36 +109,47 @@ class Coordinator:
 
     # Versiones por índice (orden = self.agents): sin objetos Signal, para la
     # caché de señales del optimizador, que repite miles de simulaciones.
-    def combine_arrays(self, scores: Sequence[float], confs: Sequence[float], regime: str) -> Tuple[float, float]:
+    # ``values`` = score * confidence de cada agente (precalculado en la caché).
+    def combine_arrays(self, scores: Sequence[float], confs: Sequence[float], regime: str,
+                       values: Optional[Sequence[float]] = None) -> Tuple[float, float]:
         w = self.weights[regime]
         ws = [w[a] for a in self.agents]
-        num = sum(wi * s * c for wi, s, c in zip(ws, scores, confs))
-        score = max(-1.0, min(1.0, num / (sum(ws) or 1.0)))
+        if values is None:
+            values = [s * c for s, c in zip(scores, confs)]
+        num = sum([wi * v for wi, v in zip(ws, values)])
+        score = num / (sum(ws) or 1.0)
+        score = 1.0 if score > 1.0 else -1.0 if score < -1.0 else score
         if score == 0:
             return 0.0, 0.0
-        tot = agree = 0.0
-        for wi, s, c in zip(ws, scores, confs):
-            tot += wi * c
-            if s * score > 0:
-                agree += wi * c
+        wc = [wi * c for wi, c in zip(ws, confs)]
+        tot = sum(wc)
+        agree = sum([x for x, s in zip(wc, scores) if s * score > 0])
         return score, agree / (tot or 1.0)
 
     def learn_arrays(self, scores: Sequence[float], confs: Sequence[float], regime: str, ret: float,
-                     vol: float, track: bool = True) -> None:
+                     vol: float, track: bool = True, values: Optional[Sequence[float]] = None) -> None:
+        """Hedge + fixed share en una sola pasada (sin dos bucles de normalización)."""
         w = self.weights[regime]
-        for a, s, c in zip(self.agents, scores, confs):
-            reward = max(-3.0, min(3.0, s * c * ret / max(vol, 1e-4)))
-            w[a] *= math.exp(self.eta * reward)
-            if track:
+        agents = self.agents
+        if values is None:
+            values = [s * c for s, c in zip(scores, confs)]
+        m = ret / (vol if vol > 1e-4 else 1e-4)
+        eta, exp = self.eta, math.exp
+        rewards = [v * m for v in values]
+        rewards = [3.0 if r > 3.0 else -3.0 if r < -3.0 else r for r in rewards]
+        new = [w[a] * exp(eta * r) for a, r in zip(agents, rewards)]
+        n = len(new)
+        k, b = (1 - self.alpha) / (sum(new) or 1.0), self.alpha / n
+        for a, x in zip(agents, new):
+            w[a] = x * k + b
+        if track:
+            up = ret > 0
+            for a, s, c, r in zip(agents, scores, confs, rewards):
                 st = self.stats[a]
                 if c > 0 and s != 0:
                     st.n += 1
-                    st.hits += int((s > 0) == (ret > 0))
-                st.reward += reward
-        self._normalize(regime)
-        n = len(w)
-        for a in w:
-            w[a] = (1 - self.alpha) * w[a] + self.alpha / n
+                    st.hits += (s > 0) == up
+                st.reward += r
         self.updates += 1
 
     def _normalize(self, regime: str) -> None:

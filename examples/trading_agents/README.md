@@ -38,15 +38,22 @@ flowchart LR
 
 | Nodo | Qué hace |
 |---|---|
-| `observar` | 94 agentes por símbolo analizan la ventana. Con 8 monedas son ≈ 800 señales por vela, a más de 30.000 señales/segundo. |
+| `observar` | 100 agentes por símbolo analizan la ventana. Con 8 monedas son ≈ 850 señales por vela, a más de 30.000 señales/segundo. |
 | `equipo:*` | Cada equipo vota con pesos aprendidos (algoritmo *Hedge*), separados por régimen de mercado. |
-| `consejo` | Confronta a los 5 equipos, también con pesos aprendidos. |
-| `escéptico` | Veta si hay desacuerdo entre equipos, si el régimen es volátil o si habría que comprar bajo la EMA 200. |
+| `consejo` | Confronta a los 6 equipos (tendencia, reversión, flujo, volatilidad, multi-marco y mercado), también con pesos aprendidos. |
+| `escéptico` | Veta si hay desacuerdo entre equipos, si el régimen es volátil, si habría que comprar bajo la EMA 200 o si todo el mercado está en fase bajista (BTC bajo su media 200 y menos del 35 % de monedas al alza). |
 | `filtro_ventaja` | Solo deja pasar tipos de señal con ventaja neta demostrada en la sombra. |
 | `registrar_sombra` | Prueba cada señal sin dinero real, con stop, objetivo y comisiones. |
 | `gestionar_posición` | Stop, objetivo 2:1, stop a break-even tras +1R y stop dinámico. |
 | `guardián` | Interruptor por caída del 10 % y pausa tras 3 pérdidas seguidas. |
-| `asignar` | Revisión opcional de la IA (freelm), tamaño por riesgo (1 %) y orden. |
+| `asignar` | Revisión opcional de la IA (freelm), tamaño por riesgo (1 %) y orden. El riesgo total abierto (suma de distancias al stop) nunca pasa del 3 % del capital. |
+
+**Equipo «mercado»**: el único que mira todas las monedas a la vez.
+
+- **Fuerza relativa** a 1, 3 y 7 días: el momentum entre criptos es de los efectos más estudiados.
+- **Amplitud**: qué parte del mercado está al alza.
+- **BTC como guía**: su tendencia de fondo y su último día.
+- **Sentimiento**: el índice Fear & Greed (alternative.me, gratis), leído a la contra. El miedo extremo suma a favor de comprar y la codicia extrema, en contra. Solo se usa con datos reales; `--no-sentiment` lo desactiva.
 
 Los nodos se añaden o se quitan con `Graph.add` / `Graph.remove`. El orden de
 ejecución se calcula solo, a partir de lo que cada nodo necesita y produce.
@@ -56,16 +63,23 @@ ejecución se calcula solo, a partir de lo que cada nodo necesita y produce.
 Un optimizador evolutivo cruza y muta configuraciones: umbrales, riesgo, stops,
 qué equipos participan, velocidades de aprendizaje...
 
-1. Los datos se dividen en **aprender 50 %, validación 25 % y examen final 25 %**.
-2. Selecciona las configuraciones por su resultado en validación, con un
-   mínimo de operaciones y la caída limitada al 10 %.
-3. Una nueva campeona solo se acepta si **también gana en el examen final**,
+1. Los datos se dividen en **aprender 40 %, validación 40 % (en 3 tramos) y
+   examen final 20 %**.
+2. La nota premia la **constancia**: la mitad es el tramo mediano y la otra
+   mitad el **peor** tramo. Además se exige un mínimo de operaciones y la caída
+   máxima queda limitada al 10 %.
+3. **Prueba de estrés de Monte Carlo.** Las operaciones de cada configuración
+   se barajan en cientos de órdenes distintos. Si en una mala racha (el peor 5 %)
+   la caída superaría el 10 %, la configuración se penaliza.
+4. Una nueva campeona solo se acepta si **también gana en el examen final**,
    con datos que nunca vio. Esta es la defensa contra el sobreajuste.
-4. Cada ronda queda en `optimize_history.jsonl`. La campeona se guarda en
+5. Cada ronda queda en `optimize_history.jsonl`. La campeona se guarda en
    `champion.json` y la usan `backtest` y `live` automáticamente.
 
-Las señales de los agentes se guardan en caché, así que cada simulación tarda
-unos 2 segundos y una ronda completa, unos 2–4 minutos.
+**Velocidad.** Las señales de los agentes se calculan una sola vez (caché) y las
+simulaciones corren en paralelo en todos los núcleos (`--workers`). En 4
+núcleos son unas 115 configuraciones por minuto, frente a 25 antes; una ronda
+completa tarda unos 2 minutos.
 
 ## Plan de 20 días
 
@@ -196,7 +210,57 @@ engine.symbol_graph.add(Node("horario", ("skeptic",), ("horario",), solo_horario
 - [jesse](https://github.com/jesse-ai/jesse), [backtrader](https://github.com/mementum/backtrader), [Lean](https://github.com/QuantConnect/Lean): indicadores y metodología de backtest.
 - [freelm](../../README.md): el analista IA con LLM gratuitos y failover.
 
+## Resultados con datos REALES (Binance, noviembre de 2026)
+
+Workflow `trading-research.yml`: más de 200 días de velas de 1 h, 8 monedas,
+100 €, con comisiones (0,1 %) y deslizamiento (0,05 %) por lado. Solo cuenta
+el tramo fuera de muestra:
+
+| Prueba | Bot | Comprar y mantener la cesta |
+|---|---|---|
+| 1 h, configuración por defecto | 0,00 % (0 operaciones) | −21,1 % |
+| 4 h, configuración por defecto | 0,00 % (0 operaciones) | −19,8 % |
+| 1 h, configuración optimizada | +0,75 % (26 operaciones, caída 3,6 %) | −21,4 % |
+
+- El bot **protegió el capital** en un mercado que cayó un 20 %, pero **no
+  encontró una ventaja real para ganar** en ese periodo. Una vez pagados los
+  costes, casi todos los tipos de señal tuvieron esperanza negativa.
+- El único tipo con ventaja neta (+0,24 R conservadora en 76 casos) fue
+  «volátil + fuerza alta + acuerdo alto», que el veto de régimen volátil
+  bloqueaba. Ahora ese veto está desactivado por defecto y decide el calibrador.
+- En datos reales dominó la vuelta a la media. Por eso el optimizador puede
+  probar ahora objetivos desde 1:1, no solo desde 1,5:1.
+- Se corrigió un fallo del optimizador: aceptó una «campeona» que perdió un
+  0,75 % con una sola operación. Ahora una campeona debe **ganar dinero**,
+  ganar más que la anterior y hacerlo con al menos 3 operaciones en el examen final.
+
+**Segunda ronda, con esos ajustes** (mismos datos y costes):
+
+| Prueba | Bot | Comprar y mantener la cesta |
+|---|---|---|
+| 1 h, configuración por defecto | **+2,42 %** (16 operaciones, acierto 62 %, factor de beneficio 1,47, caída 2,4 %) | −21,5 % |
+| 4 h, configuración por defecto | 0,00 % (0 operaciones) | −20,0 % |
+
+- El optimizador **rechazó** esta vez una aspirante que perdía (−0,84 % con 1
+  operación): la corrección funciona.
+- **16 operaciones son pocas.** La prueba de estrés da un 31 % de
+  probabilidad de acabar en pérdidas con esas mismas operaciones. Es una
+  señal prometedora en un mercado bajista, no una ventaja demostrada. Para
+  eso están los 20 días en vivo.
+
 ## Resultados de referencia (datos sintéticos, NO reales)
+
+Mismo backtest, mismos datos sintéticos, antes y después de añadir el equipo
+«mercado», el veto de mercado bajista y el límite de riesgo total:
+
+| Escenario | Antes | Ahora |
+|---|---|---|
+| Datos con patrones (`--structure 1`) | +29,1 %, caída 4,7 %, factor de beneficio 1,81 | +36,4 %, caída 5,1 %, factor 1,88 |
+| Datos casi al azar (`--structure 0`) | +16,1 %, caída 7,3 %, factor 1,40 | +20,5 %, caída 4,3 %, factor 1,62 |
+
+`backtest` muestra ahora también la prueba de estrés: con 1 % de riesgo por
+operación, la caída en una mala racha (peor 5 %) rondaba el 11–12 %. Por eso el
+optimizador penaliza las configuraciones cuya mala racha supera el 10 %.
 
 Una ronda de `optimize` (33 simulaciones) sobre datos sintéticos con inercia
 obtuvo en el examen final **+35,7 % con una caída máxima del 3,6 %**, frente al

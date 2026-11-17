@@ -22,6 +22,9 @@ class Features:
         self.lows: List[float] = [c.low for c in candles]
         self.volumes: List[float] = [c.volume for c in candles]
         self._memo: Dict[tuple, Any] = {}
+        # contexto de todo el mercado en esta vela (lo rellena el motor): fuerza
+        # relativa entre monedas, amplitud, tendencia de BTC y sentimiento
+        self.ctx: Dict[str, Any] = {}
 
     def __len__(self) -> int:
         return len(self.closes)

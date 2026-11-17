@@ -31,7 +31,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from agents import Agent, LLMAnalystAgent, Signal, agent_swarm
 from features import Features
 from learning import Calibrator, Coordinator, bucket, detect_regime
-from market import Candle
+from market import Candle, market_context
 from risk import ClosedTrade, Portfolio, Position, RiskManager
 from teams import Team
 
@@ -47,7 +47,10 @@ class Config:
     min_agreement: float = 0.6     # acuerdo mínimo entre equipos
     min_edge: float = 0.15         # ventaja conservadora mínima (en R) exigida por el calibrador
     min_samples: int = 40          # casos en la sombra antes de confiar en un tipo de señal
-    block_volatile: bool = True
+    # Con datos reales de Binance (2026), el único tipo de señal con ventaja neta fue
+    # justo «volátil + fuerza alta + acuerdo alto». Ya no se veta el régimen volátil
+    # entero: el filtro de ventaja (calibrador) decide con evidencia en cada caso.
+    block_volatile: bool = False
     trend_filter: bool = True      # no comprar bajo la EMA 200
     risk_per_trade: float = 0.01
     stop_atr: float = 1.5
@@ -59,6 +62,9 @@ class Config:
     team_eta: float = 0.3
     council_eta: float = 0.5
     shadow_horizon: int = 48
+    riskoff: bool = True           # no comprar con BTC bajo su media 200 y poca amplitud
+    riskoff_breadth: float = 0.35
+    max_heat: float = 0.03         # riesgo total abierto (suma de distancias al stop) <= 3 % del capital
     teams: Tuple[str, ...] = ()    # vacío = todos los equipos
 
     def to_dict(self) -> dict:
@@ -148,16 +154,25 @@ def _mid(s: str) -> str:
 
 # --------------------------------------------------------------------------- ejecución
 
+MIN_ORDER = 6.0  # mínimo de orden habitual en exchanges (~5 USDT) con margen
+SLIPPAGE = 0.0005  # 0,05 % por lado: deslizamiento conservador de una orden a mercado en monedas líquidas
+
+
 class PaperExecutor:
-    """Ejecuta en papel: rellena al precio pedido. Mismo interfaz que exchange.CcxtExecutor."""
+    """Ejecuta en papel con **deslizamiento**: compra un poco más caro y vende un
+    poco más barato que el precio de referencia, como pasa con órdenes reales a
+    mercado. Mismo interfaz que exchange.CcxtExecutor."""
     name = "papel"
     real_money = False
 
+    def __init__(self, slippage: float = SLIPPAGE) -> None:
+        self.slippage = slippage
+
     def buy(self, symbol: str, qty: float, price: float) -> Tuple[float, float]:
-        return qty, price
+        return qty, price * (1 + self.slippage)
 
     def sell(self, symbol: str, qty: float, price: float) -> float:
-        return price
+        return price * (1 - self.slippage)
 
     def protect(self, symbol: str, qty: float, stop: float) -> None:
         pass
@@ -187,6 +202,7 @@ class StepReport:
     signals: int = 0
     seconds: float = 0.0
     event: Optional[str] = None
+    notes: List[str] = field(default_factory=list)
 
 
 def group_swarm(swarm: Optional[Sequence[Agent]] = None) -> Dict[str, List[Agent]]:
@@ -200,7 +216,8 @@ def group_swarm(swarm: Optional[Sequence[Agent]] = None) -> Dict[str, List[Agent
 class Engine:
     def __init__(self, cfg: Optional[Config] = None, state: Optional[dict] = None, cash: float = 10_000.0,
                  executor: Any = None, llm: Optional[LLMAnalystAgent] = None,
-                 cache: Optional[Dict[tuple, dict]] = None, swarm: Optional[Sequence[Agent]] = None) -> None:
+                 cache: Optional[Dict[tuple, dict]] = None, swarm: Optional[Sequence[Agent]] = None,
+                 sentiment: Optional[Dict[str, int]] = None) -> None:
         state = state or {}
         self.cfg = cfg or Config.from_dict(state.get("config"))
         groups = group_swarm(swarm)
@@ -213,8 +230,10 @@ class Engine:
         self.council = Coordinator.from_dict(state.get("council"), list(self.teams), eta=self.cfg.council_eta,
                                              alpha=0.03)
         self.council.eta = self.cfg.council_eta
+        # las operaciones en la sombra pagan comisión + deslizamiento, igual que las reales
         self.cal = Calibrator.from_dict(state.get("calibrator"), min_samples=self.cfg.min_samples,
-                                        min_edge=self.cfg.min_edge, horizon=self.cfg.shadow_horizon)
+                                        min_edge=self.cfg.min_edge, horizon=self.cfg.shadow_horizon,
+                                        fee=0.001 + SLIPPAGE)
         self.pf = Portfolio(cash=cash)
         self.risk = RiskManager(risk_per_trade=self.cfg.risk_per_trade, stop_atr=self.cfg.stop_atr,
                                 target_atr=self.cfg.target_atr, max_positions=self.cfg.max_positions,
@@ -223,6 +242,8 @@ class Engine:
         self.executor = executor or PaperExecutor()
         self.llm = llm
         self.cache = cache
+        self.sentiment = sentiment
+        self.track_stats = True  # el optimizador lo apaga: no necesita estadísticas por agente
         self.warmup = min(WINDOW, max(a.warmup for t in self.teams.values() for a in t.agents) + 1)
         self._pending: Dict[str, tuple] = {}
         self._last_shadow: Dict[str, int] = {}
@@ -244,8 +265,8 @@ class Engine:
             if pend:
                 obs, team_sigs, regime, prev_close, vol = pend
                 ret = math.log(ctx["candle"].close / prev_close)
-                for name, (scores, confs) in obs.items():
-                    self.teams[name].coord.learn_arrays(scores, confs, regime, ret, vol)
+                for name, o in obs.items():
+                    self.teams[name].coord.learn_arrays(o[0], o[1], regime, ret, vol, self.track_stats, o[2])
                 self.council.learn(team_sigs, regime, ret, vol)
             ctx["learned"] = True
 
@@ -261,13 +282,14 @@ class Engine:
             f = None
             if entry is None or any(t not in entry["obs"] for t in self.teams):
                 f = Features(window, sym)
+                f.ctx = ctx["mctx"]
                 entry = entry or {"regime": detect_regime(f), "atr": f.atr(14)[-1],
                                   "long_ema": f.ema(200)[-1] or f.ema(100)[-1], "vol": f.vol(), "obs": {}}
                 sigs: Dict[str, List[Signal]] = {}
                 for name, team in self.teams.items():
                     if name not in entry["obs"]:
                         scores, confs, s = team.observe(f)
-                        entry["obs"][name] = (scores, confs)
+                        entry["obs"][name] = (scores, confs, tuple(a * b for a, b in zip(scores, confs)))
                         sigs[name] = s
                 ctx["agent_signals"] = sigs
                 if self.cache is not None:
@@ -284,8 +306,8 @@ class Engine:
         for name in self.teams:
             def team_node(ctx: Dict[str, Any], name: str = name) -> None:
                 m = ctx["market"]
-                scores, confs = m["obs"][name]
-                ctx[f"team:{name}"] = self.teams[name].verdict(scores, confs, m["regime"])
+                o = m["obs"][name]
+                ctx[f"team:{name}"] = self.teams[name].verdict(o[0], o[1], m["regime"], o[2])
             g.add(Node(f"equipo:{name}", ("market", "learned"), (f"team:{name}",), team_node))
 
         def council(ctx: Dict[str, Any]) -> None:
@@ -307,6 +329,10 @@ class Engine:
                     self._veto(d, "régimen volátil")
                 if cfg.trend_filter and m["long_ema"] is not None and ctx["candle"].close < m["long_ema"]:
                     self._veto(d, "contra la tendencia mayor (EMA200)")
+                mc = ctx["mctx"]
+                gap = mc.get("btc_gap")
+                if cfg.riskoff and gap is not None and gap < 0 and mc.get("breadth", 1) < cfg.riskoff_breadth:
+                    self._veto(d, f"mercado en fase bajista (amplitud {mc['breadth']:.0%})")
             ctx["skeptic"] = True
 
         def edge_gate(ctx: Dict[str, Any]) -> None:
@@ -350,7 +376,8 @@ class Engine:
 
         g.add(Node("consejo", tuple(f"team:{n}" for n in self.teams), ("decision",), council,
                    "confronta a los equipos con pesos aprendidos"))
-        g.add(Node("escéptico", ("decision", "market"), ("skeptic",), skeptic, "veto: desacuerdo, volatilidad, EMA200"))
+        g.add(Node("escéptico", ("decision", "market"), ("skeptic",), skeptic,
+                   "veto: desacuerdo, volatilidad, EMA200, mercado bajista"))
         g.add(Node("filtro_ventaja", ("skeptic", "shadows_resolved"), ("gate",), edge_gate,
                    "solo señales con ventaja demostrada"))
         g.add(Node("registrar_sombra", ("decision", "shadows_resolved"), ("shadow",), shadow,
@@ -378,6 +405,17 @@ class Engine:
             for _, sym, d, atr, sctx in sorted(ctx["candidates"], key=lambda x: -x[0]):
                 if self.risk.can_open(self.pf):
                     break
+                price = ctx["prices"][sym]
+                # presupuesto de riesgo primero: si no cabe ni una orden mínima, no se consulta a la IA
+                heat = sum(q.qty * max(0.0, q.entry - q.stop) for q in self.pf.positions.values())
+                room = self.cfg.max_heat * ctx["equity"] - heat
+                qty = min(self.risk.size(self.pf, ctx["equity"], price, atr),
+                          max(0.0, room) / (self.risk.stop_atr * atr))
+                if qty * price < MIN_ORDER:
+                    if room < MIN_ORDER * self.risk.stop_atr * atr / price:  # el límite total ya no deja abrir nada
+                        rep.notes.append("límite de riesgo total alcanzado")
+                        break
+                    continue
                 if self.llm is not None:
                     self.llm.peer_signals = d.teams
                     s = self.llm.analyze(sctx["features"] or Features(sctx["window"], sym))
@@ -385,16 +423,15 @@ class Engine:
                         self.llm_vetoes += 1
                         d.vetoes.append(f"IA en contra: {s.reason}")
                         continue
-                price = ctx["prices"][sym]
-                qty = self.risk.size(self.pf, ctx["equity"], price, atr)
-                if qty * price < 6:  # mínimo de orden habitual en exchanges (~5 USDT)
-                    continue
                 qty, fill = self.executor.buy(sym, qty, price)
-                if qty <= 0:
+                # el deslizamiento encarece la compra: nunca gastar más caja de la que hay
+                qty = min(qty, self.pf.cash / (fill * (1 + self.pf.fee)))
+                if qty <= 0 or qty * fill < MIN_ORDER:
                     continue
                 stop, target = self.risk.levels(fill, atr)
                 pos = Position(sym, qty, fill, stop, target, fill - stop, ctx["time"], fill,
-                               f"consejo {d.score:+.2f}, acuerdo {d.agreement:.0%}, {d.edge_note}")
+                               f"consejo {d.score:+.2f}, acuerdo {d.agreement:.0%}, {d.edge_note}",
+                               risk_frac=qty * (fill - stop) / ctx["equity"] if ctx["equity"] > 0 else 0.0)
                 self.pf.open(pos)
                 self.executor.protect(sym, qty, stop)
                 rep.opened.append(pos)
@@ -423,11 +460,17 @@ class Engine:
         candidates: List[tuple] = []
         prices: Dict[str, float] = {}
         now = 0
+        t_key = ("ctx", next(iter(windows.values()))[-1].time)
+        mctx = self.cache.get(t_key) if self.cache is not None else None
+        if mctx is None:
+            mctx = market_context(windows, self.sentiment)
+            if self.cache is not None:
+                self.cache[t_key] = mctx
         for sym, window in windows.items():
             c = window[-1]
             now, prices[sym] = c.time, c.close
             ctx = {"symbol": sym, "window": window, "candle": c, "trading": trading,
-                   "candidates": candidates, "report": rep}
+                   "candidates": candidates, "report": rep, "mctx": mctx[sym]}
             self.symbol_graph.run(ctx)
             rep.decisions[sym] = ctx["decision"]
         rep.seconds = time.perf_counter() - t0
@@ -491,3 +534,34 @@ def run_backtest(engine: Engine, data: Dict[str, List[Candle]], start: int, stop
     last = {s: data[s][stop - 1].close for s in data}
     bh = sum(last[s] / first[s] - 1 for s in data) / len(data)
     return {"equity": [equity[0] if equity else engine.pf.cash] + equity, "buy_hold": bh}
+
+
+def stress_test(r_multiples: Sequence[float], risk: float, n_paths: int = 2000, horizon: Optional[int] = None,
+                seed: int = 0) -> Dict[str, float]:
+    """Prueba de estrés de Monte Carlo: baraja (con reemplazo) las operaciones
+    reales, en múltiplos de R, en miles de órdenes distintos y mide la caída
+    máxima de cada camino. Responde: «con esta forma de operar, ¿cuánto podría
+    caer en una mala racha?», no solo «cuánto cayó en este orden concreto»."""
+    import random as _r
+    rs = list(r_multiples)
+    if len(rs) < 5:
+        return {"paths": 0}
+    rng = _r.Random(seed)
+    h = horizon or len(rs)
+    dds, finals = [], []
+    for _ in range(n_paths):
+        eq = peak = 1.0
+        mdd = 0.0
+        for _ in range(h):
+            eq *= 1 + risk * rng.choice(rs)
+            if eq > peak:
+                peak = eq
+            elif 1 - eq / peak > mdd:
+                mdd = 1 - eq / peak
+        dds.append(mdd)
+        finals.append(eq - 1)
+    dds.sort()
+    finals.sort()
+    return {"paths": n_paths, "trades": h, "dd_p50": dds[n_paths // 2], "dd_p95": dds[int(n_paths * 0.95)],
+            "ret_p5": finals[int(n_paths * 0.05)], "ret_p50": finals[n_paths // 2],
+            "p_loss": sum(1 for x in finals if x < 0) / n_paths}
