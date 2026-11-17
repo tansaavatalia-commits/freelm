@@ -275,7 +275,7 @@ def test_live_once_paper_is_idempotent_per_candle(tmp_path, monkeypatch, capsys)
     """GitHub Actions runs `live --once` every hour: the same candle must not be processed twice,
     and the paper book + equity track must persist between runs."""
     series = {s: synthetic(400, seed=i) for i, s in enumerate(["BTCUSDT", "ETHUSDT"])}
-    monkeypatch.setattr(bot, "fetch_binance", lambda s, interval, limit: series[s][-limit:])
+    monkeypatch.setattr(bot, "fetch_candles", lambda s, interval, limit: series[s][-limit:])
     argv = ["live", "--once", "--symbols", "BTCUSDT,ETHUSDT", "--dir", str(tmp_path)]
     assert bot.main(argv) == 0
     assert bot.main(argv) == 0  # same candle again: skipped
@@ -287,3 +287,60 @@ def test_live_once_paper_is_idempotent_per_candle(tmp_path, monkeypatch, capsys)
         series[s] = synthetic(401, seed=list(series).index(s))
     assert bot.main(argv) == 0
     assert (tmp_path / "historial-papel.jsonl").read_text().count("\n") == 2
+
+
+# ---------------------------------------------------------------- datos, avisos, informe
+
+import market  # noqa: E402
+from notify import Notifier  # noqa: E402
+
+
+def test_fetch_candles_retries_then_falls_back(monkeypatch):
+    calls, waits = [], []
+
+    def flaky(sym, interval, limit):
+        calls.append(sym)
+        if len(calls) < 2:
+            raise ConnectionError("cortado")
+        return synthetic(5)
+
+    assert len(market.fetch_candles("BTCUSDT", primary=flaky, sleep=waits.append)) == 5
+    assert waits == [2]
+
+    def dead(*a):
+        raise ConnectionError("caído")
+
+    monkeypatch.setattr(market, "fetch_ccxt", lambda s, i, n, ex: synthetic(3) if ex == "bybit" else [])
+    assert len(market.fetch_candles("BTCUSDT", primary=dead, sleep=lambda s: None)) == 3
+    monkeypatch.setattr(market, "fetch_ccxt", lambda *a: (_ for _ in ()).throw(RuntimeError("x")))
+    with pytest.raises(RuntimeError, match="sin datos"):
+        market.fetch_candles("BTCUSDT", primary=dead, sleep=lambda s: None)
+
+
+def test_fetch_ccxt_maps_symbols_and_rows():
+    client = SimpleNamespace(fetch_ohlcv=lambda m, i, limit: [[1, 1, 2, 0.5, 1.5, None]] if m == "ETH/USDT" else [])
+    c = market.fetch_ccxt("ETHUSDT", client=client)[0]
+    assert (c.time, c.high, c.close, c.volume) == (1, 2.0, 1.5, 0.0)
+
+
+def test_notifier_is_silent_without_config_and_never_raises():
+    assert not Notifier(token="", chat_id="").send("hola")
+    sent = []
+    ok = Notifier("T", "42", http=SimpleNamespace(post=lambda url, json, timeout: sent.append((url, json)) or
+                                                    SimpleNamespace(status_code=200))).send("hola")
+    assert ok and sent[0][0].endswith("/botT/sendMessage") and sent[0][1]["chat_id"] == "42"
+
+    def boom(*a, **k):
+        raise OSError("sin red")
+
+    assert not Notifier("T", "42", http=SimpleNamespace(post=boom)).send("hola")
+
+
+def test_report_summarises_live_track(tmp_path, monkeypatch, capsys):
+    series = {s: synthetic(400, seed=i) for i, s in enumerate(["BTCUSDT", "ETHUSDT"])}
+    monkeypatch.setattr(bot, "fetch_candles", lambda s, interval, limit: series[s][-limit:])
+    bot.main(["live", "--once", "--symbols", "BTCUSDT,ETHUSDT", "--dir", str(tmp_path)])
+    capsys.readouterr()
+    assert bot.main(["report", "--dir", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "### Bot de trading (papel)" in out and "Puerta del dinero real" in out and "todavía no" in out

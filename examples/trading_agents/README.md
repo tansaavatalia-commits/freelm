@@ -86,6 +86,12 @@ python examples/trading_agents/bot.py status --source binance
 python examples/trading_agents/bot.py gate
 ```
 
+`report` imprime el mismo resumen que llega por Telegram y aparece en GitHub.
+
+**Datos robustos.** Si Binance falla, el bot reintenta 3 veces (esperando 2 y
+4 s) y después usa OKX, Bybit o Kraken vía ccxt. Un corte de red no lo deja
+ciego.
+
 `gate` solo da el visto bueno si hay **20 días en vivo**, **rendimiento
 positivo**, **caída ≤ 10 %** y **al menos 5 operaciones cerradas**.
 
@@ -103,9 +109,15 @@ Como cada ejecución empieza de cero, la memoria se guarda en la rama
 
 1. Fusiona esta rama en `main`. GitHub solo ejecuta las tareas programadas
    desde la rama por defecto.
-2. Opcional: en *Settings → Secrets → Actions*, añade `GEMINI_API_KEY` y/o
-   `GROQ_API_KEY` (gratis) para el analista IA.
-3. Ya está. En la pestaña *Actions* verás cada ejecución con el informe de `gate`.
+2. Si tu repo es un fork, entra una vez en la pestaña *Actions* y pulsa «Enable workflows».
+3. Opcional, en *Settings → Secrets and variables → Actions*:
+   - `GEMINI_API_KEY` y/o `GROQ_API_KEY` (gratis), para el analista IA;
+   - `TELEGRAM_BOT_TOKEN` y `TELEGRAM_CHAT_ID`, para recibir en el móvil cada
+     compra, cada venta, el interruptor de emergencia y un resumen diario
+     (cómo obtenerlos: `notify.py`).
+4. Ya está. En *Actions → trading-bot → cualquier ejecución* verás el informe
+   (capital, rendimiento, semanal equivalente, caída, operaciones y estado de
+   la puerta). Con *Run workflow* puedes lanzarlo a mano, con o sin optimización.
 
 Coste: unos 1.000–1.500 minutos al mes. En repositorios públicos es ilimitado;
 en privados entra en los 2.000 minutos gratuitos. GitHub puede retrasar unos

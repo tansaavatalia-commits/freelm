@@ -31,7 +31,8 @@ from agents import LLMAnalystAgent
 from engine import WINDOW, Config, Engine, metrics, run_backtest, trade_stats
 from exchange import CcxtExecutor, check_gate, load_track, record_equity
 from learning import REGIMES, Calibrator
-from market import DEFAULT_SYMBOLS, Candle, align, fetch_binance, load_csv, synthetic
+from market import DEFAULT_SYMBOLS, Candle, align, fetch_candles, load_csv, synthetic
+from notify import Notifier
 from optimize import Optimizer, load_champion, save_result
 from risk import ClosedTrade, Position
 
@@ -93,7 +94,7 @@ def load_universe(args: argparse.Namespace) -> Dict[str, List[Candle]]:
         data = {}
         for s in syms:
             try:
-                data[s] = fetch_binance(s, args.interval, args.limit)
+                data[s] = fetch_candles(s, args.interval, args.limit)
             except Exception as e:  # noqa: BLE001 - un símbolo caído no tumba el resto
                 print(f"[aviso] {s}: {type(e).__name__}: {e}", file=sys.stderr)
         return align(data)
@@ -287,11 +288,14 @@ def cmd_live(args: argparse.Namespace) -> int:
             setattr(eng.risk, k, v)
     last_seen = int(book.get("last_time", 0)) if book else 0  # no procesar dos veces la misma vela
     last_opt = book.get("last_optimize", "") if book else ""
+    last_summary = book.get("last_summary", "") if book else ""
+    tg = Notifier()
+    tag = "" if mode_is_paper(args) else "💶 REAL " if args.exchange == "real" else "🧪 TESTNET "
     mode = {"paper": "papel"}.get(args.exchange, args.exchange)
     print(f"Modo vivo ({eng.executor.name}): {', '.join(syms)} {args.interval}. Ctrl+C para salir.")
     while True:
         try:
-            data = align({s: fetch_binance(s, args.interval, WINDOW + 1)[:-1] for s in syms})  # última vela abierta
+            data = align({s: fetch_candles(s, args.interval, WINDOW + 1)[:-1] for s in syms})  # última vela abierta
             t = min(cs[-1].time for cs in data.values())
             if t > last_seen:
                 last_seen = t
@@ -305,15 +309,28 @@ def cmd_live(args: argparse.Namespace) -> int:
                     print(f"  {s:<9} [{d.regime}] consejo {d.score:+.2f} acuerdo {d.agreement:.0%}  {st}")
                 for q in rep.opened:
                     print(f"  >>> ABRE {q.symbol} a {q.entry:.4f}, stop {q.stop:.4f}, objetivo {q.target:.4f}")
+                    tg.send(f"{tag}🟢 COMPRA {q.symbol} a {q.entry:.4f}\nstop {q.stop:.4f} · objetivo {q.target:.4f}\n"
+                            f"{q.reason}")
                 for c in rep.closed:
                     print(f"  <<< CIERRA {c.symbol} a {c.exit:.4f}: {c.pnl:+.2f} ({c.r:+.2f}R, {c.why})")
+                    tg.send(f"{tag}{'✅' if c.pnl >= 0 else '🔻'} VENTA {c.symbol} a {c.exit:.4f}: {c.pnl:+.2f} "
+                            f"({c.r:+.2f}R) · {c.why}\ncapital {eq:,.2f}")
+                if rep.event == "HALT":
+                    tg.send(f"{tag}🛑 INTERRUPTOR DE EMERGENCIA: caída del 10 %. El bot deja de operar.")
                 save_json(path, eng.state())
                 save_json(book_path, {"cash": eng.pf.cash,
                                       "positions": {s: asdict(q) for s, q in eng.pf.positions.items()},
                                       "risk": {k: v for k, v in asdict(eng.risk).items()},
                                       "closed": [asdict(c) for c in eng.pf.closed[-1000:]],
-                                      "last_time": t, "last_optimize": last_opt})
+                                      "last_time": t, "last_optimize": last_opt, "last_summary": last_summary})
                 record_equity(track_path, eq, mode)
+                day = time.strftime("%Y-%m-%d", time.gmtime())
+                if tg.enabled and day != last_summary and time.gmtime().tm_hour >= args.summary_hour:
+                    last_summary = day
+                    tg.send(build_report(args, markdown=False))
+                    book_now = load_json(book_path)
+                    book_now["last_summary"] = last_summary
+                    save_json(book_path, book_now)
                 today = time.strftime("%Y-%m-%d", time.gmtime())
                 if args.auto_optimize and today != last_opt and time.gmtime().tm_hour >= args.optimize_hour:
                     last_opt = today
@@ -333,6 +350,60 @@ def cmd_live(args: argparse.Namespace) -> int:
             time.sleep(args.poll)
         except KeyboardInterrupt:
             return 0
+
+
+def mode_is_paper(args: argparse.Namespace) -> bool:
+    return args.exchange == "papel"
+
+
+def build_report(args: argparse.Namespace, markdown: bool = True) -> str:
+    """Resumen del modo en vivo: capital, rendimiento, operaciones, puerta del dinero real."""
+    book = load_json(_book_path(args))
+    track = load_track(_track_path(args))
+    paper = argparse.Namespace(**{**vars(args), "exchange": "papel"})
+    ok, notes = check_gate(load_track(_track_path(paper)), len(load_json(_book_path(paper)).get("closed", [])))
+    lines: List[str] = []
+    h = "### " if markdown else ""
+    lines.append(f"{h}Bot de trading ({args.exchange}) · {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}")
+    if len(track) >= 2:
+        eq = [r["equity"] for r in track]
+        days = (track[-1]["t"] - track[0]["t"]) / 86_400
+        ret = eq[-1] / eq[0] - 1
+        peak, mdd = eq[0], 0.0
+        for e in eq:
+            peak = max(peak, e)
+            mdd = max(mdd, 1 - e / peak)
+        day_ago = [r["equity"] for r in track if r["t"] >= track[-1]["t"] - 86_400]
+        weekly = (1 + ret) ** (7 / days) - 1 if days >= 1 and ret > -1 else 0.0
+        lines += [f"- Capital: **{eq[-1]:,.2f}** (inicio {eq[0]:,.2f}, {days:.1f} días)",
+                  f"- Rendimiento: **{ret:+.2%}** · últimas 24 h {eq[-1] / day_ago[0] - 1:+.2%} · "
+                  f"semanal equivalente {weekly:+.2%} (meta +18 %)",
+                  f"- Caída máxima: {mdd:.2%} (límite 10 %)"]
+    else:
+        lines.append("- Aún sin historial en vivo.")
+    closed = book.get("closed", [])
+    if closed:
+        wins = sum(1 for c in closed if c["pnl"] > 0)
+        lines.append(f"- Operaciones cerradas: {len(closed)} · ganadoras {wins} ({wins / len(closed):.0%}) · "
+                     f"resultado {sum(c['pnl'] for c in closed):+.2f}")
+        for c in closed[-3:]:
+            lines.append(f"  - {c['symbol']} {c['pnl']:+.2f} ({c['r']:+.2f}R, {c['why']})")
+    pos = book.get("positions", {})
+    open_txt = ", ".join(f"{s} desde {q['entry']:.4f}" for s, q in pos.items()) or "ninguna"
+    lines.append(f"- Posiciones abiertas: {open_txt}")
+    champ = load_json(p(args, "champion.json"))
+    if champ:
+        hh = champ.get("holdout", {})
+        lines.append(f"- Configuración campeona del {champ.get('date', '?')}: examen final {hh.get('return', 0):+.2%}, "
+                     f"caída {hh.get('max_drawdown', 0):.1%}")
+    lines.append(f"{h}Puerta del dinero real: {'✅ APTO' if ok else '⏳ todavía no'}")
+    lines += [f"- {n}" for n in notes]
+    return "\n".join(lines)
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    print(build_report(args, markdown=not args.plain))
+    return 0
 
 
 def _reoptimize(args: argparse.Namespace, eng: Engine, path: str) -> Engine:
@@ -431,8 +502,15 @@ def parser() -> argparse.ArgumentParser:
     lv.add_argument("--once", action="store_true", help="procesar una vela y salir (para cron)")
     lv.add_argument("--auto-optimize", action="store_true", help="una ronda de mejora al día dentro del bucle")
     lv.add_argument("--optimize-hour", type=int, default=3, help="hora UTC de la ronda diaria")
+    lv.add_argument("--summary-hour", type=int, default=7, help="hora UTC del resumen diario por Telegram")
     lv.add_argument("--optimize-limit", type=int, default=5000, help="velas por símbolo para optimizar")
     lv.set_defaults(func=cmd_live, cash=100.0)  # simular con el mismo capital que se usará de verdad
+
+    rp = sub.add_parser("report", help="resumen del modo en vivo (Markdown)")
+    common(rp, "binance")
+    rp.add_argument("--exchange", default="papel", choices=["papel", "testnet", "real"])
+    rp.add_argument("--plain", action="store_true", help="texto sin formato (para Telegram)")
+    rp.set_defaults(func=cmd_report)
 
     gt = sub.add_parser("gate", help="¿ha superado la prueba de 20 días?")
     common(gt, "binance")

@@ -14,8 +14,10 @@ from __future__ import annotations
 import csv
 import math
 import random
+import sys
+import time
 from dataclasses import dataclass
-from typing import Dict, List, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 import httpx
 
@@ -53,6 +55,49 @@ def fetch_binance(symbol: str = "BTCUSDT", interval: str = "1h", limit: int = 10
             if len(page) < params["limit"]:
                 break
     return out[-limit:]
+
+
+FALLBACK_EXCHANGES = ("okx", "bybit", "kraken")
+
+
+def fetch_ccxt(symbol: str, interval: str = "1h", limit: int = 1000, exchange_id: str = "okx",
+               client: object = None) -> List[Candle]:
+    """Velas de cualquier exchange de ccxt (datos públicos, sin claves)."""
+    if client is None:
+        import ccxt  # type: ignore[import-not-found]
+        client = getattr(ccxt, exchange_id)({"enableRateLimit": True})
+    s = symbol.upper()
+    market = s if "/" in s else f"{s[:-4]}/USDT" if s.endswith("USDT") else s
+    rows = client.fetch_ohlcv(market, interval, limit=min(limit, 1000))  # type: ignore[attr-defined]
+    return [Candle(int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5] or 0)) for r in rows]
+
+
+def fetch_candles(symbol: str, interval: str = "1h", limit: int = 1000, retries: int = 3,
+                  primary: Optional[Callable[..., List[Candle]]] = None, sleep: Callable[[float], None] = time.sleep,
+                  fallbacks: Sequence[str] = FALLBACK_EXCHANGES) -> List[Candle]:
+    """Binance con reintentos (espera 2, 4, 8 s...). Si sigue fallando y ccxt está
+    instalado, prueba otros exchanges. Un corte de red no deja al bot sin datos."""
+    primary = primary or fetch_binance
+    err: Optional[Exception] = None
+    for i in range(retries):
+        try:
+            out = primary(symbol, interval, limit)
+            if out:
+                return out
+        except Exception as e:  # noqa: BLE001 - se reintenta y se informa al final
+            err = e
+        if i < retries - 1:
+            sleep(2 ** (i + 1))
+    for ex in fallbacks:
+        try:
+            out = fetch_ccxt(symbol, interval, limit, ex)
+            if out:
+                print(f"[datos] {symbol}: Binance falló ({type(err).__name__ if err else 'vacío'}), "
+                      f"usando {ex}", file=sys.stderr)
+                return out
+        except Exception:  # noqa: BLE001 - siguiente respaldo
+            continue
+    raise RuntimeError(f"sin datos para {symbol}: {type(err).__name__ if err else 'respuesta vacía'}: {err}")
 
 
 def load_csv(path: str) -> List[Candle]:

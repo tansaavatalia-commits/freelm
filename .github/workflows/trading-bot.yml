@@ -1,10 +1,19 @@
-# Bot de trading en PAPEL sobre GitHub Actions (gratis).
-# - cada hora: procesa la última vela cerrada (live --once)
-# - cada día a las 03:xx UTC: además, una ronda de mejora automática (optimize)
-# La memoria se guarda en la rama `trading-state`.
+# Bot de trading en PAPEL sobre GitHub Actions (gratis). Nunca opera con dinero real.
 #
-# IMPORTANTE: GitHub solo ejecuta los `schedule` desde la rama por defecto (main).
-# Este workflow NUNCA opera con dinero real: para eso, ver deploy/oracle-setup.sh.
+#   cada hora (xx:07 UTC)  -> procesa la última vela de 1 h cerrada   (live --once)
+#   a las 03:07 UTC        -> además, una ronda de mejora automática  (optimize)
+#   siempre                -> informe en el resumen de la ejecución y, si está
+#                             configurado, avisos por Telegram
+#
+# La memoria (aprendizaje, campeona, cartera, historial) vive en la rama
+# `trading-state`, para que cada ejecución continúe donde lo dejó la anterior.
+#
+# GitHub solo ejecuta `schedule` desde la rama por defecto (main). En un fork,
+# activa los workflows una vez en la pestaña Actions.
+#
+# Secrets opcionales (Settings > Secrets and variables > Actions):
+#   GEMINI_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY  -> analista IA (gratis)
+#   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID                -> avisos al móvil
 name: trading-bot (papel)
 
 on:
@@ -27,33 +36,40 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     env:
-      # claves gratuitas opcionales para el analista IA (Settings > Secrets > Actions)
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       BOT: examples/trading_agents/bot.py
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
       - name: Instalar
-        run: pip install -q -e .
+        # ccxt: datos de respaldo (OKX/Bybit/Kraken) si Binance no responde
+        run: pip install -q -e . ccxt
       - name: Recuperar memoria
         run: examples/trading_agents/deploy/gh_state.sh load state
       - name: Procesar la última vela (papel)
         run: python "$BOT" live --once --dir state --exchange papel --llm
       - name: Ronda diaria de mejora
+        if: ${{ inputs.optimize || github.event_name == 'schedule' }}
         run: |
           if [ "${{ inputs.optimize }}" = "true" ] || [ "$(date -u +%H)" = "03" ]; then
             python "$BOT" optimize --source binance --limit 5000 --dir state --population 10 --generations 5
+          else
+            echo "no es la hora de la ronda diaria (03 UTC)"
           fi
       - name: Informe
+        if: always()
         run: |
+          python "$BOT" report --dir state >> "$GITHUB_STEP_SUMMARY" || true
           python "$BOT" gate --dir state || true
-          python "$BOT" status --source binance --dir state | head -20 || true
       - name: Guardar memoria
         if: always()
         run: examples/trading_agents/deploy/gh_state.sh save state
