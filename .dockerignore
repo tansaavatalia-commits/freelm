@@ -17,3 +17,6 @@ examples
 dist
 build
 *.egg-info
+# trading bot: never bake secrets or state into the image
+examples/trading_agents/deploy/bot.env
+examples/trading_agents/deploy/data

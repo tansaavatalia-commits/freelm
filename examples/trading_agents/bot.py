@@ -285,7 +285,8 @@ def cmd_live(args: argparse.Namespace) -> int:
         eng.pf.closed = [ClosedTrade(**c) for c in book.get("closed", [])]
         for k, v in book.get("risk", {}).items():
             setattr(eng.risk, k, v)
-    last_seen = 0
+    last_seen = int(book.get("last_time", 0)) if book else 0  # no procesar dos veces la misma vela
+    last_opt = book.get("last_optimize", "") if book else ""
     mode = {"paper": "papel"}.get(args.exchange, args.exchange)
     print(f"Modo vivo ({eng.executor.name}): {', '.join(syms)} {args.interval}. Ctrl+C para salir.")
     while True:
@@ -310,8 +311,16 @@ def cmd_live(args: argparse.Namespace) -> int:
                 save_json(book_path, {"cash": eng.pf.cash,
                                       "positions": {s: asdict(q) for s, q in eng.pf.positions.items()},
                                       "risk": {k: v for k, v in asdict(eng.risk).items()},
-                                      "closed": [asdict(c) for c in eng.pf.closed[-1000:]]})
+                                      "closed": [asdict(c) for c in eng.pf.closed[-1000:]],
+                                      "last_time": t, "last_optimize": last_opt})
                 record_equity(track_path, eq, mode)
+                today = time.strftime("%Y-%m-%d", time.gmtime())
+                if args.auto_optimize and today != last_opt and time.gmtime().tm_hour >= args.optimize_hour:
+                    last_opt = today
+                    eng = _reoptimize(args, eng, path)
+                    book_now = load_json(book_path)
+                    book_now["last_optimize"] = last_opt
+                    save_json(book_path, book_now)
             if args.once:
                 return 0
         except KeyboardInterrupt:
@@ -324,6 +333,28 @@ def cmd_live(args: argparse.Namespace) -> int:
             time.sleep(args.poll)
         except KeyboardInterrupt:
             return 0
+
+
+def _reoptimize(args: argparse.Namespace, eng: Engine, path: str) -> Engine:
+    """Ronda diaria de mejora dentro del propio bucle en vivo. Si sale una nueva
+    campeona, el motor se reconstruye con ella conservando cartera y memoria."""
+    print("\n[autopiloto] ronda diaria de optimización...")
+    oargs = argparse.Namespace(**{**vars(args), "source": "binance", "limit": args.optimize_limit,
+                                  "population": 10, "generations": 5, "min_trades": 10, "seed": int(time.time())})
+    try:
+        cmd_optimize(oargs)
+    except (Exception, SystemExit) as e:  # noqa: BLE001 - optimizar es opcional, operar no se detiene
+        print(f"[autopiloto] optimización omitida: {type(e).__name__}: {e}", file=sys.stderr)
+        return eng
+    cfg = config_for(args)
+    if cfg == eng.cfg:
+        return eng
+    new = Engine(cfg, eng.state(), cash=eng.pf.cash, executor=eng.executor, llm=eng.llm)
+    new.pf, new.risk.peak_equity, new.risk.halted = eng.pf, eng.risk.peak_equity, eng.risk.halted
+    new.risk.losing_streak, new.risk.pause_left = eng.risk.losing_streak, eng.risk.pause_left
+    save_json(path, new.state())
+    print("[autopiloto] nueva campeona activada")
+    return new
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -398,6 +429,9 @@ def parser() -> argparse.ArgumentParser:
     lv.add_argument("--confirm-real-money", action="store_true")
     lv.add_argument("--poll", type=float, default=60.0)
     lv.add_argument("--once", action="store_true", help="procesar una vela y salir (para cron)")
+    lv.add_argument("--auto-optimize", action="store_true", help="una ronda de mejora al día dentro del bucle")
+    lv.add_argument("--optimize-hour", type=int, default=3, help="hora UTC de la ronda diaria")
+    lv.add_argument("--optimize-limit", type=int, default=5000, help="velas por símbolo para optimizar")
     lv.set_defaults(func=cmd_live, cash=100.0)  # simular con el mismo capital que se usará de verdad
 
     gt = sub.add_parser("gate", help="¿ha superado la prueba de 20 días?")

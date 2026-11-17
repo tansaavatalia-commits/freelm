@@ -89,6 +89,49 @@ python examples/trading_agents/bot.py gate
 `gate` solo da el visto bueno si hay **20 días en vivo**, **rendimiento
 positivo**, **caída ≤ 10 %** y **al menos 5 operaciones cerradas**.
 
+## Servidor gratuito
+
+### Fase 1, los 20 días en papel: GitHub Actions (0 €, sin servidor)
+
+El workflow `.github/workflows/trading-bot.yml` hace dos cosas:
+
+- **cada hora** procesa la última vela;
+- **cada día a las 03:00 UTC** hace además una ronda de mejora.
+
+Como cada ejecución empieza de cero, la memoria se guarda en la rama
+`trading-state` (`deploy/gh_state.sh`).
+
+1. Fusiona esta rama en `main`. GitHub solo ejecuta las tareas programadas
+   desde la rama por defecto.
+2. Opcional: en *Settings → Secrets → Actions*, añade `GEMINI_API_KEY` y/o
+   `GROQ_API_KEY` (gratis) para el analista IA.
+3. Ya está. En la pestaña *Actions* verás cada ejecución con el informe de `gate`.
+
+Coste: unos 1.000–1.500 minutos al mes. En repositorios públicos es ilimitado;
+en privados entra en los 2.000 minutos gratuitos. GitHub puede retrasar unos
+minutos las tareas programadas, y no pasa nada. Este workflow **nunca** opera
+con dinero real.
+
+### Fase 2, dinero real: Oracle Cloud Always Free (0 €, 24/7)
+
+Para dinero real hace falta un servidor fijo:
+
+- los servidores de GitHub están en EE. UU., donde Binance no permite operar;
+- las claves de trading no deben estar en un servicio compartido.
+
+Oracle regala para siempre una máquina ARM (hasta 4 núcleos y 24 GB) en
+regiones europeas como Madrid o Frankfurt.
+
+1. Crea la cuenta en oracle.com/cloud/free. Piden tarjeta solo para verificar;
+   las máquinas «Always Free» no cobran.
+2. Crea una instancia **Ubuntu, forma VM.Standard.A1.Flex (Always Free)** en tu región.
+3. Por SSH:
+   `git clone -b claude/intelligent-multi-agent-bot-79boq0 https://github.com/TU_USUARIO/freelm.git && bash freelm/examples/trading_agents/deploy/oracle-setup.sh`
+4. Pon tus claves en `deploy/bot.env` (plantilla: `bot.env.example`).
+   Restringe la clave del exchange a la IP del servidor.
+5. Cuando `gate` diga APTO, cambia la línea `command:` de `docker-compose.yml`
+   a la versión «real» y ejecuta `sudo docker compose up -d`.
+
 ## Paso a dinero real (solo si `gate` dice APTO)
 
 1. **Exchange.** Binance por defecto. Con ccxt, Kraken o Bitvavo (reguladas en

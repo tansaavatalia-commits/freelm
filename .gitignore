@@ -14,3 +14,7 @@ venv/
 *.log
 .coverage
 htmlcov/
+
+# trading bot deploy secrets/state
+examples/trading_agents/deploy/bot.env
+examples/trading_agents/deploy/data/

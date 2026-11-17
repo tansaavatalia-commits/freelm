@@ -269,3 +269,21 @@ def test_live_real_money_is_blocked_without_track_record(tmp_path, capsys):
     rc = bot.main(["live", "--exchange", "real", "--confirm-real-money", "--dir", str(tmp_path), "--once"])
     assert rc == 2 and "BLOQUEADO" in capsys.readouterr().out
     assert bot.main(["gate", "--dir", str(tmp_path)]) == 1
+
+
+def test_live_once_paper_is_idempotent_per_candle(tmp_path, monkeypatch, capsys):
+    """GitHub Actions runs `live --once` every hour: the same candle must not be processed twice,
+    and the paper book + equity track must persist between runs."""
+    series = {s: synthetic(400, seed=i) for i, s in enumerate(["BTCUSDT", "ETHUSDT"])}
+    monkeypatch.setattr(bot, "fetch_binance", lambda s, interval, limit: series[s][-limit:])
+    argv = ["live", "--once", "--symbols", "BTCUSDT,ETHUSDT", "--dir", str(tmp_path)]
+    assert bot.main(argv) == 0
+    assert bot.main(argv) == 0  # same candle again: skipped
+    book = bot.load_json(str(tmp_path / "cartera-papel.json"))
+    assert book["cash"] == pytest.approx(100.0) or book["positions"]  # 100 simulated, like the real plan
+    assert book["last_time"] == series["BTCUSDT"][-2].time
+    assert (tmp_path / "historial-papel.jsonl").read_text().count("\n") == 1
+    for s in series:  # a new candle arrives
+        series[s] = synthetic(401, seed=list(series).index(s))
+    assert bot.main(argv) == 0
+    assert (tmp_path / "historial-papel.jsonl").read_text().count("\n") == 2
