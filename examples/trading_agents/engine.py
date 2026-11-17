@@ -151,16 +151,24 @@ def _mid(s: str) -> str:
 
 # --------------------------------------------------------------------------- ejecución
 
+SLIPPAGE = 0.0005  # 0,05 % por lado: deslizamiento conservador de una orden a mercado en monedas líquidas
+
+
 class PaperExecutor:
-    """Ejecuta en papel: rellena al precio pedido. Mismo interfaz que exchange.CcxtExecutor."""
+    """Ejecuta en papel con **deslizamiento**: compra un poco más caro y vende un
+    poco más barato que el precio de referencia, como pasa con órdenes reales a
+    mercado. Mismo interfaz que exchange.CcxtExecutor."""
     name = "papel"
     real_money = False
 
+    def __init__(self, slippage: float = SLIPPAGE) -> None:
+        self.slippage = slippage
+
     def buy(self, symbol: str, qty: float, price: float) -> Tuple[float, float]:
-        return qty, price
+        return qty, price * (1 + self.slippage)
 
     def sell(self, symbol: str, qty: float, price: float) -> float:
-        return price
+        return price * (1 - self.slippage)
 
     def protect(self, symbol: str, qty: float, stop: float) -> None:
         pass
@@ -218,8 +226,10 @@ class Engine:
         self.council = Coordinator.from_dict(state.get("council"), list(self.teams), eta=self.cfg.council_eta,
                                              alpha=0.03)
         self.council.eta = self.cfg.council_eta
+        # las operaciones en la sombra pagan comisión + deslizamiento, igual que las reales
         self.cal = Calibrator.from_dict(state.get("calibrator"), min_samples=self.cfg.min_samples,
-                                        min_edge=self.cfg.min_edge, horizon=self.cfg.shadow_horizon)
+                                        min_edge=self.cfg.min_edge, horizon=self.cfg.shadow_horizon,
+                                        fee=0.001 + SLIPPAGE)
         self.pf = Portfolio(cash=cash)
         self.risk = RiskManager(risk_per_trade=self.cfg.risk_per_trade, stop_atr=self.cfg.stop_atr,
                                 target_atr=self.cfg.target_atr, max_positions=self.cfg.max_positions,
