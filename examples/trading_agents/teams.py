@@ -25,6 +25,7 @@ class Team:
         sigs = [a.analyze(f) for a in self.agents]
         return tuple(s.score for s in sigs), tuple(s.confidence for s in sigs), sigs
 
-    def verdict(self, scores: Sequence[float], confs: Sequence[float], regime: str) -> Signal:
-        score, agree = self.coord.combine_arrays(scores, confs, regime)
+    def verdict(self, scores: Sequence[float], confs: Sequence[float], regime: str,
+                values: Optional[Sequence[float]] = None) -> Signal:
+        score, agree = self.coord.combine_arrays(scores, confs, regime, values)
         return Signal(self.name, score, agree, f"{len(scores)} agentes, acuerdo {agree:.0%}")

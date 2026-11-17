@@ -1,4 +1,4 @@
-"""Los agentes: un enjambre de ~100 especialistas por símbolo, en 6 equipos.
+"""Los agentes: un enjambre de ~100 especialistas por símbolo, en 7 equipos.
 
 Cada agente mira la misma ventana (vía ``Features``, con caché) y emite una
 ``Signal``:
@@ -18,6 +18,7 @@ ponen a competir y el aprendizaje decide.
     flujo          OBV, rupturas Donchian ("tortugas"), momentum ROC
     volatilidad    compresión/expansión de bandas ("squeeze"), ATR
     multi-marco    tendencia en marcos temporales 4x-24x mayores
+    mercado        fuerza relativa entre monedas, amplitud, BTC líder, sentimiento
     ia             analista LLM gratuito vía freelm (opcional)
 """
 from __future__ import annotations
@@ -290,6 +291,61 @@ class MtfTrendAgent(Agent):
                       f"marco {self.k}x: EMA{self.fast} {'>' if gap > 0 else '<'} EMA{self.slow}")
 
 
+# ------------------------------------------------------------------ mercado (todas las monedas a la vez)
+
+class RelStrengthAgent(Agent):
+    """Momentum transversal: comprar las monedas que mejor lo hacen frente al
+    resto. Es de los efectos más estudiados y persistentes en cripto."""
+    team = "mercado"
+
+    def __init__(self, lookback: int = 72) -> None:
+        self.lb = lookback
+        self.name, self.warmup = f"fuerza_rel_{lookback}", lookback + 2
+
+    def analyze(self, f: Features) -> Signal:
+        r = (f.ctx.get("rank") or {}).get(self.lb)
+        if r is None or f.ctx.get("n", 1) < 3:
+            return _neutral(self.name, "universo demasiado pequeño")
+        return Signal(self.name, _clip((r - 0.5) * 2), 0.4 + abs(r - 0.5),
+                      f"puesto {r:.0%} de {f.ctx['n']} a {self.lb} velas")
+
+
+class BreadthAgent(Agent):
+    """Amplitud: cuando casi todo el mercado sube, las compras salen mejor."""
+    team, name, warmup = "mercado", "amplitud", 52
+
+    def analyze(self, f: Features) -> Signal:
+        b = f.ctx.get("breadth")
+        if b is None:
+            return _neutral(self.name)
+        return Signal(self.name, _clip((b - 0.5) * 2.5), 0.3 + abs(b - 0.5), f"{b:.0%} de monedas sobre su media 50")
+
+
+class BtcLeaderAgent(Agent):
+    """BTC arrastra al resto: su tendencia de fondo y su último día."""
+    team, name, warmup = "mercado", "btc_lider", 202
+
+    def analyze(self, f: Features) -> Signal:
+        g, r = f.ctx.get("btc_gap"), f.ctx.get("btc_ret24")
+        if g is None:
+            return _neutral(self.name)
+        score = _clip(g * 15 + (r or 0) * 10)
+        return Signal(self.name, score, min(1.0, 0.3 + abs(g) * 8), f"BTC {g:+.1%} vs media 200, 24 h {r or 0:+.1%}")
+
+
+class SentimentAgent(Agent):
+    """Contrarian con el Fear & Greed: el miedo extremo suele ser buena compra y
+    la codicia extrema, mal momento para entrar."""
+    team, name, warmup = "mercado", "sentimiento", 2
+
+    def analyze(self, f: Features) -> Signal:
+        v = f.ctx.get("fng")
+        if v is None:
+            return _neutral(self.name, "sin dato de sentimiento")
+        extreme = v <= 25 or v >= 75
+        return Signal(self.name, _clip((50 - v) / 40), 0.6 if extreme else 0.15, f"Fear & Greed {v}")
+
+
 # ------------------------------------------------------------------ ia
 
 _JSON = re.compile(r"\{.*\}", re.S)
@@ -376,6 +432,8 @@ def agent_swarm() -> List[Agent]:
     for k in (2, 4, 6, 12, 24):
         for fa, sl in ((3, 8), (5, 15)):
             out.append(MtfTrendAgent(k, fa, sl))
+    out += [RelStrengthAgent(lb) for lb in (24, 72, 168)]
+    out += [BreadthAgent(), BtcLeaderAgent(), SentimentAgent()]
     return out
 
 

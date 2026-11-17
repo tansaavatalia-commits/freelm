@@ -61,7 +61,7 @@ jobs:
         if: ${{ inputs.optimize || github.event_name == 'schedule' }}
         run: |
           if [ "${{ inputs.optimize }}" = "true" ] || [ "$(date -u +%H)" = "03" ]; then
-            python "$BOT" optimize --source binance --limit 5000 --dir state --population 10 --generations 5
+            python "$BOT" optimize --source binance --limit 5000 --dir state --population 16 --generations 8
           else
             echo "no es la hora de la ronda diaria (03 UTC)"
           fi

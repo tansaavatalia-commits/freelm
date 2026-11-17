@@ -100,6 +100,51 @@ def fetch_candles(symbol: str, interval: str = "1h", limit: int = 1000, retries:
     raise RuntimeError(f"sin datos para {symbol}: {type(err).__name__ if err else 'respuesta vacía'}: {err}")
 
 
+FNG_URL = "https://api.alternative.me/fng/"
+
+
+def fetch_fear_greed(limit: int = 400, timeout: float = 15) -> Dict[str, int]:
+    """Índice Fear & Greed diario de cripto (alternative.me, gratis, sin clave).
+    Devuelve {"YYYY-MM-DD": 0..100}; 0 = miedo extremo, 100 = codicia extrema."""
+    r = httpx.get(FNG_URL, params={"limit": limit, "format": "json"}, timeout=timeout)
+    r.raise_for_status()
+    out = {}
+    for row in r.json().get("data", []):
+        day = time.strftime("%Y-%m-%d", time.gmtime(int(row["timestamp"])))
+        out[day] = int(row["value"])
+    return out
+
+
+def market_context(windows: Dict[str, Sequence[Candle]], sentiment: Optional[Dict[str, int]] = None,
+                   leader: str = "BTCUSDT") -> Dict[str, Dict[str, object]]:
+    """Lo que solo se ve mirando TODAS las monedas a la vez, para cada símbolo:
+
+    - ``rank``: percentil (0..1) de su rendimiento a 24/72/168 velas frente al resto
+    - ``breadth``: fracción de monedas por encima de su media de 50 velas
+    - ``btc_gap`` / ``btc_ret24``: BTC frente a su media de 200 y su último día
+    - ``fng``: Fear & Greed del día (si está disponible)
+    """
+    syms = list(windows)
+    closes = {s: [c.close for c in w] for s, w in windows.items()}
+    ranks: Dict[str, Dict[int, float]] = {s: {} for s in syms}
+    for lb in (24, 72, 168):
+        rets = {s: cs[-1] / cs[-lb - 1] - 1 for s, cs in closes.items() if len(cs) > lb}
+        if len(rets) >= 2:
+            order = sorted(rets, key=lambda s: rets[s])
+            for i, s in enumerate(order):
+                ranks[s][lb] = i / (len(order) - 1)
+    above = [cs[-1] > sum(cs[-50:]) / len(cs[-50:]) for cs in closes.values() if len(cs) >= 50]
+    breadth = sum(above) / len(above) if above else 0.5
+    lead = leader if leader in closes else syms[0]
+    lc = closes[lead]
+    btc_gap = lc[-1] / (sum(lc[-200:]) / len(lc[-200:])) - 1 if len(lc) >= 200 else 0.0
+    btc_ret24 = lc[-1] / lc[-25] - 1 if len(lc) > 24 else 0.0
+    day = time.strftime("%Y-%m-%d", time.gmtime(windows[lead][-1].time / 1000))
+    fng = (sentiment or {}).get(day)
+    return {s: {"rank": ranks[s], "breadth": breadth, "btc_gap": btc_gap, "btc_ret24": btc_ret24, "fng": fng,
+                "n": len(syms)} for s in syms}
+
+
 def load_csv(path: str) -> List[Candle]:
     with open(path, newline="") as fh:
         return [Candle(int(float(row["time"])), float(row["open"]), float(row["high"]), float(row["low"]),

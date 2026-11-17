@@ -344,3 +344,87 @@ def test_report_summarises_live_track(tmp_path, monkeypatch, capsys):
     assert bot.main(["report", "--dir", str(tmp_path)]) == 0
     out = capsys.readouterr().out
     assert "### Bot de trading (papel)" in out and "Puerta del dinero real" in out and "todavía no" in out
+
+
+# ---------------------------------------------------------------- equipo mercado, riesgo, optimizador, estrés
+
+import engine as engine_mod  # noqa: E402
+from engine import stress_test  # noqa: E402
+from optimize import fold_returns  # noqa: E402
+
+
+def test_fast_learning_matches_reference_hedge():
+    names = ["a", "b", "c"]
+    ref, fast = Coordinator(names, eta=0.4, alpha=0.05), Coordinator(names, eta=0.4, alpha=0.05)
+    scores, confs = (0.9, -0.5, 0.2), (1.0, 0.6, 0.3)
+    for ret in (0.01, -0.02, 0.005, 0.03):
+        ref.learn([agents.Signal(n, s, c, "") for n, s, c in zip(names, scores, confs)], "lateral", ret, 0.01)
+        fast.learn_arrays(scores, confs, "lateral", ret, 0.01)
+    for n in names:
+        assert fast.weights["lateral"][n] == pytest.approx(ref.weights["lateral"][n])
+        assert fast.stats[n].n == ref.stats[n].n and fast.stats[n].hits == ref.stats[n].hits
+    sig = [agents.Signal(n, s, c, "") for n, s, c in zip(names, scores, confs)]
+    assert fast.combine_arrays(scores, confs, "lateral") == pytest.approx(ref.combine(sig, "lateral"))
+
+
+def test_market_context_ranks_breadth_and_leader():
+    up = [Candle(i, 100 + i, 101 + i, 99 + i, 100 + i, 1) for i in range(220)]
+    down = [Candle(i, 300 - i, 301 - i, 299 - i, 300 - i, 1) for i in range(220)]
+    flat = [Candle(i, 100, 101, 99, 100, 1) for i in range(220)]
+    ctx = market.market_context({"BTCUSDT": up, "ETHUSDT": down, "SOLUSDT": flat}, {"1970-01-01": 12})
+    assert ctx["BTCUSDT"]["rank"][24] == 1.0 and ctx["ETHUSDT"]["rank"][24] == 0.0
+    assert ctx["SOLUSDT"]["breadth"] == pytest.approx(1 / 3) and ctx["BTCUSDT"]["btc_gap"] > 0
+    assert ctx["ETHUSDT"]["fng"] == 12
+    f = Features(down, "ETHUSDT")
+    f.ctx = ctx["ETHUSDT"]
+    assert agents.RelStrengthAgent(72).analyze(f).score == -1.0
+    assert agents.SentimentAgent().analyze(f).score > 0.9  # miedo extremo -> sesgo comprador
+    assert agents.BtcLeaderAgent().analyze(f).score > 0
+    assert agents.SentimentAgent().analyze(Features(down)).value == 0  # sin dato: neutral
+
+
+def test_riskoff_veto_and_heat_cap():
+    d = engine_mod.Decision("X", 0.8, 0.9, "tendencia", "k")
+    eng = Engine(Config(min_samples=1, min_edge=-9, trend_filter=False))
+    ctx = {"decision": d, "market": {"long_ema": None}, "candle": synthetic(1)[0],
+           "mctx": {"btc_gap": -0.1, "breadth": 0.1}}
+    next(n for n in eng.symbol_graph.nodes if n.name == "escéptico").fn(ctx)
+    assert any("fase bajista" in v for v in d.vetoes)
+    # límite de riesgo total: con 3 % y 1,5 ATR, no se abre más allá del presupuesto
+    eng2 = Engine(Config(max_heat=0.01, max_positions=6, risk_per_trade=0.02, max_exposure=1.0), cash=1000)
+    rep = engine_mod.StepReport()
+    cands = [(1.0, s, engine_mod.Decision(s, .8, .9, "tendencia", "k"), 1.0, {"features": None, "window": []})
+             for s in ("A", "B", "C")]
+    eng2.portfolio_graph.run({"prices": {"A": 100, "B": 100, "C": 100}, "time": 0, "candidates": cands, "report": rep})
+    heat = sum(p.qty * (p.entry - p.stop) for p in eng2.pf.positions.values())
+    assert heat <= 0.01 * 1000 + 1e-6 and "límite de riesgo total alcanzado" in rep.notes
+
+
+def test_fold_fitness_rewards_consistency():
+    assert fold_returns([100, 110, 121, 133.1]) == pytest.approx([0.1, 0.1, 0.1])
+    m = {"return": 0.3, "max_drawdown": 0.05}
+    steady = fitness(m, 50, 10, [0.1, 0.1, 0.1])
+    lucky = fitness(m, 50, 10, [0.5, -0.1, 0.0])
+    assert steady > lucky
+
+
+def test_parallel_evaluation_matches_serial():
+    data = {s: synthetic(760, seed=i, structure=1.0) for i, s in enumerate(["A", "B", "C"])}
+    opt = Optimizer(data, seed=1, min_trades=1, log=lambda m: None, workers=2)
+    cfgs = [Config(), Config(enter=0.25, min_agreement=0.7)]
+    par = opt.evaluate_many(cfgs)
+    ser = [opt.evaluate(c) for c in cfgs]
+    assert [round(r["return"], 9) for r in par] == [round(r["return"], 9) for r in ser]
+
+
+def test_stress_test_bounds():
+    st = stress_test([2, -1, -1, 2, -1, 2, -1, 2], risk=0.01, n_paths=500)
+    assert 0 < st["dd_p50"] <= st["dd_p95"] < 0.2 and 0 <= st["p_loss"] <= 1
+    assert stress_test([1, 2], 0.01) == {"paths": 0}
+    assert stress_test([-1] * 10, 0.01, n_paths=50)["p_loss"] == 1.0
+
+
+def test_fitness_penalises_bad_streak_risk():
+    m = {"return": 0.2, "max_drawdown": 0.05}
+    assert fitness(m, 50, 10, None, dd_p95=0.08) == pytest.approx(0.2)
+    assert fitness(m, 50, 10, None, dd_p95=0.15) == pytest.approx(0.2 - 2 * 0.05)
