@@ -47,7 +47,10 @@ class Config:
     min_agreement: float = 0.6     # acuerdo mínimo entre equipos
     min_edge: float = 0.15         # ventaja conservadora mínima (en R) exigida por el calibrador
     min_samples: int = 40          # casos en la sombra antes de confiar en un tipo de señal
-    block_volatile: bool = True
+    # Con datos reales de Binance (2026), el único tipo de señal con ventaja neta fue
+    # justo «volátil + fuerza alta + acuerdo alto». Ya no se veta el régimen volátil
+    # entero: el filtro de ventaja (calibrador) decide con evidencia en cada caso.
+    block_volatile: bool = False
     trend_filter: bool = True      # no comprar bajo la EMA 200
     risk_per_trade: float = 0.01
     stop_atr: float = 1.5

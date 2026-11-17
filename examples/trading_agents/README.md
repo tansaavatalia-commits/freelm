@@ -210,6 +210,30 @@ engine.symbol_graph.add(Node("horario", ("skeptic",), ("horario",), solo_horario
 - [jesse](https://github.com/jesse-ai/jesse), [backtrader](https://github.com/mementum/backtrader), [Lean](https://github.com/QuantConnect/Lean): indicadores y metodología de backtest.
 - [freelm](../../README.md): el analista IA con LLM gratuitos y failover.
 
+## Resultados con datos REALES (Binance, noviembre de 2026)
+
+Workflow `trading-research.yml`: más de 200 días de velas de 1 h, 8 monedas,
+100 €, con comisiones (0,1 %) y deslizamiento (0,05 %) por lado. Solo cuenta
+el tramo fuera de muestra:
+
+| Prueba | Bot | Comprar y mantener la cesta |
+|---|---|---|
+| 1 h, configuración por defecto | 0,00 % (0 operaciones) | −21,1 % |
+| 4 h, configuración por defecto | 0,00 % (0 operaciones) | −19,8 % |
+| 1 h, configuración optimizada | +0,75 % (26 operaciones, caída 3,6 %) | −21,4 % |
+
+- El bot **protegió el capital** en un mercado que cayó un 20 %, pero **no
+  encontró una ventaja real para ganar** en ese periodo. Una vez pagados los
+  costes, casi todos los tipos de señal tuvieron esperanza negativa.
+- El único tipo con ventaja neta (+0,24 R conservadora en 76 casos) fue
+  «volátil + fuerza alta + acuerdo alto», que el veto de régimen volátil
+  bloqueaba. Ahora ese veto está desactivado por defecto y decide el calibrador.
+- En datos reales dominó la vuelta a la media. Por eso el optimizador puede
+  probar ahora objetivos desde 1:1, no solo desde 1,5:1.
+- Se corrigió un fallo del optimizador: aceptó una «campeona» que perdió un
+  0,75 % con una sola operación. Ahora una campeona debe **ganar dinero**,
+  ganar más que la anterior y hacerlo con al menos 3 operaciones en el examen final.
+
 ## Resultados de referencia (datos sintéticos, NO reales)
 
 Mismo backtest, mismos datos sintéticos, antes y después de añadir el equipo

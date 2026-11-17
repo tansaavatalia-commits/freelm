@@ -174,7 +174,7 @@ def test_config_roundtrip_and_mutation_respects_limits():
     rng = random.Random(1)
     for _ in range(50):
         m = mutate(c, rng, ["tendencia", "reversión", "flujo"], rate=1.0)
-        assert m.max_drawdown == MAX_DD and m.target_atr >= 1.5 * m.stop_atr and 1 <= m.max_positions <= 6
+        assert m.max_drawdown == MAX_DD and m.target_atr >= m.stop_atr and 1 <= m.max_positions <= 6
         assert not m.teams or len(m.teams) >= 2
 
 
@@ -428,3 +428,14 @@ def test_fitness_penalises_bad_streak_risk():
     m = {"return": 0.2, "max_drawdown": 0.05}
     assert fitness(m, 50, 10, None, dd_p95=0.08) == pytest.approx(0.2)
     assert fitness(m, 50, 10, None, dd_p95=0.15) == pytest.approx(0.2 - 2 * 0.05)
+
+
+def test_champion_needs_real_profit_on_holdout():
+    from optimize import should_accept
+    base = {"return": 0.0, "max_drawdown": 0.0, "trades": 0}
+    # caso real de la investigación: -0,75 % con 1 operación NO debe ser «nueva campeona»
+    assert not should_accept({"return": -0.0075, "max_drawdown": 0.012, "trades": 1}, base)
+    assert not should_accept({"return": 0.05, "max_drawdown": 0.02, "trades": 1}, base)      # 1 op = suerte
+    assert not should_accept({"return": 0.05, "max_drawdown": 0.12, "trades": 9}, base)      # caída > 10 %
+    assert not should_accept({"return": 0.02, "max_drawdown": 0.02, "trades": 9}, {**base, "return": 0.03})
+    assert should_accept({"return": 0.02, "max_drawdown": 0.02, "trades": 9}, base)

@@ -41,7 +41,7 @@ MAX_DD = 0.10
 BOUNDS: Dict[str, Tuple[float, float]] = {
     "enter": (0.05, 0.40), "min_agreement": (0.50, 0.90), "min_edge": (0.0, 0.50),
     "min_samples": (15, 120), "risk_per_trade": (0.003, 0.02), "stop_atr": (1.0, 3.0),
-    "target_atr": (1.5, 8.0), "max_positions": (1, 6), "max_exposure": (0.15, 0.50),
+    "target_atr": (1.0, 8.0), "max_positions": (1, 6), "max_exposure": (0.15, 0.50),
     "exit_score": (-0.6, 0.0), "team_eta": (0.05, 1.0), "council_eta": (0.05, 1.0),
     "shadow_horizon": (12, 96), "riskoff_breadth": (0.2, 0.5), "max_heat": (0.01, 0.06),
 }
@@ -55,7 +55,7 @@ def _fix(cfg: Config) -> Config:
     for k, (lo, hi) in BOUNDS.items():
         v = min(hi, max(lo, getattr(cfg, k)))
         kw[k] = int(round(v)) if k in INTS else round(v, 4)
-    kw["target_atr"] = max(kw["target_atr"], 1.5 * kw["stop_atr"])  # beneficio/riesgo >= 1.5
+    kw["target_atr"] = max(kw["target_atr"], 1.0 * kw["stop_atr"])  # beneficio/riesgo >= 1:1
     return replace(cfg, **kw, max_drawdown=MAX_DD)
 
 
@@ -102,6 +102,18 @@ def fold_returns(equity: List[float], k: int = FOLDS) -> List[float]:
         return [equity[-1] / equity[0] - 1]
     cuts = [round(i * n / k) for i in range(k + 1)]
     return [equity[cuts[i + 1]] / equity[cuts[i]] - 1 for i in range(k)]
+
+
+MIN_HOLDOUT_TRADES = 3
+
+
+def should_accept(cand: dict, champ: dict) -> bool:
+    """Una aspirante sustituye a la campeona solo si, en el examen final (datos
+    nunca vistos): GANA dinero, gana más que la campeona, respeta la caída
+    máxima y lo hace con al menos 3 operaciones. Perder menos no es ganar; una
+    sola operación es suerte, no evidencia."""
+    return (cand["max_drawdown"] <= MAX_DD and cand["trades"] >= MIN_HOLDOUT_TRADES
+            and cand["return"] > max(0.0, champ["return"]))
 
 
 _WORKER: Optional["Optimizer"] = None
@@ -209,8 +221,7 @@ class Optimizer:
         # examen final: el mejor de validación contra la campeona actual, en datos nunca vistos
         cand_cfg, cand_val = scored[0][1], scored[0][2]
         cand_test, champ_test = self.evaluate(cand_cfg, holdout=True), self.evaluate(base, holdout=True)
-        accepted = (cand_test["max_drawdown"] <= MAX_DD and cand_test["fitness"] > champ_test["fitness"]
-                    and cand_cfg != base)
+        accepted = cand_cfg != base and should_accept(cand_test, champ_test)
         return {"accepted": accepted, "candidate": cand_cfg, "candidate_val": cand_val,
                 "candidate_test": cand_test, "champion": base, "champion_test": champ_test,
                 "evals": self.evals, "seconds": time.time() - t0,
