@@ -17,7 +17,7 @@ Reglas:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass
@@ -105,40 +105,49 @@ class RiskManager:
         qty = min(qty, equity * self.max_exposure / price, pf.cash / (price * (1 + pf.fee)))
         return max(0.0, qty)
 
-    def manage(self, pf: Portfolio, symbol: str, time: int, high: float, low: float, close: float,
-               atr: Optional[float], score: float) -> Optional[ClosedTrade]:
-        """Revisa una posición abierta con la vela nueva. El stop se evalúa antes
-        que el objetivo (supuesto pesimista cuando ambos caben en la vela)."""
+    def check_exit(self, pf: Portfolio, symbol: str, high: float, low: float, close: float,
+                   atr: Optional[float], score: float) -> Optional[Tuple[float, str]]:
+        """Revisa una posición abierta con la vela nueva y devuelve (precio, motivo)
+        si hay que salir. El stop se evalúa antes que el objetivo (supuesto
+        pesimista cuando ambos caben en la vela). Si no hay salida, actualiza el stop."""
         p = pf.positions.get(symbol)
         if not p:
             return None
-        t: Optional[ClosedTrade] = None
         if low <= p.stop:
-            t = pf.close(symbol, p.stop, time, "stop" if p.stop < p.entry else "stop de protección")
-        elif high >= p.target:
-            t = pf.close(symbol, p.target, time, "objetivo alcanzado")
-        elif score < self.exit_score:
-            t = pf.close(symbol, close, time, f"el consejo gira bajista ({score:+.2f})")
-        else:
-            p.high = max(p.high, high)
-            if p.high >= p.entry + p.risk_per_unit:
-                p.stop = max(p.stop, p.entry * (1 + 2 * pf.fee))  # break-even cubriendo comisiones
-            if atr:
-                p.stop = max(p.stop, p.high - self.stop_atr * atr) if p.stop >= p.entry else p.stop
-        if t:
-            self.losing_streak = self.losing_streak + 1 if t.pnl < 0 else 0
-            if self.losing_streak >= self.max_losing_streak:
-                self.pause_left, self.losing_streak = self.cooldown, 0
+            return p.stop, ("stop" if p.stop < p.entry else "stop de protección")
+        if high >= p.target:
+            return p.target, "objetivo alcanzado"
+        if score < self.exit_score:
+            return close, f"el consejo gira bajista ({score:+.2f})"
+        p.high = max(p.high, high)
+        if p.high >= p.entry + p.risk_per_unit:
+            p.stop = max(p.stop, p.entry * (1 + 2 * pf.fee))  # break-even cubriendo comisiones
+        if atr and p.stop >= p.entry:
+            p.stop = max(p.stop, p.high - self.stop_atr * atr)
+        return None
+
+    def on_closed(self, t: ClosedTrade) -> None:
+        self.losing_streak = self.losing_streak + 1 if t.pnl < 0 else 0
+        if self.losing_streak >= self.max_losing_streak:
+            self.pause_left, self.losing_streak = self.cooldown, 0
+
+    def manage(self, pf: Portfolio, symbol: str, time: int, high: float, low: float, close: float,
+               atr: Optional[float], score: float) -> Optional[ClosedTrade]:
+        """Versión papel: decide y cierra en el mismo paso."""
+        ex = self.check_exit(pf, symbol, high, low, close, atr, score)
+        if not ex:
+            return None
+        t = pf.close(symbol, ex[0], time, ex[1])
+        self.on_closed(t)
         return t
 
-    def tick(self, pf: Portfolio, equity: float, prices: Dict[str, float], time: int) -> Optional[str]:
-        """Una vez por paso: pausa y control de drawdown global."""
+    def tick(self, equity: float) -> Optional[str]:
+        """Una vez por paso: pausa y control de drawdown global. Si devuelve
+        "HALT", quien llama debe cerrar todas las posiciones."""
         if self.pause_left > 0:
             self.pause_left -= 1
         self.peak_equity = max(self.peak_equity, equity)
         if not self.halted and self.peak_equity and equity < self.peak_equity * (1 - self.max_drawdown):
             self.halted = True
-            for s in list(pf.positions):
-                pf.close(s, prices[s], time, "interruptor de emergencia")
             return "HALT"
         return None

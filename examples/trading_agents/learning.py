@@ -107,6 +107,40 @@ class Coordinator:
             w[a] = (1 - self.alpha) * w[a] + self.alpha / n
         self.updates += 1
 
+    # Versiones por índice (orden = self.agents): sin objetos Signal, para la
+    # caché de señales del optimizador, que repite miles de simulaciones.
+    def combine_arrays(self, scores: Sequence[float], confs: Sequence[float], regime: str) -> Tuple[float, float]:
+        w = self.weights[regime]
+        ws = [w[a] for a in self.agents]
+        num = sum(wi * s * c for wi, s, c in zip(ws, scores, confs))
+        score = max(-1.0, min(1.0, num / (sum(ws) or 1.0)))
+        if score == 0:
+            return 0.0, 0.0
+        tot = agree = 0.0
+        for wi, s, c in zip(ws, scores, confs):
+            tot += wi * c
+            if s * score > 0:
+                agree += wi * c
+        return score, agree / (tot or 1.0)
+
+    def learn_arrays(self, scores: Sequence[float], confs: Sequence[float], regime: str, ret: float,
+                     vol: float, track: bool = True) -> None:
+        w = self.weights[regime]
+        for a, s, c in zip(self.agents, scores, confs):
+            reward = max(-3.0, min(3.0, s * c * ret / max(vol, 1e-4)))
+            w[a] *= math.exp(self.eta * reward)
+            if track:
+                st = self.stats[a]
+                if c > 0 and s != 0:
+                    st.n += 1
+                    st.hits += int((s > 0) == (ret > 0))
+                st.reward += reward
+        self._normalize(regime)
+        n = len(w)
+        for a in w:
+            w[a] = (1 - self.alpha) * w[a] + self.alpha / n
+        self.updates += 1
+
     def _normalize(self, regime: str) -> None:
         w = self.weights[regime]
         tot = sum(w.values()) or 1.0

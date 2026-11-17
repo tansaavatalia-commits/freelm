@@ -1,115 +1,151 @@
-# Bot multiagente de señales cripto que aprende
+# Bot multiagente de señales cripto: grafo de nodos, aprendizaje y mejora automática
 
-> ⚠️ **Solo paper trading.** El bot no envía órdenes reales a ningún exchange.
-> Es material educativo y no es asesoramiento financiero. **Ningún sistema
-> puede garantizar beneficios ni evitar todas las pérdidas.** El objetivo del
-> 18 % es una meta que el bot *mide*, no una promesa.
+> ⚠️ **Material educativo, no asesoramiento financiero.** Ningún sistema puede
+> garantizar beneficios ni evitar todas las pérdidas. El modo con dinero real
+> está **bloqueado por código** hasta que el bot supere 20 días en papel, y
+> aun así puede perder. Invierte solo lo que puedas permitirte perder.
 
-## Arquitectura
+## Objetivo acordado
 
+**Máximo rendimiento con una caída máxima del 10 %.** Ese límite lo vigila
+todo el sistema:
+
+- el optimizador descalifica cualquier configuración que caiga más de un 10 %;
+- un interruptor en vivo lo cierra todo si el capital cae un 10 % desde su máximo.
+
+El bot también muestra siempre el **rendimiento semanal equivalente**, para
+compararlo con la meta del +18 % semanal. Lo mide, pero no arriesga el capital
+para perseguirlo.
+
+## Arquitectura: nodos enlazados
+
+`python bot.py graph` dibuja el grafo real en formato Mermaid. Cada vela, cada
+símbolo lo recorre:
+
+```mermaid
+flowchart LR
+  vela --> aprender & resolver_sombras
+  ventana --> observar
+  observar --> T1[equipo:tendencia] & T2[equipo:reversión] & T3[equipo:flujo] & T4[equipo:volatilidad] & T5[equipo:multi-marco]
+  aprender --> T1 & T2 & T3 & T4 & T5
+  T1 & T2 & T3 & T4 & T5 --> consejo
+  consejo --> escéptico --> filtro_ventaja --> candidata
+  resolver_sombras --> filtro_ventaja & registrar_sombra
+  consejo --> registrar_sombra --> recordar
+  consejo --> gestionar_posición --> candidata
+  candidata --> guardián --> asignar["asignar (revisión IA, tamaño, orden)"]
 ```
-        8 símbolos (BTC, ETH, SOL, BNB, XRP, ADA, AVAX, LINK; configurable)
-                                 │  velas OHLCV
-   ┌────────────┬────────────┬───┴────────┬─────────────┬──────────────┐
-   │ TENDENCIA  │ REVERSIÓN  │   FLUJO    │ VOLATILIDAD │ MULTI-MARCO  │   94 agentes por símbolo
-   │ 12 EMA     │ 9 RSI      │ 4 OBV      │ 6 squeeze   │ 10 tendencia │   ≈ 800 señales por vela
-   │ 6 MACD     │ 9 Bollinger│ 6 Donchian │ 9 Keltner   │    en 2x-24x │   > 30.000 señales/segundo
-   │ 9 pendiente│ 5 estocást.│ 6 ROC      │             │              │
-   │            │ 4 VWAP     │            │             │              │
-   └─────┬──────┴─────┬──────┴─────┬──────┴──────┬──────┴──────┬───────┘
-         │ nivel 1: cada equipo vota con pesos aprendidos (por régimen)
-         └────────────┴────────────┼─────────────┴─────────────┘
-                     CONSEJO: nivel 2, los equipos se confrontan
-                                   │
-                EQUIPO ESCÉPTICO (veto). Rechaza la operación si:
-                  · los equipos no están de acuerdo (< 60 %)
-                  · el mercado está en régimen volátil
-                  · implica comprar contra la tendencia mayor (EMA 200)
-                  · el calibrador no ha demostrado ventaja neta en ese tipo de señal
-                  · la IA (opcional, freelm) opina en contra
-                                   │
-                GESTOR DE RIESGO
-                  · 1 % de riesgo por operación, beneficio/riesgo 2:1
-                  · stop a break-even tras +1R, después stop dinámico
-                  · máximo 4 posiciones y 30 % del capital en cada una
-                  · pausa tras 3 pérdidas seguidas; interruptor con drawdown del 12 %
-                                   │
-                        CARTERA DE PAPEL (comisión 0,1 %)
-```
 
-## Cómo aprende (tres niveles)
+| Nodo | Qué hace |
+|---|---|
+| `observar` | 94 agentes por símbolo analizan la ventana. Con 8 monedas son ≈ 800 señales por vela, a más de 30.000 señales/segundo. |
+| `equipo:*` | Cada equipo vota con pesos aprendidos (algoritmo *Hedge*), separados por régimen de mercado. |
+| `consejo` | Confronta a los 5 equipos, también con pesos aprendidos. |
+| `escéptico` | Veta si hay desacuerdo entre equipos, si el régimen es volátil o si habría que comprar bajo la EMA 200. |
+| `filtro_ventaja` | Solo deja pasar tipos de señal con ventaja neta demostrada en la sombra. |
+| `registrar_sombra` | Prueba cada señal sin dinero real, con stop, objetivo y comisiones. |
+| `gestionar_posición` | Stop, objetivo 2:1, stop a break-even tras +1R y stop dinámico. |
+| `guardián` | Interruptor por caída del 10 % y pausa tras 3 pérdidas seguidas. |
+| `asignar` | Revisión opcional de la IA (freelm), tamaño por riesgo (1 %) y orden. |
 
-1. **Agentes dentro de cada equipo.** Se usa el algoritmo *Hedge* de pesos
-   multiplicativos con *fixed share*. Tras cada vela, el agente que acertó
-   con convicción gana peso y el que falló lo pierde. Los pesos son
-   distintos para cada régimen (tendencia, lateral, volátil).
-2. **Equipos dentro del consejo.** Mismo algoritmo, un nivel más arriba.
-3. **Calibrador: el filtro de señales sin sentido.** Cada señal candidata se
-   opera *en la sombra* con el mismo stop, el mismo objetivo y las mismas
-   comisiones que una real. Su resultado se apunta en múltiplos de riesgo (R)
-   por tipo de señal (régimen × fuerza × acuerdo). Ese tipo solo se opera de
-   verdad cuando su esperanza *conservadora* (media menos un error estándar)
-   supera +0,15 R con al menos 40 casos.
+Los nodos se añaden o se quitan con `Graph.add` / `Graph.remove`. El orden de
+ejecución se calcula solo, a partir de lo que cada nodo necesita y produce.
 
-La memoria (los tres niveles) se guarda en `~/.cache/freelm-trading/` y se
-acumula de una ejecución a otra.
+## Mejora automática (`optimize`)
 
-## Validación honesta (walk-forward)
+Un optimizador evolutivo cruza y muta configuraciones: umbrales, riesgo, stops,
+qué equipos participan, velocidades de aprendizaje...
 
-`backtest` divide los datos en dos fases:
+1. Los datos se dividen en **aprender 50 %, validación 25 % y examen final 25 %**.
+2. Selecciona las configuraciones por su resultado en validación, con un
+   mínimo de operaciones y la caída limitada al 10 %.
+3. Una nueva campeona solo se acepta si **también gana en el examen final**,
+   con datos que nunca vio. Esta es la defensa contra el sobreajuste.
+4. Cada ronda queda en `optimize_history.jsonl`. La campeona se guarda en
+   `champion.json` y la usan `backtest` y `live` automáticamente.
 
-- **Fase 1, aprendizaje (60 %).** El bot aprende sin operar.
-- **Fase 2, validación (40 %).** El bot opera en papel con datos que nunca ha
-  visto.
+Las señales de los agentes se guardan en caché, así que cada simulación tarda
+unos 2 segundos y una ronda completa, unos 2–4 minutos.
 
-Solo se informa del resultado de la fase 2: rendimiento, rendimiento
-anualizado, drawdown, Sharpe, acierto, factor de beneficio y si se alcanza el
-objetivo del 18 %. Puedes cambiar la meta con `--target` y `--target-basis anual|periodo`.
-
-## Uso
+## Plan de 20 días
 
 ```bash
-pip install -e .                                          # desde la raíz del repo
+pip install -e . ccxt          # desde la raíz del repo; ccxt = conexión con exchanges
 
-python examples/trading_agents/bot.py bench               # señales por segundo (mínimo 500)
-python examples/trading_agents/bot.py backtest -v         # sintético, sin red
-python examples/trading_agents/bot.py backtest --source binance --limit 5000   # datos reales
-python examples/trading_agents/bot.py backtest --source binance --llm          # con revisión IA
+# Día 0: primera optimización con datos reales
+python examples/trading_agents/bot.py optimize --source binance --limit 5000
 
-freelm doctor                                             # qué claves gratis funcionan
-python examples/trading_agents/bot.py live --llm          # tiempo real, en papel
-python examples/trading_agents/bot.py live --once         # una vela y salir (para cron)
+# Días 1-20: el bot en papel, con tus 100 € simulados (déjalo corriendo)
+python examples/trading_agents/bot.py live --llm
+
+# Cada día, una ronda de mejora (cron: 0 3 * * *)
+python examples/trading_agents/bot.py optimize --source binance --limit 5000
+
+# Cuando quieras: ¿cómo va? ¿está listo?
 python examples/trading_agents/bot.py status --source binance
+python examples/trading_agents/bot.py gate
 ```
 
-Opciones útiles: `--symbols BTCUSDT,ETHUSDT`, `--interval 4h`, `--risk 0.005`,
-`--max-positions 2`, `--min-agreement 0.7`, `--min-edge 0.25`. Los valores más
-estrictos dan menos operaciones y más selectivas.
+`gate` solo da el visto bueno si hay **20 días en vivo**, **rendimiento
+positivo**, **caída ≤ 10 %** y **al menos 5 operaciones cerradas**.
 
-## Resultados de referencia (datos sintéticos, no reales)
+## Paso a dinero real (solo si `gate` dice APTO)
 
-| Datos | Validación | Cesta comprar y mantener | Drawdown máx. | Operaciones | Acierto |
-|---|---|---|---|---|---|
-| Sintéticos con inercia (`--structure 1`) | +32,2 % | +32,6 % | 5,6 % | 139 | 63 % |
-| Sintéticos, azar + derivas (`--structure 0`) | +12,8 % | +29,0 % | 8,9 % | 200 | 51 % |
+1. **Exchange.** Binance por defecto. Con ccxt, Kraken o Bitvavo (reguladas en
+   la UE) también funcionan: `--exchange-id kraken`.
+2. **Claves API.** Créalas con permiso **solo de trading**, **nunca de
+   retirada**, y restringidas a tu IP. Después, en el entorno:
+   `export FREELM_EXCHANGE_KEY=... FREELM_EXCHANGE_SECRET=...`
+3. **Ensayo opcional en el testnet** del exchange: `live --exchange testnet`.
+4. **Dinero real:**
+   `live --exchange real --confirm-real-money --max-capital 100`.
+   - `--max-capital` es un **tope duro**: el bot nunca usa más, aunque la cuenta tenga más saldo.
+   - Cada compra lleva un **stop-loss colocado en el propio exchange**, que protege aunque tu ordenador se apague.
 
-En ambos casos el riesgo es mucho menor que mantener la cesta. **No se ha
-probado aún con datos reales.** El mercado real es más difícil y cambia, así
-que valida con `--source binance` antes de sacar conclusiones.
+**Con 100 €:** cada operación arriesga ≈ 1 € (1 %) y, como mucho, se invierten
+30 € por moneda. El mínimo de orden en Binance es de unos 5 USDT, y el bot
+omite las órdenes más pequeñas. Las comisiones son del 0,1 % por lado y ya
+están incluidas en todas las simulaciones.
 
-## Añadir tu propio agente
+## Otros comandos
+
+```bash
+python examples/trading_agents/bot.py bench               # señales por segundo
+python examples/trading_agents/bot.py backtest -v         # aprender y validar (sintético, sin red)
+python examples/trading_agents/bot.py backtest --source binance --limit 5000
+```
+
+## Añadir un agente o un nodo
 
 ```python
-from agents import Agent, Signal
-
+# agente nuevo (agents.py -> agent_swarm)
 class MiAgente(Agent):
     team = "flujo"
     def __init__(self):
         self.name, self.warmup = "mi_agente", 30
-    def analyze(self, f):                       # f: Features (indicadores con caché)
-        sube = f.price > f.closes[-10]
-        return Signal(self.name, 1 if sube else -1, 0.5, "momentum 10 velas")
+    def analyze(self, f):
+        return Signal(self.name, 1 if f.price > f.closes[-10] else -1, 0.5, "momentum 10 velas")
+
+# nodo nuevo en el grafo (p. ej. un veto propio)
+def solo_horario_europeo(ctx):
+    if not 7 <= time.gmtime(ctx["candle"].time / 1000).tm_hour <= 20:
+        ctx["decision"].vetoes.append("fuera de horario")
+    ctx["horario"] = True
+engine.symbol_graph.add(Node("horario", ("skeptic",), ("horario",), solo_horario_europeo))
 ```
 
-Añádelo en `agent_swarm()` dentro de `agents.py`. El equipo decide con datos
-si merece confianza.
+## Herramientas open source en las que se inspira o que usa
+
+- [ccxt](https://github.com/ccxt/ccxt): conexión con más de 100 exchanges (lo usa directamente).
+- [freqtrade](https://github.com/freqtrade/freqtrade): estrategias de ejemplo, hyperopt y protecciones.
+- [jesse](https://github.com/jesse-ai/jesse), [backtrader](https://github.com/mementum/backtrader), [Lean](https://github.com/QuantConnect/Lean): indicadores y metodología de backtest.
+- [freelm](../../README.md): el analista IA con LLM gratuitos y failover.
+
+## Resultados de referencia (datos sintéticos, NO reales)
+
+Una ronda de `optimize` (33 simulaciones) sobre datos sintéticos con inercia
+obtuvo en el examen final **+35,7 % con una caída máxima del 3,6 %**, frente al
++27,7 % de la configuración de partida. **Esto solo demuestra que la mecánica
+funciona.** Los datos sintéticos contienen patrones a propósito; el mercado
+real es mucho más difícil. Las cifras que cuentan son las de
+`--source binance` y, sobre todo, las de los 20 días en vivo.

@@ -92,8 +92,8 @@ def test_risk_sizing_breakeven_and_kill_switch():
     t = r.manage(pf, "X", 2, 101, 90, 91, 5.0, 0.5)
     assert t is not None and t.pnl >= 0  # a winner that came back does not turn into a loss
     pf2, r2 = Portfolio(cash=1000), RiskManager(peak_equity=1000, max_drawdown=0.1)
-    pf2.open(Position("Y", 5, 100, 50, 200, 50, 0, 100, ""))
-    assert r2.tick(pf2, 800, {"Y": 60}, 1) == "HALT" and r2.halted and not pf2.positions
+    assert r2.tick(950) is None
+    assert r2.tick(890) == "HALT" and r2.halted
     assert r2.can_open(pf2) == "interruptor activado"
 
 
@@ -107,10 +107,10 @@ def test_losing_streak_pauses_trading():
 
 def test_backtest_runs_offline_and_saves_memory(tmp_path, capsys):
     state = str(tmp_path / "m.json")
-    argv = ["--symbols", "BTCUSDT,ETHUSDT", "--limit", "520", "--state", state]
+    argv = ["--symbols", "BTCUSDT,ETHUSDT", "--limit", "520", "--state", state, "--dir", str(tmp_path)]
     assert bot.main(["backtest", *argv, "--train", "0.5"]) == 0
     out = capsys.readouterr().out
-    assert "validación fuera de muestra" in out and "señales/segundo" in out and os.path.exists(state)
+    assert "Validación fuera de muestra" in out and "señales procesadas" in out and os.path.exists(state)
     assert bot.main(["status", "--state", state]) == 0
 
 
@@ -137,3 +137,135 @@ def test_metrics_and_align():
     a = [Candle(t, 1, 1, 1, 1, 1) for t in (1, 2, 3)]
     b = [Candle(t, 1, 1, 1, 1, 1) for t in (2, 3, 4)]
     assert [c.time for c in align({"a": a, "b": b})["a"]] == [2, 3]
+
+
+# ---------------------------------------------------------------- grafo, optimizador, exchange
+
+from engine import Config, Engine, Graph, Node, run_backtest  # noqa: E402
+from exchange import CcxtExecutor, check_gate, to_market  # noqa: E402
+from optimize import MAX_DD, Optimizer, fitness, mutate  # noqa: E402
+
+
+def test_graph_orders_nodes_by_data_and_detects_cycles():
+    seen = []
+    g = Graph("t")
+    g.add(Node("c", ("b",), ("out",), lambda ctx: seen.append("c")))
+    g.add(Node("a", ("in",), ("a",), lambda ctx: seen.append("a")))
+    g.add(Node("b", ("a",), ("b",), lambda ctx: seen.append("b")))
+    g.run({})
+    assert seen == ["a", "b", "c"] and ("a", "b", "a") in g.edges() and "flowchart" in g.mermaid()
+    g.add(Node("x", ("out",), ("in",), lambda ctx: None))
+    with pytest.raises(ValueError):
+        g.order()
+
+
+def test_engine_graph_contains_teams_council_and_veto():
+    eng = Engine(Config(teams=("tendencia", "flujo")))
+    names = [n.name for n in eng.symbol_graph.order()]
+    assert names.index("equipo:tendencia") < names.index("consejo") < names.index("escéptico")
+    assert names.index("filtro_ventaja") < names.index("candidata")
+    assert set(eng.teams) == {"tendencia", "flujo"}
+
+
+def test_config_roundtrip_and_mutation_respects_limits():
+    c = Config(teams=("tendencia", "reversión"), min_edge=0.3)
+    assert Config.from_dict(c.to_dict()) == c
+    import random
+    rng = random.Random(1)
+    for _ in range(50):
+        m = mutate(c, rng, ["tendencia", "reversión", "flujo"], rate=1.0)
+        assert m.max_drawdown == MAX_DD and m.target_atr >= 1.5 * m.stop_atr and 1 <= m.max_positions <= 6
+        assert not m.teams or len(m.teams) >= 2
+
+
+def test_fitness_disqualifies_drawdown_over_10pct():
+    assert fitness({"return": 5.0, "max_drawdown": 0.11}, 100, 10) < 0
+    assert fitness({"return": 0.05, "max_drawdown": 0.05}, 100, 10) == 0.05
+    assert fitness({"return": 0.5, "max_drawdown": 0.05}, 3, 10) < 0  # too few trades proves nothing
+
+
+def test_signal_cache_gives_identical_results():
+    data = {s: synthetic(420, seed=i, structure=1.0) for i, s in enumerate(["A", "B"])}
+    cache = {}
+    runs = []
+    for c in (None, cache, cache):
+        eng = Engine(Config(min_samples=5, min_edge=0.0), cache=c)
+        out = run_backtest(eng, data, eng.warmup, 420, 330)
+        runs.append((round(out["equity"][-1], 6), len(eng.pf.closed)))
+    assert runs[0] == runs[1] == runs[2] and cache
+
+
+def test_optimizer_round_offline(tmp_path):
+    data = {s: synthetic(760, seed=i, structure=1.0) for i, s in enumerate(["A", "B"])}
+    opt = Optimizer(data, seed=1, min_trades=1, log=lambda m: None)
+    res = opt.run(population=3, generations=1)
+    assert res["evals"] >= 3 and "return" in res["candidate_test"] and isinstance(res["accepted"], bool)
+    from optimize import load_champion, save_result
+    cp, hp = str(tmp_path / "c.json"), str(tmp_path / "h.jsonl")
+    save_result(cp, hp, res, {"source": "synthetic"})
+    assert load_champion(cp) is not None and open(hp).read().count("\n") == 1
+
+
+def test_gate_requires_20_days_profit_and_low_drawdown():
+    day = 86_400
+    good = [{"t": i * day, "equity": 100 + i * 0.5, "mode": "papel"} for i in range(21)]
+    assert check_gate(good, 6)[0]
+    assert not check_gate(good[:10], 6)[0]                       # too short
+    assert not check_gate(good, 2)[0]                            # too few trades
+    crash = good[:10] + [{"t": 11 * day, "equity": 80, "mode": "papel"}] + good[11:]
+    assert not check_gate(crash, 6)[0]                           # drawdown > 10%
+    losing = [{"t": i * day, "equity": 100 - i * 0.1, "mode": "papel"} for i in range(21)]
+    assert not check_gate(losing, 6)[0]
+    assert not check_gate([dict(r, mode="testnet") for r in good], 6)[0]  # only paper counts
+
+
+class FakeExchange:
+    def __init__(self):
+        self.orders, self.cancelled = [], []
+        self.markets = {"BTC/USDT": {"limits": {"amount": {"min": 0.0001}, "cost": {"min": 5}}}}
+        self.balance = {"USDT": {"free": 500.0}, "BTC": {"free": 0.0}}
+
+    def load_markets(self):
+        return self.markets
+
+    def amount_to_precision(self, m, q):
+        return f"{math.floor(q * 1e5) / 1e5:.5f}"
+
+    def price_to_precision(self, m, p):
+        return f"{p:.2f}"
+
+    def fetch_balance(self):
+        return self.balance
+
+    def create_order(self, m, typ, side, qty, price=None, params=None):
+        self.orders.append((m, typ, side, float(qty), price, params))
+        if typ == "market" and side == "buy":
+            self.balance["BTC"]["free"] += float(qty)
+        if typ == "market" and side == "sell":
+            self.balance["BTC"]["free"] -= float(qty)
+        return {"id": str(len(self.orders)), "filled": float(qty), "average": 50_000.0, "fees": []}
+
+    def cancel_order(self, oid, m):
+        self.cancelled.append(oid)
+
+
+def test_ccxt_executor_caps_capital_and_places_exchange_stops():
+    fx = FakeExchange()
+    ex = CcxtExecutor(testnet=False, max_capital=100.0, client=fx, log=lambda m: None)
+    assert ex.real_money and ex.starting_cash() == 100.0   # hard cap even with 500 available
+    assert to_market("BTCUSDT") == "BTC/USDT"
+    qty, px = ex.buy("BTCUSDT", 0.0015, 50_000)
+    assert qty == pytest.approx(0.0015) and px == 50_000.0
+    ex.protect("BTCUSDT", qty, 49_000)
+    assert fx.orders[-1][5] == {"stopLossPrice": 49_000.0}
+    ex.protect("BTCUSDT", qty, 49_500)                     # trailing: old stop is cancelled first
+    assert fx.cancelled == ["2"]
+    ex.sell("BTCUSDT", qty, 51_000)
+    assert fx.orders[-1][1:3] == ("market", "sell") and fx.balance["BTC"]["free"] == pytest.approx(0)
+    assert ex.buy("BTCUSDT", 0.00005, 50_000)[0] == 0.0   # below exchange minimum: skipped
+
+
+def test_live_real_money_is_blocked_without_track_record(tmp_path, capsys):
+    rc = bot.main(["live", "--exchange", "real", "--confirm-real-money", "--dir", str(tmp_path), "--once"])
+    assert rc == 2 and "BLOQUEADO" in capsys.readouterr().out
+    assert bot.main(["gate", "--dir", str(tmp_path)]) == 1
