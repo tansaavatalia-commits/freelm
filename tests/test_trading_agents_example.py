@@ -1109,3 +1109,57 @@ def test_classic_command_offline(tmp_path, capsys):
     assert rc in (0, 3) and "conjunto" in out and "77 %" in out
     saved = json.load(open(tmp_path / "classic.json"))
     assert "conjunto" in saved["strategies"] and saved["interval"] == "1d" and saved["n_trials"] == 51
+
+
+import momentum_paper as mpp  # noqa: E402
+
+
+def _daily(prices, t0=0):
+    return [Candle(t0 + mpp.DAY_MS * i, p, p * 1.01, p * 0.99, p, 1.0) for i, p in enumerate(prices)]
+
+
+def test_momentum_paper_steps_once_per_day_and_follows_trend():
+    fam = mpp.family_for(target_vol=10.0)
+    up = [100 * 1.01 ** i for i in range(260)]
+    flat = [100.0 + (i % 2) for i in range(260)]
+    st = mpp.new_state(100.0, fam)
+    data = {"UP": _daily(up[:250]), "FLAT": _daily(flat[:250])}
+    st, rep = mpp.step(st, data, fam)
+    assert rep["skipped"] is None and st["days"] == 0 and "UP" in st["weights"]
+    st, rep = mpp.step(st, data, fam)
+    assert rep["skipped"] == "día ya procesado"  # idempotente
+    for n in range(251, 256):
+        st, rep = mpp.step(st, {"UP": _daily(up[:n]), "FLAT": _daily(flat[:n])}, fam)
+    assert st["days"] == 5 and st["equity"] > 100.0 and sum(st["weights"].values()) <= 1.0 + 1e-9
+
+
+def test_momentum_paper_halts_after_10pct_drawdown():
+    fam = mpp.family_for(target_vol=10.0)
+    up = [100 * 1.01 ** i for i in range(251)]
+    st = mpp.new_state(100.0, fam)
+    st, _ = mpp.step(st, {"A": _daily(up)}, fam)
+    crash = up + [up[-1] * 0.5]
+    st, rep = mpp.step(st, {"A": _daily(crash)}, fam)
+    assert st["halted"] and st["weights"] == {} and "detenido" in rep["skipped"]
+    sm = mpp.summary(st, [{"equity": 100.0}, {"equity": st["equity"]}])
+    assert sm["halted"] and not sm["passed"]
+
+
+def test_closed_daily_drops_the_forming_candle():
+    cs = _daily([1.0, 2.0, 3.0])
+    assert len(mpp.closed_daily(cs, 2 * mpp.DAY_MS + 10)) == 2
+
+
+def test_momentum_command_paper_offline(tmp_path, monkeypatch, capsys):
+    import time as _t
+    t0 = int(_t.time() * 1000) // mpp.DAY_MS * mpp.DAY_MS - 300 * mpp.DAY_MS
+    series = {s: _daily([100 * (1.005 if i else 0.999) ** k for k in range(300)], t0)
+              for i, s in enumerate(["BTCUSDT", "ETHUSDT"])}
+    monkeypatch.setattr(bot, "fetch_candles", lambda s, interval, limit: series[s][-limit:])
+    args = ["momentum", "--symbols", "BTCUSDT,ETHUSDT", "--dir", str(tmp_path)]
+    assert bot.main(args) == 0
+    assert bot.main(args) == 0  # mismo día: no repite
+    out = capsys.readouterr().out
+    assert "día ya procesado" in out and "PAPEL" in out
+    assert len(open(tmp_path / "momentum_track.jsonl").read().splitlines()) == 1
+    assert bot.main(args + ["--report"]) == 0

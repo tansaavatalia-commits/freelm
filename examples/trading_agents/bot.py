@@ -6,6 +6,7 @@
     python bot.py optimize                      # una ronda de mejora automática
     python bot.py validate                      # walk-forward, Deflated Sharpe, PBO, sensibilidad
     python bot.py classic                       # lo mismo con momentum clásico (velas diarias)
+    python bot.py momentum                      # momentum combinado en papel, 20 días (1 vez al día)
     python bot.py live                          # tiempo real, en papel (por defecto)
     python bot.py live --exchange testnet       # órdenes en el testnet del exchange
     python bot.py gate                          # ¿listo para dinero real? (20 días)
@@ -477,6 +478,87 @@ def cmd_classic(args: argparse.Namespace) -> int:
     return 0 if ok else 3
 
 
+def cmd_momentum(args: argparse.Namespace) -> int:
+    """Momentum combinado en PAPEL (20 días): un día por ejecución, tras el cierre diario."""
+    import momentum_paper as mp_
+    from safety import check_window
+    fam = mp_.family_for(args.target_vol, 0.00075 if args.bnb else None)
+    sp, tp = p(args, "momentum_state.json"), p(args, "momentum_track.jsonl")
+    state = mp_.load(sp, args.cash, fam)
+    track = load_track(tp)
+    notifier = Notifier()
+
+    def show(final: bool = False) -> str:
+        sm = mp_.summary(state, track)
+        lines = [f"Momentum combinado en PAPEL: día {sm['days']}/{mp_.PAPER_DAYS}"
+                 + (f" (desde {mp_.utc(state['start_day'])})" if state.get("start_day") else ""),
+                 f"  capital {state['equity']:.2f} (inicio {state['cash0']:.2f}): {sm['return']:+.2%} · "
+                 f"caída máx. {sm['max_drawdown']:.1%} · cesta comprar y mantener {sm['basket']:+.2%}",
+                 "  posiciones: " + (", ".join(f"{s} {w:.0%}" for s, w in sorted(sm["weights"].items(),
+                                                                             key=lambda kv: -kv[1]))
+                                     or "ninguna (liquidez)")]
+        if sm["halted"]:
+            lines.append("  DETENIDO: la caída superó el 10 %; todo en liquidez.")
+        if sm["done"]:
+            lines.append("  Prueba de 20 días COMPLETA: " + (
+                "ganó sin superar el 10 % de caída. Ojo: 20 días son pocos para demostrar nada; la "
+                "validación estadística sigue sin aprobarla. Dinero real solo con tu autorización expresa."
+                if sm["passed"] else "NO superada (no ganó o superó el límite de caída). No pasar a dinero real."))
+        return "\n".join(lines)
+
+    if args.report:
+        print(show())
+        return 0
+    if state["days"] >= mp_.PAPER_DAYS and not args.continue_after:
+        print(show())
+        print("  (la prueba ya terminó; --continue-after para seguir en papel)")
+        return 0
+    syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    now_ms = int(time.time() * 1000)
+    journal = DecisionJournal(p(args, "diario"))
+    raw: Dict[str, List[Candle]] = {}
+    for s in syms:
+        try:
+            raw[s] = mp_.closed_daily(fetch_candles(s, "1d", args.limit), now_ms)
+        except Exception as e:  # noqa: BLE001 - sin datos de una moneda no se decide ese día
+            journal.write(now_ms, {"tipo": "aviso", "estrategia": "momentum", "motivo": f"{s}: sin datos ({e})"})
+            notifier.send(f"freelm momentum: sin datos de {s}; hoy no se opera")
+            print(f"[aviso] {s}: sin datos ({type(e).__name__}); hoy no se opera", file=sys.stderr)
+            return 0
+    data = align(raw)
+    problems = {s: pr for s, cs in data.items() for pr in [check_window(cs)] if pr}
+    stale = {s: m for s, cs in data.items() for m in [check_fresh(cs, 86_400)] if m}
+    if problems or stale:
+        why = "; ".join(f"{s}: {v[0] if isinstance(v, list) else v}" for s, v in {**problems, **stale}.items())
+        journal.write(now_ms, {"tipo": "aviso", "estrategia": "momentum", "motivo": "datos dudosos: " + why})
+        notifier.send(f"freelm momentum: datos dudosos, hoy no se opera ({why[:300]})")
+        print(f"[aviso] datos dudosos, hoy no se opera: {why}", file=sys.stderr)
+        return 0
+    state, rep = mp_.step(state, data, fam)
+    if rep["skipped"] and not rep["skipped"].startswith("detenido"):
+        print(f"{mp_.utc(rep['day'])}: {rep['skipped']}")
+        print(show())
+        return 0
+    for s, side, w in rep["trades"]:
+        journal.write(rep["day"], {"tipo": "orden_papel", "estrategia": "momentum", "simbolo": s, "lado": side,
+                                   "peso": round(w, 4)})
+    track.append({"t": rep["day"] / 1000, "equity": state["equity"], "basket": rep.get("basket", 0.0),
+                  "mode": "momentum"})
+    record = track[-1]
+    with open(tp, "a") as fh:
+        fh.write(json.dumps(record) + "\n")
+    mp_.save(sp, state)
+    journal.write(rep["day"], {"tipo": "cartera", "estrategia": "momentum", "capital": round(state["equity"], 6),
+                               "pesos": {s: round(w, 4) for s, w in state["weights"].items()},
+                               "evento": rep["skipped"]})
+    text = show()
+    print(f"{mp_.utc(rep['day'])}: " + (f"{len(rep['trades'])} cambios de cartera" if rep["trades"] else
+                                       "sin cambios") + (f" · {rep['skipped']}" if rep["skipped"] else ""))
+    print(text)
+    notifier.send("freelm " + text)
+    return 0
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
     args.limit = max(args.limit, WINDOW + args.steps + 10)
     data = load_universe(args)
@@ -885,6 +967,17 @@ def parser() -> argparse.ArgumentParser:
     cl.add_argument("--prior-trials", type=int, default=40,
                     help="pruebas hechas antes con estos datos (se descuentan en el Deflated Sharpe)")
     cl.set_defaults(func=cmd_classic)
+
+    mo = sub.add_parser("momentum", help="momentum combinado en PAPEL: prueba de 20 días (1 día por ejecución)")
+    mo.add_argument("--symbols", default=",".join(DEFAULT_SYMBOLS))
+    mo.add_argument("--limit", type=int, default=260, help="velas diarias que se descargan")
+    mo.add_argument("--dir", help=f"carpeta de memoria (por defecto {STATE_DIR})")
+    mo.add_argument("--cash", type=float, default=100.0)
+    mo.add_argument("--target-vol", type=float, default=0.12)
+    mo.add_argument("--bnb", action="store_true", help="comisiones con descuento BNB")
+    mo.add_argument("--report", action="store_true", help="solo mostrar cómo va")
+    mo.add_argument("--continue-after", action="store_true", help="seguir en papel después de los 20 días")
+    mo.set_defaults(func=cmd_momentum)
 
     be = sub.add_parser("bench", help="medir señales por segundo")
     common(be)

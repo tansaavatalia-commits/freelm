@@ -235,6 +235,26 @@ Pagan comisión y deslizamiento.
 - El seguimiento de tendencia gana con **pocas operaciones grandes**: su acierto
   es del 29–42 %. Es **incompatible con la regla del 77 %** por construcción.
 
+### Momentum combinado en papel: prueba de 20 días (`momentum`)
+
+La estrategia más prometedora (el «conjunto» de `classic`) **no está validada**.
+Por eso solo corre en **papel**, con 100 € simulados, durante 20 días:
+
+- `python bot.py momentum` procesa un día por ejecución, tras el cierre diario
+  de las 00:00 UTC. No repite días y no hace nada con datos dudosos o atrasados.
+  Si la caída supera el 10 %, pasa todo a liquidez y se detiene.
+- `python bot.py momentum --report` muestra cómo va: días, capital, caída,
+  cesta y posiciones.
+- En GitHub Actions lo ejecuta `momentum-paper.yml` cada día a las 00:17 UTC.
+  La memoria se guarda en la rama `momentum-state` y avisa por Telegram si está
+  configurado.
+- El diario de decisiones (`diario/`) registra cada orden en papel y la cartera.
+- A los 20 días da el resultado y deja de operar. **20 días son pocos para
+  demostrar una ventaja.** Pasar a dinero real sigue necesitando una validación
+  estadística aprobada y tu autorización expresa.
+- Con 100 €, muchas posiciones de la media serían menores que el mínimo de
+  orden de Binance (≈ 5–6 €). En papel no importa; en real habría que agruparlas.
+
 ## Mejora automática (`optimize`)
 
 Un optimizador evolutivo cruza y muta configuraciones: umbrales, riesgo, stops,

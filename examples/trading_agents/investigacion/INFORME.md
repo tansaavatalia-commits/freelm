@@ -276,7 +276,7 @@ mide solo cuál es la mejor **base técnica y segura** para construir y validar.
 | **3. Universo sin sesgo** | Top-N histórico | Re-backtest con datos reales |
 | **4. Estrategia de carry** | Módulo en papel | 90 días en papel con funding real |
 | **5. Validación científica completa ◐ (herramienta hecha: `bot.py validate`)** | Sensibilidad, PBO, Deflated Sharpe, Monte Carlo, regímenes, benchmarks | PBO ≤ 0,25 y Deflated Sharpe ≥ 0,95 · resultado 2026-11: **ninguna estrategia validada**; la más prometedora es el momentum clásico diario (`classic`: conjunto +5,4 %/año, DSR 0,66, caída 13,8 %) |
-| **6. Papel en vivo** | ≥ 20 días (recomendado 90) | `gate` = APTO |
+| **6. Papel en vivo ◐ (en marcha: momentum combinado, `momentum-paper.yml`)** | 20 días acordados (recomendado 90) | Gana con caída ≤ 10 %; dinero real solo con validación aprobada + autorización expresa |
 | **7. Testnet** | 2–3 días | Sin errores técnicos |
 | **8. Real mínimo** | Solo con tu **autorización expresa** | 180 días para hablar de consistencia |
 
