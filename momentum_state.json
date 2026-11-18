@@ -1,0 +1,37 @@
+{
+ "cash0": 100.0,
+ "equity": 99.99776329110063,
+ "peak": 100.0,
+ "last_day": 1794873600000,
+ "start_day": 1794873600000,
+ "halted": false,
+ "books": {
+  "tsmom·20": {},
+  "tsmom·50": {},
+  "tsmom·100": {},
+  "tsmom·150": {},
+  "tsmom·200": {},
+  "xsmom·7": {},
+  "xsmom·14": {},
+  "xsmom·28": {},
+  "xsmom·56": {},
+  "xsmom·90": {
+   "AVAXUSDT": 0.1491139266244838
+  }
+ },
+ "weights": {
+  "AVAXUSDT": 0.01491139266244838
+ },
+ "turnover": 0.01491139266244838,
+ "days": 0,
+ "basket0": {
+  "BTCUSDT": 64947.35,
+  "ETHUSDT": 1824.88,
+  "SOLUSDT": 75.19,
+  "BNBUSDT": 597.47,
+  "XRPUSDT": 0.9837,
+  "ADAUSDT": 0.1554,
+  "AVAXUSDT": 7.299,
+  "LINKUSDT": 9.328
+ }
+}
