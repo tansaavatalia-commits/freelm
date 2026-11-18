@@ -627,3 +627,77 @@ def test_performance_report_metrics():
     assert p["expectancy"] == pytest.approx(0.8) and p["payoff"] == pytest.approx(2.0)
     assert any("Sortino" in line for line in format_performance(p))
     assert performance([100], [0], 8_760) == {}
+
+
+# ---------------------------------------------------------------- filtro de probabilidad verificada (>= 77 %)
+
+def test_wilson_lower_bound():
+    from learning import wilson_lower
+    assert wilson_lower(0, 0, 3) == 0.0
+    assert wilson_lower(8, 10, 3) < 0.5                    # 80 % en 10 casos no demuestra nada
+    assert 0.77 < wilson_lower(900, 1000, 3) < 0.9         # 90 % en 1000 casos sí
+    assert wilson_lower(90, 100, 1.96) > wilson_lower(90, 100, 3.0)  # más exigencia, cota más baja
+
+
+def test_calibrator_chooses_only_verified_high_probability_profile():
+    cal = Calibrator(min_samples=20, horizon=10, fee=0.0, sample_gap=10)
+    # objetivo cercano (0,5 ATR) casi siempre se toca; el lejano (3 ATR) casi nunca
+    for i in range(400):
+        cal.record("X", "k", 100.0, 98.0, atr=1.0, profiles=(0.5, 3.0))
+        low = 97.0 if i % 25 == 0 else 99.6        # 4 % de las veces salta el stop
+        cal.update("X", 100.6, low, 100.2)
+    ok, note, target, p = cal.choose("k", (0.5, 3.0), 0.77, 3.0)
+    assert ok and target == 0.5 and p >= 0.77, note
+    assert not cal.choose("k", (3.0,), 0.77, 3.0)[0]       # el perfil lejano no llega al 77 %
+    assert not cal.choose("otro", (0.5,), 0.77, 3.0)[0]    # sin historial: nunca opera
+
+
+def test_overlapping_shadows_count_as_fewer_effective_samples():
+    cal = Calibrator(min_samples=1, horizon=48, fee=0.0, sample_gap=6)
+    for _ in range(100):
+        cal.record("X", "k", 100.0, 90.0, 120.0)
+    for _ in range(48):
+        cal.update("X", 101, 99, 100)                       # todas duran 48 velas (horizonte)
+    assert cal.results["k"][0] == 100 and cal.effective_n("k") == pytest.approx(100 * 6 / 48)
+
+
+def test_strict_position_exits_exactly_like_the_shadow():
+    pf, r = Portfolio(cash=1000, fee=0.0), RiskManager(exit_score=-0.2)
+    pf.open(Position("X", 1, 100, 98, 101, 2, 0, 100, "", p_win=0.8, expires=3, strict=True))
+    assert r.check_exit(pf, "X", 100.5, 99.5, 100.2, 1.0, -0.9) is None   # el consejo bajista NO cierra
+    assert pf.positions["X"].stop == 98                                    # ni sube el stop
+    assert r.check_exit(pf, "X", 100.5, 99.5, 100.2, 1.0, 0.0) is None
+    assert r.check_exit(pf, "X", 100.5, 99.5, 100.3, 1.0, 0.0) == (100.3, "fin del horizonte")
+    t = pf.close("X", 100.3, 1, "fin")
+    assert t.p_win == 0.8
+
+
+def test_optimizer_never_lowers_the_77_percent_rule():
+    import random
+
+    from optimize import _fix
+    rng = random.Random(3)
+    c = _fix(Config(min_win_prob=0.5))
+    assert c.min_win_prob >= 0.77
+    for _ in range(30):
+        assert mutate(c, rng, ["tendencia", "flujo"], rate=1.0).min_win_prob >= 0.77
+
+
+def test_verification_report(capsys):
+    from risk import ClosedTrade
+    trades = [ClosedTrade("X", 0, 1, 100, 101, 1, 1.0, 0.5, "obj", 0.01, 0.8) for _ in range(9)]
+    trades.append(ClosedTrade("X", 0, 1, 100, 98, 1, -2.0, -1.0, "stop", 0.01, 0.8))
+    bot.print_verification(trades)
+    assert "acertaron 90%" in capsys.readouterr().out
+    bot.print_verification([])
+    assert "ninguna operación" in capsys.readouterr().out
+
+
+def test_sleep_to_next_close_aligns_to_candle(monkeypatch):
+    slept = []
+    monkeypatch.setattr(bot.time, "time", lambda: 1_000_000_010.0)
+    monkeypatch.setattr(bot.time, "sleep", slept.append)
+    bot.sleep_to_next_close("5m", 0)
+    assert (1_000_000_010.0 + slept[0]) % 300 == pytest.approx(1.5)
+    bot.sleep_to_next_close("5m", 7)
+    assert slept[-1] == 7

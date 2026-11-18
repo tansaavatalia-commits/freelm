@@ -65,11 +65,16 @@ class Config:
     riskoff: bool = True           # no comprar con BTC bajo su media 200 y poca amplitud
     riskoff_breadth: float = 0.35
     max_heat: float = 0.03         # riesgo total abierto (suma de distancias al stop) <= 3 % del capital
+    # --- modo «alta probabilidad» (petición del usuario: solo operar con >= 77 % de acierto VERIFICADO)
+    min_win_prob: float = 0.77     # cota inferior de Wilson de la probabilidad de cerrar en positivo
+    prob_z: float = 3.0            # z de esa cota: 3 ~ 99,9 %, corrige las muchas pruebas (tipos x perfiles)
+    exit_profiles: Tuple[float, ...] = (0.75, 1.125, 1.5, 3.0)  # objetivos en ATR (stop fijo = stop_atr)
     teams: Tuple[str, ...] = ()    # vacío = todos los equipos
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d["teams"] = list(self.teams)
+        d["exit_profiles"] = list(self.exit_profiles)
         return d
 
     @classmethod
@@ -78,8 +83,9 @@ class Config:
             return cls()
         names = {f.name for f in fields(cls)}
         kw = {k: v for k, v in d.items() if k in names}
-        if "teams" in kw:
-            kw["teams"] = tuple(kw["teams"])
+        for k in ("teams", "exit_profiles"):
+            if k in kw:
+                kw[k] = tuple(kw[k])
         return cls(**kw)
 
 
@@ -188,6 +194,8 @@ class Decision:
     vetoes: List[str] = field(default_factory=list)
     teams: List[Signal] = field(default_factory=list)
     edge_note: str = ""
+    exit_target: Optional[float] = None  # objetivo (en ATR) del perfil aprobado
+    p_win: float = 0.0                   # probabilidad de acierto verificada (cota inferior)
 
     @property
     def approved(self) -> bool:
@@ -234,7 +242,7 @@ class Engine:
         # las operaciones en la sombra pagan comisión + deslizamiento, igual que las reales
         self.cal = Calibrator.from_dict(state.get("calibrator"), min_samples=self.cfg.min_samples,
                                         min_edge=self.cfg.min_edge, horizon=self.cfg.shadow_horizon,
-                                        fee=0.001 + SLIPPAGE)
+                                        fee=0.001 + SLIPPAGE, sample_gap=SHADOW_GAP)
         self.pf = Portfolio(cash=cash)
         self.risk = RiskManager(risk_per_trade=self.cfg.risk_per_trade, stop_atr=self.cfg.stop_atr,
                                 target_atr=self.cfg.target_atr, max_positions=self.cfg.max_positions,
@@ -340,8 +348,8 @@ class Engine:
         def edge_gate(ctx: Dict[str, Any]) -> None:
             d = ctx["decision"]
             if d.score >= cfg.enter:
-                ok, note = self.cal.approved(d.key)
-                d.edge_note = note
+                ok, note, target, p_lb = self.cal.choose(d.key, cfg.exit_profiles, cfg.min_win_prob, cfg.prob_z)
+                d.edge_note, d.exit_target, d.p_win = note, target, p_lb
                 if not ok:
                     self._veto(d, note)
             ctx["gate"] = True
@@ -349,8 +357,9 @@ class Engine:
         def shadow(ctx: Dict[str, Any]) -> None:
             d, m, c, sym = ctx["decision"], ctx["market"], ctx["candle"], ctx["symbol"]
             if m["atr"] and d.score >= cfg.enter and self._step - self._last_shadow.get(sym, -SHADOW_GAP) >= SHADOW_GAP:
-                stop, target = self.risk.levels(c.close, m["atr"])
-                self.cal.record(sym, d.key, c.close, stop, target)
+                # la misma señal se prueba con todos los perfiles de salida a la vez
+                self.cal.record(sym, d.key, c.close, c.close - cfg.stop_atr * m["atr"], atr=m["atr"],
+                                profiles=cfg.exit_profiles)
                 self._last_shadow[sym] = self._step
             ctx["shadow"] = True
 
@@ -368,8 +377,8 @@ class Engine:
         def candidate(ctx: Dict[str, Any]) -> None:
             d, m, sym = ctx["decision"], ctx["market"], ctx["symbol"]
             if ctx["trading"] and d.approved and m["atr"] and sym not in self.pf.positions:
-                e, _ = self.cal.edge(d.key)
-                ctx["candidates"].append((e * d.score, sym, d, m["atr"], ctx))
+                # prioridad: la probabilidad verificada más alta
+                ctx["candidates"].append((d.p_win, sym, d, m["atr"], ctx))
 
         def remember(ctx: Dict[str, Any]) -> None:
             m = ctx["market"]
@@ -430,10 +439,14 @@ class Engine:
                 qty = min(qty, self.pf.cash / (fill * (1 + self.pf.fee)))
                 if qty <= 0 or qty * fill < MIN_ORDER:
                     continue
-                stop, target = self.risk.levels(fill, atr)
+                # salida EXACTAMENTE igual a la medida en la sombra (stop, objetivo del perfil y
+                # horizonte): si no, la probabilidad verificada no valdría para esta operación
+                stop = fill - self.cfg.stop_atr * atr
+                target = fill + (d.exit_target or self.cfg.target_atr) * atr
                 pos = Position(sym, qty, fill, stop, target, fill - stop, ctx["time"], fill,
                                f"consejo {d.score:+.2f}, acuerdo {d.agreement:.0%}, {d.edge_note}",
-                               risk_frac=qty * (fill - stop) / ctx["equity"] if ctx["equity"] > 0 else 0.0)
+                               risk_frac=qty * (fill - stop) / ctx["equity"] if ctx["equity"] > 0 else 0.0,
+                               p_win=d.p_win, expires=self.cfg.shadow_horizon, strict=True)
                 self.pf.open(pos)
                 self.executor.protect(sym, qty, stop)
                 rep.opened.append(pos)

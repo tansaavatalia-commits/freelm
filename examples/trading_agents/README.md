@@ -17,6 +17,35 @@ El bot también muestra siempre el **rendimiento semanal equivalente**, para
 compararlo con la meta del +18 % semanal. Lo mide, pero no arriesga el capital
 para perseguirlo.
 
+## Regla de entrada: probabilidad de acierto ≥ 77 % **verificada**
+
+El bot solo abre una posición si se cumple **todo** esto:
+
+1. **Probabilidad medida en la sombra.** Cada tipo de señal se «opera» sin
+   dinero con 4 perfiles de salida a la vez (objetivo a 0,75 / 1,125 / 1,5 / 3 ATR,
+   stop a 1,5 ATR), pagando comisión y deslizamiento. Una operación «acierta»
+   si cierra en positivo tras costes.
+2. **Cota inferior de Wilson ≥ 77 %, con z = 3.** No basta con que el acierto
+   medido sea del 77 %: tiene que serlo con un 99,9 % de confianza. El z alto
+   corrige las pruebas múltiples: con decenas de combinaciones de tipo y perfil,
+   alguna saldría buena por azar.
+3. **Muestras efectivas.** Si las sombras se solapan en el tiempo, cuentan
+   menos (n_eff = n × separación / duración media).
+4. **Ganancia esperada positiva.** Acertar el 78 % con objetivos diminutos
+   puede perder dinero; esas señales se rechazan.
+5. **Punto en el tiempo.** Cada decisión usa solo sombras cerradas antes de ella.
+   Las salidas reales son **idénticas** a las medidas (sin stop dinámico ni
+   cierres «a ojo»), así que la probabilidad vale para esa operación.
+6. **El optimizador nunca puede rebajar el 77 %.**
+
+`backtest` muestra la **verificación**: probabilidad prometida frente a acierto
+real. Si ninguna señal cumple, el bot no opera, y es lo correcto.
+
+**Tiempo real:** `live` usa ahora velas de 5 minutos por defecto (`--interval
+1m|5m`). Descarga las 8 monedas en paralelo y decide 1,5 s después del cierre
+de cada vela. Necesita el servidor Oracle encendido; GitHub Actions sigue con
+velas de 1 hora.
+
 ## Arquitectura: nodos enlazados
 
 `python bot.py graph` dibuja el grafo real en formato Mermaid. Cada vela, cada

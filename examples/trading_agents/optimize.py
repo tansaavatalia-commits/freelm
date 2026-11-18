@@ -44,7 +44,7 @@ MAX_DD = 0.10
 BOUNDS: Dict[str, Tuple[float, float]] = {
     "enter": (0.05, 0.40), "min_agreement": (0.50, 0.90), "min_edge": (0.0, 0.50),
     "min_samples": (15, 120), "risk_per_trade": (0.003, 0.02), "stop_atr": (1.0, 3.0),
-    "target_atr": (1.0, 8.0), "max_positions": (1, 6), "max_exposure": (0.15, 0.50),
+    "max_positions": (1, 6), "max_exposure": (0.15, 0.50),
     "exit_score": (-0.6, 0.0), "team_eta": (0.05, 1.0), "council_eta": (0.05, 1.0),
     "shadow_horizon": (12, 96), "riskoff_breadth": (0.2, 0.5), "max_heat": (0.01, 0.06),
 }
@@ -58,7 +58,9 @@ def _fix(cfg: Config) -> Config:
     for k, (lo, hi) in BOUNDS.items():
         v = min(hi, max(lo, getattr(cfg, k)))
         kw[k] = int(round(v)) if k in INTS else round(v, 4)
-    kw["target_atr"] = max(kw["target_atr"], 1.0 * kw["stop_atr"])  # beneficio/riesgo >= 1:1
+    # el objetivo de salida lo elige el calibrador entre los perfiles medidos; el 77 % es
+    # un requisito del usuario: el optimizador nunca puede rebajarlo
+    kw["min_win_prob"] = max(cfg.min_win_prob, 0.77)
     return replace(cfg, **kw, max_drawdown=MAX_DD)
 
 

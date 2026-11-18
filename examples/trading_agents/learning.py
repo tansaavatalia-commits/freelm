@@ -224,27 +224,68 @@ class Shadow:
     stop: float
     target: float
     expires: int  # velas restantes
+    age: int = 0  # velas transcurridas (para medir cuánto se solapan las muestras)
+
+
+def wilson_lower(wins: float, n: float, z: float) -> float:
+    """Cota inferior de Wilson de una proporción: la probabilidad de acierto que se
+    puede garantizar con confianza ``z`` (z=3 ~ 99,9 %), no la que salió por suerte."""
+    if n <= 0:
+        return 0.0
+    p = wins / n
+    den = 1 + z * z / n
+    centre = p + z * z / (2 * n)
+    spread = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return max(0.0, (centre - spread) / den)
+
+
+def profile_key(key: str, target_atr: float) -> str:
+    return f"{key}#t{target_atr:g}"
 
 
 @dataclass
 class Calibrator:
-    """Esperanza neta (en R) de cada tipo de señal, medida en la sombra."""
+    """Mide en la sombra, por tipo de señal y por perfil de salida, la probabilidad de
+    cerrar en positivo (tras comisiones y deslizamiento) y la esperanza en R.
+
+    Cada señal candidata se «opera» sin dinero con varios objetivos a la vez
+    (``record`` con ``profiles``). ``choose`` solo aprueba un perfil si:
+
+    - la cota inferior de Wilson de su tasa de acierto es >= ``min_win_prob`` (77 %),
+      con ``z`` corregido por pruebas múltiples (muchos tipos x perfiles = muchas
+      oportunidades de que uno salga bien por azar);
+    - las muestras se cuentan como **efectivas**: si las operaciones en la sombra se
+      solapan en el tiempo, valen menos (n_eff = n x separación / duración media);
+    - la esperanza conservadora (media - 1 error estándar) es positiva.
+
+    Todo es punto-en-el-tiempo: una decisión solo usa sombras ya cerradas antes de ella.
+    """
     min_samples: int = 40
-    min_edge: float = 0.15  # exige al menos +0.15R netos de media
+    min_edge: float = 0.15  # (modo clásico) exige al menos +0.15R netos de media
     horizon: int = 48
     fee: float = 0.001
-    results: Dict[str, List[float]] = field(default_factory=dict)  # key -> [n, suma_R, suma_R2, ganadas]
+    sample_gap: int = 6     # velas entre dos sombras del mismo símbolo
+    results: Dict[str, List[float]] = field(default_factory=dict)  # key -> [n, ΣR, ΣR², ganadas, Σduración]
     open: Dict[str, List[Shadow]] = field(default_factory=dict)  # por símbolo
 
-    def record(self, symbol: str, key: str, entry: float, stop: float, target: float) -> None:
+    def record(self, symbol: str, key: str, entry: float, stop: float, target: float = 0.0,
+               atr: Optional[float] = None, profiles: Sequence[float] = ()) -> None:
+        """Sin ``profiles``: una sombra con ese stop/objetivo (clave = ``key``).
+        Con ``profiles`` (múltiplos de ATR del objetivo) y ``atr``: una sombra por perfil."""
         book = self.open.setdefault(symbol, [])
-        if len(book) < 200:
+        if len(book) >= 400:
+            return
+        if profiles and atr:
+            for tm in profiles:
+                book.append(Shadow(profile_key(key, tm), entry, stop, entry + tm * atr, self.horizon))
+        else:
             book.append(Shadow(key, entry, stop, target, self.horizon))
 
     def update(self, symbol: str, high: float, low: float, close: float) -> None:
         keep = []
         for s in self.open.get(symbol, []):
             s.expires -= 1
+            s.age += 1
             risk = s.entry - s.stop
             if low <= s.stop:
                 exit_px = s.stop
@@ -256,11 +297,14 @@ class Calibrator:
                 keep.append(s)
                 continue
             r = (exit_px - s.entry - self.fee * (s.entry + exit_px)) / risk
-            st = self.results.setdefault(s.key, [0, 0.0, 0.0, 0])
+            st = self.results.setdefault(s.key, [0, 0.0, 0.0, 0, 0.0])
+            if len(st) < 5:  # memorias antiguas sin duración
+                st.append(st[0] * self.horizon / 2)
             st[0] += 1
             st[1] += r
             st[2] += r * r
             st[3] += int(r > 0)
+            st[4] += s.age
         self.open[symbol] = keep
 
     def edge(self, key: str) -> Tuple[float, int]:
@@ -274,6 +318,43 @@ class Calibrator:
         sd = math.sqrt(max(0.0, s2 / n - mean * mean))
         return mean - sd / math.sqrt(n), int(n)
 
+    def effective_n(self, key: str) -> float:
+        st = self.results.get(key)
+        if not st or not st[0]:
+            return 0.0
+        avg_dur = (st[4] / st[0]) if len(st) > 4 and st[4] else self.horizon / 2
+        return st[0] * min(1.0, self.sample_gap / max(1.0, avg_dur))
+
+    def win_prob(self, key: str, z: float) -> Tuple[float, float, float]:
+        """(acierto medido, cota inferior verificable, muestras efectivas)."""
+        st = self.results.get(key)
+        if not st or not st[0]:
+            return 0.0, 0.0, 0.0
+        n_eff = self.effective_n(key)
+        rate = st[3] / st[0]
+        return rate, wilson_lower(rate * n_eff, n_eff, z), n_eff
+
+    def choose(self, key: str, profiles: Sequence[float], min_win_prob: float, z: float,
+               min_edge: float = 0.0) -> Tuple[bool, str, Optional[float], float]:
+        """Mejor perfil de salida que cumple TODO; (ok, motivo, objetivo_ATR, prob_verificada)."""
+        best: Optional[Tuple[float, float, float]] = None  # (edge, target, p_lb)
+        best_seen = (0.0, 0.0, 0.0, "")
+        for tm in profiles:
+            pk = profile_key(key, tm)
+            rate, p_lb, n_eff = self.win_prob(pk, z)
+            e, _ = self.edge(pk)
+            if p_lb > best_seen[0]:
+                best_seen = (p_lb, rate, n_eff, f"{tm:g}")
+            if n_eff >= self.min_samples and p_lb >= min_win_prob and e > min_edge:
+                if best is None or e > best[0]:
+                    best = (e, tm, p_lb)
+        if best:
+            return True, f"acierto verificado ≥{best[2]:.0%}, esperanza {best[0]:+.2f}R", best[1], best[2]
+        p_lb, rate, n_eff, tm = best_seen
+        if n_eff < self.min_samples:
+            return False, f"sin historial suficiente ({n_eff:.0f}/{self.min_samples} efectivas)", None, p_lb
+        return False, f"probabilidad no verificada ({p_lb:.0%} < {min_win_prob:.0%}; medida {rate:.0%})", None, p_lb
+
     def approved(self, key: str) -> Tuple[bool, str]:
         e, n = self.edge(key)
         if n < self.min_samples:
@@ -282,12 +363,14 @@ class Calibrator:
             return False, f"sin ventaja demostrada ({e:+.2f}R)"
         return True, f"ventaja {e:+.2f}R en {n} casos"
 
-    def table(self) -> List[tuple]:
+    def table(self, z: float = 3.0) -> List[tuple]:
+        """(tipo, casos, R medio, acierto, esperanza conservadora, acierto verificable)."""
         rows = []
         for k, st in self.results.items():
             e, n = self.edge(k)
-            rows.append((k, n, st[1] / st[0], st[3] / st[0], e))
-        return sorted(rows, key=lambda r: -r[4])
+            _, p_lb, _ = self.win_prob(k, z)
+            rows.append((k, n, st[1] / st[0], st[3] / st[0], e, p_lb))
+        return sorted(rows, key=lambda r: (-r[5], -r[4]))
 
     def to_dict(self) -> dict:
         return {"results": self.results}

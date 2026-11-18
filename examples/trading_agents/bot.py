@@ -29,7 +29,7 @@ from types import SimpleNamespace
 from typing import Dict, List, Optional
 
 from agents import LLMAnalystAgent
-from engine import WINDOW, Config, Engine, metrics, run_backtest, stress_test, trade_stats
+from engine import SHADOW_GAP, WINDOW, Config, Engine, metrics, run_backtest, stress_test, trade_stats
 from exchange import CcxtExecutor, check_gate, load_track, record_equity
 from learning import REGIMES, AgentStats, Calibrator
 from market import DEFAULT_SYMBOLS, Candle, align, fetch_candles, fetch_fear_greed, fetch_funding, load_csv, synthetic
@@ -39,7 +39,8 @@ from report import format_performance, performance
 from risk import ClosedTrade, Position
 
 STATE_DIR = os.environ.get("FREELM_TRADING_DIR", os.path.join(os.path.expanduser("~"), ".cache", "freelm-trading"))
-PERIODS_PER_YEAR = {"15m": 35_040, "1h": 8_760, "4h": 2_190, "1d": 365}
+PERIODS_PER_YEAR = {"1m": 525_600, "5m": 105_120, "15m": 35_040, "1h": 8_760, "4h": 2_190, "1d": 365}
+INTERVAL_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14_400, "1d": 86_400}
 
 
 def p(args: argparse.Namespace, name: str) -> str:
@@ -142,6 +143,38 @@ def _first_ms(data: Dict[str, List[Candle]]) -> int:
     return min(cs[0].time for cs in data.values())
 
 
+def print_verification(trades: List[ClosedTrade]) -> None:
+    """¿Se cumplió lo prometido? Probabilidad verificada al abrir frente al acierto real."""
+    ts = [t for t in trades if t.p_win > 0]
+    if not ts:
+        print("  verificación del 77 %: ninguna operación cumplió el filtro de probabilidad")
+        return
+    promised = sum(t.p_win for t in ts) / len(ts)
+    hit = sum(1 for t in ts if t.pnl > 0) / len(ts)
+    verdict = "se cumple" if hit >= promised else ("dentro de lo esperable" if len(ts) < 20 else "NO se cumple")
+    print(f"  verificación del 77 %: {len(ts)} operaciones con probabilidad verificada media {promised:.0%} "
+          f"-> acertaron {hit:.0%} ({verdict})")
+
+
+def fetch_universe(syms: List[str], interval: str, limit: int) -> Dict[str, List[Candle]]:
+    """Las 8 monedas en paralelo: en 1-5 min, todas llegan en ~1 s tras el cierre de la vela."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(syms)) as ex:
+        res = dict(zip(syms, ex.map(lambda s: fetch_candles(s, interval, limit), syms)))
+    return align(res)
+
+
+def sleep_to_next_close(interval: str, poll: float) -> None:
+    """Duerme hasta 1,5 s después del cierre de la próxima vela: la decisión y la orden
+    salen en el mismo segundo en que la vela con señal se confirma. ``--poll`` > 0 lo anula."""
+    if poll > 0:
+        time.sleep(poll)
+        return
+    iv = INTERVAL_SECONDS.get(interval, 3600)
+    now = time.time()
+    time.sleep(max(1.0, (int(now // iv) + 1) * iv + 1.5 - now))
+
+
 def print_stress(trades: List[ClosedTrade]) -> None:
     st = stress_test([t.equity_return for t in trades], 1.0)
     if not st.get("paths"):
@@ -198,12 +231,16 @@ def print_learning(state: dict, top: int = 3) -> None:
         best = [", ".join(a for a, _ in sorted(w.get(reg, {}).items(), key=lambda kv: -kv[1])[:top])
                 for reg in ("tendencia", "lateral")]
         print(f"  {name:<12} {best[0]}  |  {best[1]}")
-    rows = Calibrator.from_dict(state.get("calibrator")).table()
+    cfg = Config.from_dict(state.get("config"))
+    rows = Calibrator.from_dict(state.get("calibrator"), sample_gap=SHADOW_GAP).table(z=cfg.prob_z)
     if rows:
-        print("\nCalibrador: esperanza medida en la sombra por tipo de señal (R = riesgo arriesgado)")
-        print(f"  {'tipo':<28}{'casos':>7}{'media':>8}{'acierto':>9}{'conservadora':>14}")
-        for k, n, mean, wr, e in rows[:10]:
-            print(f"  {k:<28}{n:>7}{mean:>+8.2f}{wr:>9.0%}{e:>+13.2f}R")
+        print("\nCalibrador: tipo de señal x perfil de salida (#t = objetivo en ATR), medido en la sombra")
+        print(f"  {'tipo':<34}{'casos':>7}{'acierto':>9}{'verificable':>13}{'esperanza':>11}")
+        for k, n, mean, wr, e, plb in rows[:12]:
+            mark = "  << opera" if plb >= cfg.min_win_prob and e > 0 else ""
+            print(f"  {k:<34}{n:>7}{wr:>9.0%}{plb:>13.0%}{e:>+10.2f}R{mark}")
+        print(f"  (solo se opera si «verificable» >= {cfg.min_win_prob:.0%}: cota inferior de Wilson con "
+              f"z={cfg.prob_z:g}, muestras efectivas)")
 
 
 def print_result(label: str, m: Dict[str, float], ts: Dict[str, float], bh: float) -> None:
@@ -253,6 +290,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         print(line)
     print(f"  señales procesadas: {eng.total_signals:,} a {eng.signals_per_second:,.0f}/s")
     print_stress(eng.pf.closed)
+    print_verification(eng.pf.closed)
     vetoes = sorted(eng.veto_counts.items(), key=lambda kv: -kv[1])
     print("  vetos: " + ", ".join(f"{k} {v:,}" for k, v in vetoes[:5]))
     ok_dd = m["max_drawdown"] <= 0.10
@@ -385,7 +423,8 @@ def cmd_live(args: argparse.Namespace) -> int:
     print(f"Modo vivo ({eng.executor.name}): {', '.join(syms)} {args.interval}. Ctrl+C para salir.")
     while True:
         try:
-            data = align({s: fetch_candles(s, args.interval, WINDOW + 1)[:-1] for s in syms})  # última vela abierta
+            data = fetch_universe(syms, args.interval, WINDOW + 1)
+            data = {s: cs[:-1] for s, cs in data.items()}  # la última vela aún está abierta
             t = min(cs[-1].time for cs in data.values())
             if t > last_seen:
                 last_seen = t
@@ -446,7 +485,7 @@ def cmd_live(args: argparse.Namespace) -> int:
             if args.once:
                 return 1
         try:
-            time.sleep(args.poll)
+            sleep_to_next_close(args.interval, args.poll)
         except KeyboardInterrupt:
             return 0
 
@@ -612,13 +651,15 @@ def parser() -> argparse.ArgumentParser:
     lv.add_argument("--exchange-id", default="binance", help="cualquier exchange de ccxt: binance, kraken, bitvavo...")
     lv.add_argument("--max-capital", type=float, default=100.0, help="tope duro de capital en modo testnet/real")
     lv.add_argument("--confirm-real-money", action="store_true")
-    lv.add_argument("--poll", type=float, default=60.0)
+    lv.add_argument("--poll", type=float, default=0.0,
+                    help="segundos entre consultas (0 = justo al cierre de cada vela, recomendado)")
     lv.add_argument("--once", action="store_true", help="procesar una vela y salir (para cron)")
     lv.add_argument("--auto-optimize", action="store_true", help="una ronda de mejora al día dentro del bucle")
     lv.add_argument("--optimize-hour", type=int, default=3, help="hora UTC de la ronda diaria")
     lv.add_argument("--summary-hour", type=int, default=7, help="hora UTC del resumen diario por Telegram")
     lv.add_argument("--optimize-limit", type=int, default=5000, help="velas por símbolo para optimizar")
-    lv.set_defaults(func=cmd_live, cash=100.0)  # simular con el mismo capital que se usará de verdad
+    # tiempo real: velas de 5 min por defecto (decisión al segundo del cierre de cada vela)
+    lv.set_defaults(func=cmd_live, cash=100.0, interval="5m")  # simular con el mismo capital que se usará de verdad
 
     rp = sub.add_parser("report", help="resumen del modo en vivo (Markdown)")
     common(rp, "binance")
