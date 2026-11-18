@@ -44,7 +44,7 @@ MAX_DD = 0.10
 BOUNDS: Dict[str, Tuple[float, float]] = {
     "enter": (0.05, 0.40), "min_agreement": (0.50, 0.90), "min_edge": (0.0, 0.50),
     "min_samples": (15, 120), "risk_per_trade": (0.003, 0.02), "stop_atr": (1.0, 3.0),
-    "target_atr": (1.0, 8.0), "max_positions": (1, 6), "max_exposure": (0.15, 0.50),
+    "max_positions": (1, 6), "max_exposure": (0.15, 0.50),
     "exit_score": (-0.6, 0.0), "team_eta": (0.05, 1.0), "council_eta": (0.05, 1.0),
     "shadow_horizon": (12, 96), "riskoff_breadth": (0.2, 0.5), "max_heat": (0.01, 0.06),
 }
@@ -58,7 +58,9 @@ def _fix(cfg: Config) -> Config:
     for k, (lo, hi) in BOUNDS.items():
         v = min(hi, max(lo, getattr(cfg, k)))
         kw[k] = int(round(v)) if k in INTS else round(v, 4)
-    kw["target_atr"] = max(kw["target_atr"], 1.0 * kw["stop_atr"])  # beneficio/riesgo >= 1:1
+    # el objetivo de salida lo elige el calibrador entre los perfiles medidos; el 77 % es
+    # un requisito del usuario: el optimizador nunca puede rebajarlo
+    kw["min_win_prob"] = max(cfg.min_win_prob, 0.77)
     return replace(cfg, **kw, max_drawdown=MAX_DD)
 
 
@@ -148,7 +150,8 @@ def _eval_in_worker(cfg: Config) -> dict:
 class Optimizer:
     def __init__(self, data: Dict[str, List[Candle]], periods_per_year: int = 8_760, cash: float = 10_000.0,
                  seed: int = 0, min_trades: int = 10, log: Callable[[str], None] = print,
-                 workers: int = 0, sentiment: Optional[Dict[str, int]] = None) -> None:
+                 workers: int = 0, sentiment: Optional[Dict[str, int]] = None,
+                 funding: Optional[Dict[str, list]] = None) -> None:
         self.data = data
         self.ppy = periods_per_year
         self.cash = cash
@@ -168,10 +171,11 @@ class Optimizer:
             raise ValueError(f"pocas velas ({n}); hacen falta al menos ~{self.start + 500}")
         self.evals = 0
         self.sentiment = sentiment
+        self.funding = funding
         self.workers = max(1, workers if workers else min(MAX_AUTO_WORKERS, _usable_cpus()))
 
     def evaluate(self, cfg: Config, holdout: bool = False) -> dict:
-        eng = Engine(cfg, cash=self.cash, cache=self.cache, sentiment=self.sentiment)
+        eng = Engine(cfg, cash=self.cash, cache=self.cache, sentiment=self.sentiment, funding=self.funding)
         eng.track_stats = False
         stop = self.n if holdout else self.test_from
         trade_from = self.test_from if holdout else self.val_from
@@ -192,7 +196,7 @@ class Optimizer:
         (la parte cara). Después, cada simulación solo repite las decisiones."""
         s0 = next(iter(self.data))
         if (s0, self.data[s0][self.n - 1].time) not in self.cache:
-            eng = Engine(Config(), cash=self.cash, cache=self.cache, sentiment=self.sentiment)
+            eng = Engine(Config(), cash=self.cash, cache=self.cache, sentiment=self.sentiment, funding=self.funding)
             eng.track_stats = False
             run_backtest(eng, self.data, self.start, self.n, self.n - 1)
 

@@ -11,13 +11,16 @@
 """
 from __future__ import annotations
 
+import bisect
 import csv
+import io
 import math
 import random
 import sys
 import time
+import zipfile
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import httpx
 
@@ -33,6 +36,7 @@ class Candle:
     low: float
     close: float
     volume: float
+    taker_buy: float = 0.0  # volumen comprado «a mercado» (agresivo); 0 = desconocido
 
 
 def fetch_binance(symbol: str = "BTCUSDT", interval: str = "1h", limit: int = 1000, timeout: float = 15) -> List[Candle]:
@@ -46,8 +50,9 @@ def fetch_binance(symbol: str = "BTCUSDT", interval: str = "1h", limit: int = 10
                 params["endTime"] = end
             r = http.get(BINANCE_URL, params=params)
             r.raise_for_status()
-            page = [Candle(int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5]))
-                    for k in r.json()]
+            # k[9] = volumen comprador agresivo (taker buy): viene gratis en cada vela de Binance
+            page = [Candle(int(k[0]), float(k[1]), float(k[2]), float(k[3]), float(k[4]), float(k[5]),
+                           float(k[9]) if len(k) > 9 else 0.0) for k in r.json()]
             if not page:
                 break
             out = page + out
@@ -116,13 +121,16 @@ def fetch_fear_greed(limit: int = 400, timeout: float = 15) -> Dict[str, int]:
 
 
 def market_context(windows: Dict[str, Sequence[Candle]], sentiment: Optional[Dict[str, int]] = None,
-                   leader: str = "BTCUSDT") -> Dict[str, Dict[str, object]]:
+                   leader: str = "BTCUSDT",
+                   funding: Optional[Dict[str, List[Tuple[int, float]]]] = None) -> Dict[str, Dict[str, object]]:
     """Lo que solo se ve mirando TODAS las monedas a la vez, para cada símbolo:
 
     - ``rank``: percentil (0..1) de su rendimiento a 24/72/168 velas frente al resto
     - ``breadth``: fracción de monedas por encima de su media de 50 velas
     - ``btc_gap`` / ``btc_ret24``: BTC frente a su media de 200 y su último día
     - ``fng``: Fear & Greed del día (si está disponible)
+    - ``funding`` / ``funding_z``: último funding rate de futuros perpetuos conocido en
+      esa vela y su desviación frente a sus 90 anteriores (~30 días)
     """
     syms = list(windows)
     closes = {s: [c.close for c in w] for s, w in windows.items()}
@@ -145,14 +153,93 @@ def market_context(windows: Dict[str, Sequence[Candle]], sentiment: Optional[Dic
         btc_ret24 = lc[-1] / lc[-25] - 1 if len(lc) > 24 else 0.0
     day = time.strftime("%Y-%m-%d", time.gmtime(windows[syms[0]][-1].time / 1000))
     fng = (sentiment or {}).get(day)
-    return {s: {"rank": ranks[s], "breadth": breadth, "btc_gap": btc_gap, "btc_ret24": btc_ret24, "fng": fng,
-                "n": len(syms)} for s in syms}
+    out: Dict[str, Dict[str, object]] = {}
+    for s in syms:
+        fr, fz = funding_at((funding or {}).get(s), windows[s][-1].time)
+        out[s] = {"rank": ranks[s], "breadth": breadth, "btc_gap": btc_gap, "btc_ret24": btc_ret24, "fng": fng,
+                  "n": len(syms), "funding": fr, "funding_z": fz}
+    return out
+
+
+def funding_at(series: Optional[List[Tuple[int, float]]], t: int) -> Tuple[Optional[float], Optional[float]]:
+    """Último funding conocido en ``t`` (sin mirar al futuro) y su z-score frente a los 90 previos."""
+    if not series:
+        return None, None
+    i = bisect.bisect_right(series, (t, float("inf"))) - 1
+    if i < 0:
+        return None, None
+    rate = series[i][1]
+    hist = [r for _, r in series[max(0, i - 90): i]]
+    if len(hist) < 20:
+        return rate, None
+    mean = sum(hist) / len(hist)
+    sd = math.sqrt(sum((x - mean) ** 2 for x in hist) / len(hist)) or 1e-9
+    return rate, (rate - mean) / sd
+
+
+FUNDING_ARCHIVE = "https://data.binance.vision/data/futures/um/monthly/fundingRate/{s}/{s}-fundingRate-{m}.zip"
+FUNDING_API = "https://fapi.binance.com/fapi/v1/fundingRate"
+
+
+def _months(start_ms: int, end_ms: int) -> List[str]:
+    y, mo = map(int, time.strftime("%Y %m", time.gmtime(start_ms / 1000)).split())
+    ye, me = map(int, time.strftime("%Y %m", time.gmtime(end_ms / 1000)).split())
+    out = []
+    while (y, mo) <= (ye, me):
+        out.append(f"{y:04d}-{mo:02d}")
+        y, mo = (y + 1, 1) if mo == 12 else (y, mo + 1)
+    return out
+
+
+def fetch_funding(symbol: str, start_ms: int, end_ms: Optional[int] = None, timeout: float = 20) -> List[Tuple[int, float]]:
+    """Historial del funding rate (cada 8 h) de un perpetuo USDT, gratis y sin claves.
+
+    1. Archivo público mensual de Binance (data.binance.vision, sin bloqueo geográfico).
+    2. Mes en curso: API de futuros de Binance; si está bloqueada (p. ej. desde EE. UU.),
+       OKX/Bybit vía ccxt. Si todo falla, devuelve lo que tenga: el equipo «derivados»
+       se queda neutral donde falte el dato, nunca se inventa.
+    """
+    end_ms = end_ms or int(time.time() * 1000)
+    sym = symbol.upper()
+    rows: Dict[int, float] = {}
+    with httpx.Client(timeout=timeout) as http:
+        for m in _months(start_ms, end_ms):
+            try:
+                r = http.get(FUNDING_ARCHIVE.format(s=sym, m=m))
+                if r.status_code != 200:
+                    continue
+                with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                    text = z.read(z.namelist()[0]).decode()
+                for row in csv.reader(io.StringIO(text)):
+                    if row and row[0].isdigit():
+                        rows[int(row[0])] = float(row[-1])
+            except Exception:  # noqa: BLE001 - un mes que falla no tumba el resto
+                continue
+        last = max(rows) if rows else start_ms
+        if end_ms - last > 8 * 3_600_000:  # falta el tramo reciente
+            try:
+                r = http.get(FUNDING_API, params={"symbol": sym, "startTime": last + 1, "limit": 1000})
+                r.raise_for_status()
+                for row in r.json():
+                    rows[int(row["fundingTime"])] = float(row["fundingRate"])
+            except Exception:  # noqa: BLE001 - API bloqueada: probar con ccxt
+                for ex in ("okx", "bybit"):
+                    try:
+                        import ccxt  # type: ignore[import-not-found]
+                        c = getattr(ccxt, ex)({"enableRateLimit": True})
+                        for f in c.fetch_funding_rate_history(f"{sym[:-4]}/USDT:USDT", since=last + 1, limit=100):
+                            rows[int(f["timestamp"])] = float(f["fundingRate"])
+                        break
+                    except Exception:  # noqa: BLE001
+                        continue
+    return sorted((t, r) for t, r in rows.items() if t <= end_ms)
 
 
 def load_csv(path: str) -> List[Candle]:
     with open(path, newline="") as fh:
         return [Candle(int(float(row["time"])), float(row["open"]), float(row["high"]), float(row["low"]),
-                       float(row["close"]), float(row["volume"])) for row in csv.DictReader(fh)]
+                       float(row["close"]), float(row["volume"]), float(row.get("taker_buy") or 0))
+                for row in csv.DictReader(fh)]
 
 
 def synthetic(n: int = 1500, seed: int = 7, start: float = 30_000.0, structure: float = 0.0) -> List[Candle]:
@@ -171,7 +258,9 @@ def synthetic(n: int = 1500, seed: int = 7, start: float = 30_000.0, structure: 
         h = max(o, c) * (1 + abs(rng.gauss(0, vol / 2)))
         lo = min(o, c) * (1 - abs(rng.gauss(0, vol / 2)))
         v = abs(rng.gauss(100, 30)) * (1 + 20 * abs(ret))
-        out.append(Candle(t, o, h, lo, c, v))
+        # flujo agresivo sintético: algo más de compra agresiva en velas alcistas, con ruido
+        tb = v * min(0.95, max(0.05, 0.5 + ret * 8 + rng.gauss(0, 0.05)))
+        out.append(Candle(t, o, h, lo, c, v, tb))
         price, t = c, t + 3_600_000
     return out
 

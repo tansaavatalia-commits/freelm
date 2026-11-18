@@ -19,6 +19,7 @@ ponen a competir y el aprendizaje decide.
     volatilidad    compresión/expansión de bandas ("squeeze"), ATR
     multi-marco    tendencia en marcos temporales 4x-24x mayores
     mercado        fuerza relativa entre monedas, amplitud, BTC líder, sentimiento
+    posicionamiento  flujo comprador agresivo (taker) y funding rate de futuros
     ia             analista LLM gratuito vía freelm (opcional)
 """
 from __future__ import annotations
@@ -346,6 +347,52 @@ class SentimentAgent(Agent):
         return Signal(self.name, _clip((50 - v) / 40), 0.6 if extreme else 0.15, f"Fear & Greed {v}")
 
 
+# ------------------------------------------------------------------ posicionamiento (quién empuja y quién está apalancado)
+
+class TakerFlowAgent(Agent):
+    """Flujo agresivo: qué parte del volumen se compró «a mercado» (taker buy).
+    Más del 50 % sostenido = compradores con prisa. Viene gratis en cada vela
+    de Binance; si no hay dato (otros exchanges, CSV), se queda neutral."""
+    team = "posicionamiento"
+
+    def __init__(self, lookback: int = 24) -> None:
+        self.lb = lookback
+        self.name, self.warmup = f"flujo_taker_{lookback}", lookback + 2
+
+    def analyze(self, f: Features) -> Signal:
+        cs = f.candles[-self.lb:]
+        vol = sum(c.volume for c in cs)
+        buy = sum(c.taker_buy for c in cs)
+        if vol <= 0 or buy <= 0:
+            return _neutral(self.name, "sin dato de flujo taker")
+        ratio = buy / vol
+        return Signal(self.name, _clip((ratio - 0.5) * 12), min(1.0, 0.2 + abs(ratio - 0.5) * 8),
+                      f"{ratio:.1%} compra agresiva en {self.lb} velas")
+
+
+class FundingAgent(Agent):
+    """Funding rate de los futuros perpetuos, a la contra: cuando los largos
+    pagan mucho (funding alto) el mercado está sobrecomprado y apalancado, y
+    suele corregir; funding muy negativo = cortos apalancados (rebotes)."""
+    team = "posicionamiento"
+
+    def __init__(self, mode: str = "z") -> None:
+        self.mode = mode
+        self.name, self.warmup = f"funding_{mode}", 2
+
+    def analyze(self, f: Features) -> Signal:
+        rate, z = f.ctx.get("funding"), f.ctx.get("funding_z")
+        if rate is None:
+            return _neutral(self.name, "sin dato de funding")
+        if self.mode == "z":
+            if z is None:
+                return _neutral(self.name, "historial de funding corto")
+            return Signal(self.name, _clip(-z / 2.5), 0.6 if abs(z) > 1.5 else 0.15, f"funding z {z:+.1f}")
+        # nivel absoluto: 0,01 % cada 8 h es el neutro habitual de Binance
+        excess = (rate - 0.0001) / 0.0004
+        return Signal(self.name, _clip(-excess), 0.6 if abs(excess) > 1 else 0.15, f"funding {rate:+.4%}/8 h")
+
+
 # ------------------------------------------------------------------ ia
 
 _JSON = re.compile(r"\{.*\}", re.S)
@@ -434,6 +481,8 @@ def agent_swarm() -> List[Agent]:
             out.append(MtfTrendAgent(k, fa, sl))
     out += [RelStrengthAgent(lb) for lb in (24, 72, 168)]
     out += [BreadthAgent(), BtcLeaderAgent(), SentimentAgent()]
+    out += [TakerFlowAgent(lb) for lb in (6, 24, 72)]
+    out += [FundingAgent("z"), FundingAgent("nivel")]
     return out
 
 

@@ -26,6 +26,7 @@ def _no_network(monkeypatch):
     import market as _m
     monkeypatch.setattr(_m, "fetch_fear_greed", offline)
     monkeypatch.setattr(bot, "fetch_fear_greed", offline)
+    monkeypatch.setattr(bot, "fetch_funding", offline)
 
 
 def test_indicators_basic():
@@ -531,3 +532,172 @@ def test_sentiment_history_covers_the_interval(monkeypatch):
     args = bot.parser().parse_args(["backtest", "--source", "binance", "--interval", "4h", "--limit", "3000"])
     bot.load_sentiment(args)
     assert asked[0] >= 500  # 3000 velas de 4 h = 500 días (antes pedía 135)
+
+
+# ---------------------------------------------------------------- equipo «posicionamiento»
+
+def test_funding_at_is_point_in_time_with_zscore():
+    series = [(i * 8 * 3_600_000, 0.0001 + (0.0001 if i % 2 else 0)) for i in range(60)] + [(60 * 28_800_000, 0.002)]
+    rate, z = market.funding_at(series, 60 * 28_800_000 + 5)
+    assert rate == 0.002 and z > 5
+    assert market.funding_at(series, 10 * 28_800_000 + 1)[1] is None  # < 20 previos: sin z
+    assert market.funding_at(series, -1) == (None, None)               # nada antes: sin mirar al futuro
+    assert market.funding_at(None, 5) == (None, None)
+
+
+def test_positioning_agents():
+    cs = [Candle(i, 100, 101, 99, 100, 10, 8) for i in range(30)]  # 80 % compra agresiva
+    f = Features(cs, "X")
+    assert agents.TakerFlowAgent(24).analyze(f).score > 0.9
+    assert agents.TakerFlowAgent(24).analyze(Features(synthetic(40)[:0] or [Candle(i, 1, 1, 1, 1, 1) for i in range(30)])).value == 0
+    f.ctx = {"funding": 0.0012, "funding_z": 3.0}
+    assert agents.FundingAgent("z").analyze(f).score < -0.9      # largos muy apalancados -> a la contra
+    assert agents.FundingAgent("nivel").analyze(f).score < -0.9
+    f.ctx = {"funding": -0.0005, "funding_z": -2.5}
+    assert agents.FundingAgent("z").analyze(f).score > 0.9
+    assert agents.FundingAgent("z").analyze(Features(cs)).value == 0  # sin dato: neutral
+    ctx = market.market_context({"BTCUSDT": cs, "ETHUSDT": cs}, funding={"BTCUSDT": [(0, 0.0003)]})
+    assert ctx["BTCUSDT"]["funding"] == 0.0003 and ctx["ETHUSDT"]["funding"] is None
+
+
+def test_fetch_funding_reads_binance_archive(monkeypatch):
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("BTCUSDT-fundingRate-2025-10.csv", "calc_time,funding_interval_hours,last_funding_rate\n"
+                   "1759276800000,8,0.00010000\n1759305600000,8,0.00025000\n")
+
+    class Http:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, params=None):
+            if "data.binance.vision" in url and "2025-10" in url:
+                return SimpleNamespace(status_code=200, content=buf.getvalue())
+            if "data.binance.vision" in url:
+                return SimpleNamespace(status_code=404, content=b"")
+            raise ConnectionError("API bloqueada")
+
+    monkeypatch.setattr(market.httpx, "Client", Http)
+    monkeypatch.setitem(sys.modules, "ccxt", None)  # sin ccxt: el respaldo falla en silencio
+    rows = market.fetch_funding("BTCUSDT", 1759276800000, 1759400000000)
+    assert rows == [(1759276800000, 0.0001), (1759305600000, 0.00025)]
+
+
+# ---------------------------------------------------------------- IC por agente e informe de rendimiento
+
+def test_agent_ic_detects_predictive_and_contrarian_agents():
+    import random
+
+    from learning import AgentStats
+    rng = random.Random(0)
+    good, bad, noise = AgentStats(), AgentStats(), AgentStats()
+    for _ in range(2000):
+        y = rng.gauss(0, 1)
+        good.add_ic(y + rng.gauss(0, 2), y)
+        bad.add_ic(-y + rng.gauss(0, 2), y)
+        noise.add_ic(rng.gauss(0, 1), y)
+    assert good.ic > 0.3 and good.ic_t > 10
+    assert bad.ic_t < -10 and abs(noise.ic_t) < 3
+    c = Coordinator(["a"], eta=0.3)
+    for i in range(50):
+        r = 0.01 if i % 2 else -0.01
+        c.learn_arrays((1.0 if r > 0 else -1.0,), (1.0,), "lateral", r, 0.01)
+    assert c.stats["a"].ic == pytest.approx(1.0) and c.to_dict()["stats"]["a"]["ic_n"] == 50
+    rows = bot.agent_ic_table({"teams": {"t": c.to_dict()}})
+    assert rows[0][0] == "a" and rows[0][4] > 10
+
+
+def test_performance_report_metrics():
+    from report import format_performance, performance
+    hour = 3_600_000
+    eq = [100, 101, 102, 99, 98, 100, 103, 104]
+    times = [1_700_000_000_000 + i * 12 * hour for i in range(len(eq))]
+    trades = [SimpleNamespace(pnl=x) for x in (2, -1, -1, 3, 1)]
+    p = performance(eq, times, 8_760, trades)
+    assert p["total"] == pytest.approx(0.04) and p["max_drawdown"] == pytest.approx(1 - 98 / 102)
+    assert p["sortino"] > 0 and p["win_streak"] == 2 and p["loss_streak"] == 2
+    assert p["expectancy"] == pytest.approx(0.8) and p["payoff"] == pytest.approx(2.0)
+    assert any("Sortino" in line for line in format_performance(p))
+    assert performance([100], [0], 8_760) == {}
+
+
+# ---------------------------------------------------------------- filtro de probabilidad verificada (>= 77 %)
+
+def test_wilson_lower_bound():
+    from learning import wilson_lower
+    assert wilson_lower(0, 0, 3) == 0.0
+    assert wilson_lower(8, 10, 3) < 0.5                    # 80 % en 10 casos no demuestra nada
+    assert 0.77 < wilson_lower(900, 1000, 3) < 0.9         # 90 % en 1000 casos sí
+    assert wilson_lower(90, 100, 1.96) > wilson_lower(90, 100, 3.0)  # más exigencia, cota más baja
+
+
+def test_calibrator_chooses_only_verified_high_probability_profile():
+    cal = Calibrator(min_samples=20, horizon=10, fee=0.0, sample_gap=10)
+    # objetivo cercano (0,5 ATR) casi siempre se toca; el lejano (3 ATR) casi nunca
+    for i in range(400):
+        cal.record("X", "k", 100.0, 98.0, atr=1.0, profiles=(0.5, 3.0))
+        low = 97.0 if i % 25 == 0 else 99.6        # 4 % de las veces salta el stop
+        cal.update("X", 100.6, low, 100.2)
+    ok, note, target, p = cal.choose("k", (0.5, 3.0), 0.77, 3.0)
+    assert ok and target == 0.5 and p >= 0.77, note
+    assert not cal.choose("k", (3.0,), 0.77, 3.0)[0]       # el perfil lejano no llega al 77 %
+    assert not cal.choose("otro", (0.5,), 0.77, 3.0)[0]    # sin historial: nunca opera
+
+
+def test_overlapping_shadows_count_as_fewer_effective_samples():
+    cal = Calibrator(min_samples=1, horizon=48, fee=0.0, sample_gap=6)
+    for _ in range(100):
+        cal.record("X", "k", 100.0, 90.0, 120.0)
+    for _ in range(48):
+        cal.update("X", 101, 99, 100)                       # todas duran 48 velas (horizonte)
+    assert cal.results["k"][0] == 100 and cal.effective_n("k") == pytest.approx(100 * 6 / 48)
+
+
+def test_strict_position_exits_exactly_like_the_shadow():
+    pf, r = Portfolio(cash=1000, fee=0.0), RiskManager(exit_score=-0.2)
+    pf.open(Position("X", 1, 100, 98, 101, 2, 0, 100, "", p_win=0.8, expires=3, strict=True))
+    assert r.check_exit(pf, "X", 100.5, 99.5, 100.2, 1.0, -0.9) is None   # el consejo bajista NO cierra
+    assert pf.positions["X"].stop == 98                                    # ni sube el stop
+    assert r.check_exit(pf, "X", 100.5, 99.5, 100.2, 1.0, 0.0) is None
+    assert r.check_exit(pf, "X", 100.5, 99.5, 100.3, 1.0, 0.0) == (100.3, "fin del horizonte")
+    t = pf.close("X", 100.3, 1, "fin")
+    assert t.p_win == 0.8
+
+
+def test_optimizer_never_lowers_the_77_percent_rule():
+    import random
+
+    from optimize import _fix
+    rng = random.Random(3)
+    c = _fix(Config(min_win_prob=0.5))
+    assert c.min_win_prob >= 0.77
+    for _ in range(30):
+        assert mutate(c, rng, ["tendencia", "flujo"], rate=1.0).min_win_prob >= 0.77
+
+
+def test_verification_report(capsys):
+    from risk import ClosedTrade
+    trades = [ClosedTrade("X", 0, 1, 100, 101, 1, 1.0, 0.5, "obj", 0.01, 0.8) for _ in range(9)]
+    trades.append(ClosedTrade("X", 0, 1, 100, 98, 1, -2.0, -1.0, "stop", 0.01, 0.8))
+    bot.print_verification(trades)
+    assert "acertaron 90%" in capsys.readouterr().out
+    bot.print_verification([])
+    assert "ninguna operación" in capsys.readouterr().out
+
+
+def test_sleep_to_next_close_aligns_to_candle(monkeypatch):
+    slept = []
+    monkeypatch.setattr(bot.time, "time", lambda: 1_000_000_010.0)
+    monkeypatch.setattr(bot.time, "sleep", slept.append)
+    bot.sleep_to_next_close("5m", 0)
+    assert (1_000_000_010.0 + slept[0]) % 300 == pytest.approx(1.5)
+    bot.sleep_to_next_close("5m", 7)
+    assert slept[-1] == 7

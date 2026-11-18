@@ -32,6 +32,9 @@ class Position:
     high: float
     reason: str
     risk_frac: float = 0.0  # fracción del capital arriesgada al abrir (qty * distancia al stop / capital)
+    p_win: float = 0.0      # probabilidad de acierto verificada al abrir
+    expires: int = 0        # velas hasta el cierre por horizonte (modo estricto)
+    strict: bool = False    # salidas idénticas a las de la sombra: sin stop dinámico ni cierre «a ojo»
 
 
 @dataclass
@@ -46,6 +49,7 @@ class ClosedTrade:
     r: float
     why: str
     risk_frac: float = 0.0
+    p_win: float = 0.0
 
     @property
     def equity_return(self) -> float:
@@ -74,7 +78,7 @@ class Portfolio:
         self.cash += proceeds
         pnl = proceeds - p.qty * p.entry * (1 + self.fee)
         t = ClosedTrade(symbol, p.opened, time, p.entry, price, p.qty, pnl, pnl / (p.qty * p.risk_per_unit), why,
-                        p.risk_frac)
+                        p.risk_frac, p.p_win)
         self.closed.append(t)
         return t
 
@@ -120,6 +124,16 @@ class RiskManager:
         pesimista cuando ambos caben en la vela). Si no hay salida, actualiza el stop."""
         p = pf.positions.get(symbol)
         if not p:
+            return None
+        if p.strict:
+            # mismas reglas que la operación en la sombra que midió la probabilidad
+            p.expires -= 1
+            if low <= p.stop:
+                return p.stop, "stop"
+            if high >= p.target:
+                return p.target, "objetivo alcanzado"
+            if p.expires <= 0:
+                return close, "fin del horizonte"
             return None
         if low <= p.stop:
             return p.stop, ("stop" if p.stop < p.entry else "stop de protección")

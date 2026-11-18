@@ -9,9 +9,9 @@ services:
     volumes:
       - ./data:/data            # memoria, campeona, cartera e historial
     # Fase 1 (20 días): papel.
-    command: ["live", "--exchange", "papel", "--auto-optimize", "--llm"]
+    command: ["live", "--interval", "5m", "--exchange", "papel", "--auto-optimize", "--optimize-limit", "15000", "--llm"]
     # Fase 2 (SOLO si `gate` dice APTO): comenta la línea de arriba y usa esta.
-    # command: ["live", "--exchange", "real", "--confirm-real-money", "--max-capital", "100", "--auto-optimize", "--llm"]
+    # command: ["live", "--interval", "5m", "--exchange", "real", "--confirm-real-money", "--max-capital", "100", "--auto-optimize", "--optimize-limit", "15000", "--llm"]
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}

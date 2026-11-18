@@ -17,6 +17,35 @@ El bot también muestra siempre el **rendimiento semanal equivalente**, para
 compararlo con la meta del +18 % semanal. Lo mide, pero no arriesga el capital
 para perseguirlo.
 
+## Regla de entrada: probabilidad de acierto ≥ 77 % **verificada**
+
+El bot solo abre una posición si se cumple **todo** esto:
+
+1. **Probabilidad medida en la sombra.** Cada tipo de señal se «opera» sin
+   dinero con 4 perfiles de salida a la vez (objetivo a 0,75 / 1,125 / 1,5 / 3 ATR,
+   stop a 1,5 ATR), pagando comisión y deslizamiento. Una operación «acierta»
+   si cierra en positivo tras costes.
+2. **Cota inferior de Wilson ≥ 77 %, con z = 3.** No basta con que el acierto
+   medido sea del 77 %: tiene que serlo con un 99,9 % de confianza. El z alto
+   corrige las pruebas múltiples: con decenas de combinaciones de tipo y perfil,
+   alguna saldría buena por azar.
+3. **Muestras efectivas.** Si las sombras se solapan en el tiempo, cuentan
+   menos (n_eff = n × separación / duración media).
+4. **Ganancia esperada positiva.** Acertar el 78 % con objetivos diminutos
+   puede perder dinero; esas señales se rechazan.
+5. **Punto en el tiempo.** Cada decisión usa solo sombras cerradas antes de ella.
+   Las salidas reales son **idénticas** a las medidas (sin stop dinámico ni
+   cierres «a ojo»), así que la probabilidad vale para esa operación.
+6. **El optimizador nunca puede rebajar el 77 %.**
+
+`backtest` muestra la **verificación**: probabilidad prometida frente a acierto
+real. Si ninguna señal cumple, el bot no opera, y es lo correcto.
+
+**Tiempo real:** `live` usa ahora velas de 5 minutos por defecto (`--interval
+1m|5m`). Descarga las 8 monedas en paralelo y decide 1,5 s después del cierre
+de cada vela. Necesita el servidor Oracle encendido; GitHub Actions sigue con
+velas de 1 hora.
+
 ## Arquitectura: nodos enlazados
 
 `python bot.py graph` dibuja el grafo real en formato Mermaid. Cada vela, cada
@@ -38,9 +67,9 @@ flowchart LR
 
 | Nodo | Qué hace |
 |---|---|
-| `observar` | 100 agentes por símbolo analizan la ventana. Con 8 monedas son ≈ 850 señales por vela, a más de 30.000 señales/segundo. |
+| `observar` | 105 agentes por símbolo analizan la ventana. Con 8 monedas son ≈ 900 señales por vela, a más de 30.000 señales/segundo. |
 | `equipo:*` | Cada equipo vota con pesos aprendidos (algoritmo *Hedge*), separados por régimen de mercado. |
-| `consejo` | Confronta a los 6 equipos (tendencia, reversión, flujo, volatilidad, multi-marco y mercado), también con pesos aprendidos. |
+| `consejo` | Confronta a los 7 equipos (tendencia, reversión, flujo, volatilidad, multi-marco, mercado y posicionamiento), también con pesos aprendidos. |
 | `escéptico` | Veta si hay desacuerdo entre equipos, si el régimen es volátil, si habría que comprar bajo la EMA 200 o si todo el mercado está en fase bajista (BTC bajo su media 200 y menos del 35 % de monedas al alza). |
 | `filtro_ventaja` | Solo deja pasar tipos de señal con ventaja neta demostrada en la sombra. |
 | `registrar_sombra` | Prueba cada señal sin dinero real, con stop, objetivo y comisiones. |
@@ -54,6 +83,25 @@ flowchart LR
 - **Amplitud**: qué parte del mercado está al alza.
 - **BTC como guía**: su tendencia de fondo y su último día.
 - **Sentimiento**: el índice Fear & Greed (alternative.me, gratis), leído a la contra. El miedo extremo suma a favor de comprar y la codicia extrema, en contra. Solo se usa con datos reales; `--no-sentiment` lo desactiva.
+
+**Equipo «posicionamiento»**: quién empuja el precio y quién está apalancado.
+
+- **Flujo comprador agresivo (taker)** a 6, 24 y 72 velas: qué parte del volumen
+  se compró «a mercado». Viene gratis en cada vela de Binance (antes se descartaba).
+- **Funding rate de los futuros perpetuos**, leído a la contra: un funding muy
+  alto significa largos apalancados y sobrecompra; uno muy negativo, cortos
+  apalancados. Se descarga del archivo público `data.binance.vision`, sin
+  claves ni bloqueo geográfico; el tramo más reciente sale de la API de futuros
+  o, si está bloqueada, de OKX o Bybit vía ccxt. `--no-funding` lo desactiva.
+
+**Capacidad predictiva de cada agente** (IC, al estilo alphalens): `backtest`
+y `status` muestran qué agentes predicen de verdad el retorno siguiente
+(|t| > 2) y cuáles son ruido. `status --all-agents` da la tabla completa.
+
+**Informe profesional** (al estilo quantstats, sin dependencias): Sortino,
+Calmar, duración de la peor caída, días positivos, mejor y peor día,
+rendimiento por meses, esperanza por operación y rachas. Aparece en
+`backtest`, en `report`, en GitHub y en Telegram.
 
 Los nodos se añaden o se quitan con `Graph.add` / `Graph.remove`. El orden de
 ejecución se calcula solo, a partir de lo que cada nodo necesita y produce.

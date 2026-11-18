@@ -25,19 +25,22 @@ import os
 import sys
 import time
 from dataclasses import asdict
+from types import SimpleNamespace
 from typing import Dict, List, Optional
 
 from agents import LLMAnalystAgent
-from engine import WINDOW, Config, Engine, metrics, run_backtest, stress_test, trade_stats
+from engine import SHADOW_GAP, WINDOW, Config, Engine, metrics, run_backtest, stress_test, trade_stats
 from exchange import CcxtExecutor, check_gate, load_track, record_equity
-from learning import REGIMES, Calibrator
-from market import DEFAULT_SYMBOLS, Candle, align, fetch_candles, fetch_fear_greed, load_csv, synthetic
+from learning import REGIMES, AgentStats, Calibrator
+from market import DEFAULT_SYMBOLS, Candle, align, fetch_candles, fetch_fear_greed, fetch_funding, load_csv, synthetic
 from notify import Notifier
 from optimize import Optimizer, load_champion, save_result
+from report import format_performance, performance
 from risk import ClosedTrade, Position
 
 STATE_DIR = os.environ.get("FREELM_TRADING_DIR", os.path.join(os.path.expanduser("~"), ".cache", "freelm-trading"))
-PERIODS_PER_YEAR = {"15m": 35_040, "1h": 8_760, "4h": 2_190, "1d": 365}
+PERIODS_PER_YEAR = {"1m": 525_600, "5m": 105_120, "15m": 35_040, "1h": 8_760, "4h": 2_190, "1d": 365}
+INTERVAL_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14_400, "1d": 86_400}
 
 
 def p(args: argparse.Namespace, name: str) -> str:
@@ -119,6 +122,59 @@ def load_sentiment(args: argparse.Namespace) -> Optional[Dict[str, int]]:
         return None
 
 
+def load_funding(args: argparse.Namespace, symbols: List[str], start_ms: int) -> Optional[Dict[str, list]]:
+    """Funding rate de futuros para el equipo «posicionamiento» (solo con datos reales).
+    Se pide desde 40 días antes de la primera vela, para poder calcular su z-score."""
+    if args.source == "synthetic" or args.no_funding:
+        return None
+    out = {}
+    for s in symbols:
+        try:
+            out[s] = fetch_funding(s, start_ms - 40 * 86_400_000)
+        except Exception as e:  # noqa: BLE001 - el funding es opcional
+            print(f"[aviso] {s}: sin funding ({type(e).__name__})", file=sys.stderr)
+    got = sum(1 for v in out.values() if v)
+    if got < len(symbols):
+        print(f"[aviso] funding disponible para {got}/{len(symbols)} monedas", file=sys.stderr)
+    return out
+
+
+def _first_ms(data: Dict[str, List[Candle]]) -> int:
+    return min(cs[0].time for cs in data.values())
+
+
+def print_verification(trades: List[ClosedTrade]) -> None:
+    """¿Se cumplió lo prometido? Probabilidad verificada al abrir frente al acierto real."""
+    ts = [t for t in trades if t.p_win > 0]
+    if not ts:
+        print("  verificación del 77 %: ninguna operación cumplió el filtro de probabilidad")
+        return
+    promised = sum(t.p_win for t in ts) / len(ts)
+    hit = sum(1 for t in ts if t.pnl > 0) / len(ts)
+    verdict = "se cumple" if hit >= promised else ("dentro de lo esperable" if len(ts) < 20 else "NO se cumple")
+    print(f"  verificación del 77 %: {len(ts)} operaciones con probabilidad verificada media {promised:.0%} "
+          f"-> acertaron {hit:.0%} ({verdict})")
+
+
+def fetch_universe(syms: List[str], interval: str, limit: int) -> Dict[str, List[Candle]]:
+    """Las 8 monedas en paralelo: en 1-5 min, todas llegan en ~1 s tras el cierre de la vela."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=len(syms)) as ex:
+        res = dict(zip(syms, ex.map(lambda s: fetch_candles(s, interval, limit), syms)))
+    return align(res)
+
+
+def sleep_to_next_close(interval: str, poll: float) -> None:
+    """Duerme hasta 1,5 s después del cierre de la próxima vela: la decisión y la orden
+    salen en el mismo segundo en que la vela con señal se confirma. ``--poll`` > 0 lo anula."""
+    if poll > 0:
+        time.sleep(poll)
+        return
+    iv = INTERVAL_SECONDS.get(interval, 3600)
+    now = time.time()
+    time.sleep(max(1.0, (int(now // iv) + 1) * iv + 1.5 - now))
+
+
 def print_stress(trades: List[ClosedTrade]) -> None:
     st = stress_test([t.equity_return for t in trades], 1.0)
     if not st.get("paths"):
@@ -127,6 +183,34 @@ def print_stress(trades: List[ClosedTrade]) -> None:
     print(f"  prueba de estrés ({st['paths']:,} órdenes al azar de las mismas {st['trades']} operaciones): "
           f"caída típica {st['dd_p50']:.1%}, mala racha (peor 5 %) {st['dd_p95']:.1%}, "
           f"prob. de acabar en pérdidas {st['p_loss']:.0%}")
+
+
+def agent_ic_table(state: dict) -> List[tuple]:
+    """(agente, equipo, observaciones, IC, t) de cada agente, del más al menos predictivo."""
+    rows = []
+    for team, t in state.get("teams", {}).items():
+        for name, st in t.get("stats", {}).items():
+            a = AgentStats(**st)
+            if a.ic_n > 2:
+                rows.append((name, team, a.ic_n, a.ic, a.ic_t))
+    return sorted(rows, key=lambda r: -r[4])
+
+
+def print_ic(state: dict, k: int = 6, full: bool = False) -> None:
+    rows = agent_ic_table(state)
+    if not rows:
+        return
+    useful = sum(1 for r in rows if r[4] > 2)
+    harmful = sum(1 for r in rows if r[4] < -2)
+    print("\nCapacidad predictiva por agente (IC = correlación con el retorno siguiente; |t| > 2 = no es azar)")
+    print(f"  {useful} agentes con IC positivo significativo, {harmful} con IC negativo significativo, "
+          f"{len(rows) - useful - harmful} indistinguibles del ruido (de {len(rows)})")
+    show = rows if full else rows[:k] + ([("…", "", 0, 0.0, 0.0)] if len(rows) > 2 * k else []) + rows[-k:]
+    for name, team, n, ic, t in show:
+        if name == "…":
+            print("  …")
+            continue
+        print(f"  {name:<18}{team:<16}IC {ic:+.3f}  t {t:+6.1f}  ({n:,} obs.)")
 
 
 def print_learning(state: dict, top: int = 3) -> None:
@@ -147,12 +231,16 @@ def print_learning(state: dict, top: int = 3) -> None:
         best = [", ".join(a for a, _ in sorted(w.get(reg, {}).items(), key=lambda kv: -kv[1])[:top])
                 for reg in ("tendencia", "lateral")]
         print(f"  {name:<12} {best[0]}  |  {best[1]}")
-    rows = Calibrator.from_dict(state.get("calibrator")).table()
+    cfg = Config.from_dict(state.get("config"))
+    rows = Calibrator.from_dict(state.get("calibrator"), sample_gap=SHADOW_GAP).table(z=cfg.prob_z)
     if rows:
-        print("\nCalibrador: esperanza medida en la sombra por tipo de señal (R = riesgo arriesgado)")
-        print(f"  {'tipo':<28}{'casos':>7}{'media':>8}{'acierto':>9}{'conservadora':>14}")
-        for k, n, mean, wr, e in rows[:10]:
-            print(f"  {k:<28}{n:>7}{mean:>+8.2f}{wr:>9.0%}{e:>+13.2f}R")
+        print("\nCalibrador: tipo de señal x perfil de salida (#t = objetivo en ATR), medido en la sombra")
+        print(f"  {'tipo':<34}{'casos':>7}{'acierto':>9}{'verificable':>13}{'esperanza':>11}")
+        for k, n, mean, wr, e, plb in rows[:12]:
+            mark = "  << opera" if plb >= cfg.min_win_prob and e > 0 else ""
+            print(f"  {k:<34}{n:>7}{wr:>9.0%}{plb:>13.0%}{e:>+10.2f}R{mark}")
+        print(f"  (solo se opera si «verificable» >= {cfg.min_win_prob:.0%}: cota inferior de Wilson con "
+              f"z={cfg.prob_z:g}, muestras efectivas)")
 
 
 def print_result(label: str, m: Dict[str, float], ts: Dict[str, float], bh: float) -> None:
@@ -171,7 +259,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
         raise SystemExit("sin datos")
     path = state_file(args)
     eng = Engine(config_for(args), load_json(path), cash=args.cash, llm=build_llm(args.llm, args.llm_model),
-                 sentiment=load_sentiment(args))
+                 sentiment=load_sentiment(args), funding=load_funding(args, list(data), _first_ms(data)))
     n = min(len(v) for v in data.values())
     split = eng.warmup + int((n - eng.warmup) * args.train)
     if n - split < 50:
@@ -195,8 +283,14 @@ def cmd_backtest(args: argparse.Namespace) -> int:
     ts = trade_stats(eng.pf.closed)
     print(f"\nAprendizaje sin operar: {split - eng.warmup} velas · validación operando en papel: {n - split} velas")
     print_result("Validación fuera de muestra", m, ts, out["buy_hold"])
+    s0 = next(iter(data))
+    times = [data[s0][split].time] + [data[s0][i].time for i in range(split, n)]
+    for line in format_performance(performance(out["equity"], times, PERIODS_PER_YEAR.get(args.interval, 8_760),
+                                               eng.pf.closed)):
+        print(line)
     print(f"  señales procesadas: {eng.total_signals:,} a {eng.signals_per_second:,.0f}/s")
     print_stress(eng.pf.closed)
+    print_verification(eng.pf.closed)
     vetoes = sorted(eng.veto_counts.items(), key=lambda kv: -kv[1])
     print("  vetos: " + ", ".join(f"{k} {v:,}" for k, v in vetoes[:5]))
     ok_dd = m["max_drawdown"] <= 0.10
@@ -205,6 +299,7 @@ def cmd_backtest(args: argparse.Namespace) -> int:
           + ("  [datos sintéticos]" if args.source == "synthetic" else ""))
     print()
     print_learning(eng.state())
+    print_ic(eng.state())
     if path:
         save_json(path, eng.state())
         print(f"\nMemoria guardada en {path}")
@@ -218,7 +313,8 @@ def cmd_optimize(args: argparse.Namespace) -> int:
     champ_path, hist_path = p(args, "champion.json"), p(args, "optimize_history.jsonl")
     champ = None if args.default_config else load_champion(champ_path)
     opt = Optimizer(data, PERIODS_PER_YEAR.get(args.interval, 8_760), cash=args.cash, seed=args.seed,
-                    min_trades=args.min_trades, workers=args.workers, sentiment=load_sentiment(args))
+                    min_trades=args.min_trades, workers=args.workers, sentiment=load_sentiment(args),
+                    funding=load_funding(args, list(data), _first_ms(data)))
     sp = {"aprender": opt.val_from - opt.start, "validación": opt.test_from - opt.val_from,
           "examen": opt.n - opt.test_from}
     print(f"Optimizando sobre {', '.join(data)} ({args.source}, {args.interval}): "
@@ -305,8 +401,11 @@ def cmd_live(args: argparse.Namespace) -> int:
         print(f"Conectado a {executor.name}. Capital de trabajo: {cash:.2f} (tope {args.max_capital:.2f})")
     path = state_file(args) or p(args, f"memoria-binance-{args.interval}.json")
     book_path, track_path = _book_path(args), _track_path(args)
+    fund_from = int(time.time() * 1000) - WINDOW * 3_600_000
     eng = Engine(config_for(args), load_json(path), cash=cash, executor=executor,
-                 llm=build_llm(args.llm, args.llm_model), sentiment=load_sentiment(args))
+                 llm=build_llm(args.llm, args.llm_model), sentiment=load_sentiment(args),
+                 funding=load_funding(args, syms, fund_from))
+    fund_try = time.time()
     book = load_json(book_path)
     if book:  # recuperar la cartera
         eng.pf.cash = book["cash"]
@@ -324,7 +423,8 @@ def cmd_live(args: argparse.Namespace) -> int:
     print(f"Modo vivo ({eng.executor.name}): {', '.join(syms)} {args.interval}. Ctrl+C para salir.")
     while True:
         try:
-            data = align({s: fetch_candles(s, args.interval, WINDOW + 1)[:-1] for s in syms})  # última vela abierta
+            data = fetch_universe(syms, args.interval, WINDOW + 1)
+            data = {s: cs[:-1] for s, cs in data.items()}  # la última vela aún está abierta
             t = min(cs[-1].time for cs in data.values())
             if t > last_seen:
                 last_seen = t
@@ -360,6 +460,9 @@ def cmd_live(args: argparse.Namespace) -> int:
                         and time.time() - sent_try > 3600):
                     sent_try = time.time()
                     eng.sentiment = load_sentiment(args) or eng.sentiment
+                if time.time() - fund_try > 4 * 3600:  # el funding se liquida cada 8 h
+                    fund_try = time.time()
+                    eng.funding = load_funding(args, syms, fund_from) or eng.funding
                 if tg.enabled and day != last_summary and time.gmtime().tm_hour >= args.summary_hour:
                     last_summary = day
                     tg.send(build_report(args, markdown=False))
@@ -382,7 +485,7 @@ def cmd_live(args: argparse.Namespace) -> int:
             if args.once:
                 return 1
         try:
-            time.sleep(args.poll)
+            sleep_to_next_close(args.interval, args.poll)
         except KeyboardInterrupt:
             return 0
 
@@ -414,6 +517,10 @@ def build_report(args: argparse.Namespace, markdown: bool = True) -> str:
                   f"- Rendimiento: **{ret:+.2%}** · últimas 24 h {eq[-1] / day_ago[0] - 1:+.2%} · "
                   f"semanal equivalente {weekly:+.2%} (meta +18 %)",
                   f"- Caída máxima: {mdd:.2%} (límite 10 %)"]
+        if days >= 2:  # informe profesional (estilo quantstats) a partir de 2 días de historial
+            trades = [SimpleNamespace(pnl=c["pnl"]) for c in book.get("closed", [])]
+            perf = performance(eq, [r["t"] * 1000 for r in track], PERIODS_PER_YEAR.get(args.interval, 8_760), trades)
+            lines += ["-" + x[1:] for x in format_performance(perf)]
     else:
         lines.append("- Aún sin historial en vivo.")
     closed = book.get("closed", [])
@@ -461,7 +568,8 @@ def _reoptimize(args: argparse.Namespace, eng: Engine, path: str) -> Engine:
     cfg = config_for(args)
     if cfg == eng.cfg:
         return eng
-    new = Engine(cfg, eng.state(), cash=eng.pf.cash, executor=eng.executor, llm=eng.llm, sentiment=eng.sentiment)
+    new = Engine(cfg, eng.state(), cash=eng.pf.cash, executor=eng.executor, llm=eng.llm, sentiment=eng.sentiment,
+                 funding=eng.funding)
     new.pf, new.risk.peak_equity, new.risk.halted = eng.pf, eng.risk.peak_equity, eng.risk.halted
     new.risk.losing_streak, new.risk.pause_left = eng.risk.losing_streak, eng.risk.pause_left
     save_json(path, new.state())
@@ -487,6 +595,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     if state:
         print()
         print_learning(state, top=5)
+        print_ic(state, full=args.all_agents)
     return 0
 
 
@@ -511,6 +620,7 @@ def parser() -> argparse.ArgumentParser:
         sp.add_argument("--llm", action="store_true", help="la IA (freelm) revisa cada operación antes de abrirla")
         sp.add_argument("--llm-model", default="chat:fast")
         sp.add_argument("--no-sentiment", action="store_true", help="no descargar el índice Fear & Greed")
+        sp.add_argument("--no-funding", action="store_true", help="no descargar el funding rate de futuros")
 
     b = sub.add_parser("backtest", help="aprender y validar fuera de muestra")
     common(b)
@@ -541,13 +651,15 @@ def parser() -> argparse.ArgumentParser:
     lv.add_argument("--exchange-id", default="binance", help="cualquier exchange de ccxt: binance, kraken, bitvavo...")
     lv.add_argument("--max-capital", type=float, default=100.0, help="tope duro de capital en modo testnet/real")
     lv.add_argument("--confirm-real-money", action="store_true")
-    lv.add_argument("--poll", type=float, default=60.0)
+    lv.add_argument("--poll", type=float, default=0.0,
+                    help="segundos entre consultas (0 = justo al cierre de cada vela, recomendado)")
     lv.add_argument("--once", action="store_true", help="procesar una vela y salir (para cron)")
     lv.add_argument("--auto-optimize", action="store_true", help="una ronda de mejora al día dentro del bucle")
     lv.add_argument("--optimize-hour", type=int, default=3, help="hora UTC de la ronda diaria")
     lv.add_argument("--summary-hour", type=int, default=7, help="hora UTC del resumen diario por Telegram")
     lv.add_argument("--optimize-limit", type=int, default=5000, help="velas por símbolo para optimizar")
-    lv.set_defaults(func=cmd_live, cash=100.0)  # simular con el mismo capital que se usará de verdad
+    # tiempo real: velas de 5 min por defecto (decisión al segundo del cierre de cada vela)
+    lv.set_defaults(func=cmd_live, cash=100.0, interval="5m")  # simular con el mismo capital que se usará de verdad
 
     rp = sub.add_parser("report", help="resumen del modo en vivo (Markdown)")
     common(rp, "binance")
@@ -561,6 +673,7 @@ def parser() -> argparse.ArgumentParser:
 
     st = sub.add_parser("status", help="ver lo aprendido y la campeona")
     common(st)
+    st.add_argument("--all-agents", action="store_true", help="tabla de IC de todos los agentes")
     st.set_defaults(func=cmd_status)
     return ap
 

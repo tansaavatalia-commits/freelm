@@ -56,7 +56,8 @@ jobs:
       - name: Recuperar memoria
         run: examples/trading_agents/deploy/gh_state.sh load state
       - name: Procesar la última vela (papel)
-        run: python "$BOT" live --once --dir state --exchange papel --llm
+        # GitHub Actions solo se ejecuta cada hora: aquí velas de 1 h. El tiempo real (5 min) va en el servidor Oracle
+        run: python "$BOT" live --once --interval 1h --dir state --exchange papel --llm
       - name: Ronda diaria de mejora
         if: ${{ inputs.optimize || github.event_name == 'schedule' }}
         run: |
