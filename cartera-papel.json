@@ -14,10 +14,14 @@
   "peak_equity": 100.0,
   "losing_streak": 0,
   "pause_left": 0,
-  "halted": false
+  "halted": false,
+  "max_daily_loss": 0.03,
+  "day": 20775,
+  "day_start_equity": 100.0,
+  "daily_halted": false
  },
  "closed": [],
- "last_time": 1795014000000,
+ "last_time": 1795039200000,
  "last_optimize": "",
  "last_summary": ""
 }

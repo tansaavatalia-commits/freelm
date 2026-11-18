@@ -16,9 +16,11 @@
   "team_eta": 0.3,
   "council_eta": 0.5,
   "shadow_horizon": 48,
+  "learn_horizon": 1,
   "riskoff": true,
   "riskoff_breadth": 0.35,
   "max_heat": 0.03,
+  "max_daily_loss": 0.03,
   "min_win_prob": 0.77,
   "prob_z": 3.0,
   "exit_profiles": [
