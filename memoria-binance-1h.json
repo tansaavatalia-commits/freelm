@@ -19,6 +19,20 @@
   "riskoff": true,
   "riskoff_breadth": 0.35,
   "max_heat": 0.03,
+  "min_win_prob": 0.77,
+  "prob_z": 3.0,
+  "exit_profiles": [
+   0.75,
+   1.125,
+   1.5,
+   3.0
+  ],
+  "entry_mode": "market",
+  "maker_fee": 0.001,
+  "taker_fee": 0.001,
+  "limit_offset_atr": 0.0,
+  "limit_wait": 2,
+  "target_maker": true,
   "teams": []
  },
  "teams": {
@@ -119,137 +133,299 @@
     "ema_5_20": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_8_21": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_9_30": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_12_26": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_10_40": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_20_50": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_15_60": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_21_55": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_5_35": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_30_100": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_50_200": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "ema_13_48": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "macd_12_26_9": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "macd_8_17_9": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "macd_5_35_5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "macd_19_39_9": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "macd_24_52_18": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "macd_6_13_5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "slope_20_5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "slope_20_10": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "slope_20_20": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "slope_50_5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "slope_50_10": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "slope_50_20": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "slope_100_5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "slope_100_10": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "slope_100_20": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     }
    }
   },
@@ -350,137 +526,299 @@
     "rsi_7_30": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "rsi_7_25": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "rsi_7_20": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "rsi_14_30": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "rsi_14_25": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "rsi_14_20": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "rsi_21_30": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "rsi_21_25": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "rsi_21_20": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "bb_14_1.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "bb_14_2": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "bb_14_2.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "bb_20_1.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "bb_20_2": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "bb_20_2.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "bb_30_1.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "bb_30_2": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "bb_30_2.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "stoch_5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "stoch_9": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "stoch_14": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "stoch_21": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "stoch_34": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "vwap_12": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "vwap_24": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "vwap_48": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "vwap_96": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     }
    }
   },
@@ -548,82 +886,178 @@
     "obv_10": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "obv_20": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "obv_40": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "obv_60": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "donchian_10": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "donchian_20": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "donchian_30": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "donchian_40": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "donchian_55": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "donchian_100": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "roc_3": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "roc_6": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "roc_12": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "roc_24": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "roc_48": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "roc_96": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     }
    }
   },
@@ -688,77 +1122,167 @@
     "squeeze_14_60": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "squeeze_14_120": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "squeeze_20_60": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "squeeze_20_120": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "squeeze_30_60": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "squeeze_30_120": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "keltner_10_1": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "keltner_10_1.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "keltner_10_2.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "keltner_20_1": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "keltner_20_1.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "keltner_20_2.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "keltner_50_1": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "keltner_50_1.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "keltner_50_2.5": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     }
    }
   },
@@ -805,47 +1329,101 @@
     "mtf_2x_3_8": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "mtf_2x_5_15": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "mtf_4x_3_8": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "mtf_4x_5_15": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "mtf_6x_3_8": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "mtf_6x_5_15": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "mtf_12x_3_8": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "mtf_12x_5_15": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "mtf_24x_3_8": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     }
    }
   },
@@ -883,32 +1461,153 @@
     "fuerza_rel_24": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "fuerza_rel_72": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "fuerza_rel_168": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "amplitud": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "btc_lider": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     },
     "sentimiento": {
      "n": 0,
      "hits": 0,
-     "reward": 0.0
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
+    }
+   }
+  },
+  "posicionamiento": {
+   "eta": 0.3,
+   "alpha": 0.02,
+   "updates": 0,
+   "weights": {
+    "tendencia": {
+     "flujo_taker_6": 0.2,
+     "flujo_taker_24": 0.2,
+     "flujo_taker_72": 0.2,
+     "funding_z": 0.2,
+     "funding_nivel": 0.2
+    },
+    "lateral": {
+     "flujo_taker_6": 0.2,
+     "flujo_taker_24": 0.2,
+     "flujo_taker_72": 0.2,
+     "funding_z": 0.2,
+     "funding_nivel": 0.2
+    },
+    "volátil": {
+     "flujo_taker_6": 0.2,
+     "flujo_taker_24": 0.2,
+     "flujo_taker_72": 0.2,
+     "funding_z": 0.2,
+     "funding_nivel": 0.2
+    }
+   },
+   "stats": {
+    "flujo_taker_6": {
+     "n": 0,
+     "hits": 0,
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
+    },
+    "flujo_taker_24": {
+     "n": 0,
+     "hits": 0,
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
+    },
+    "flujo_taker_72": {
+     "n": 0,
+     "hits": 0,
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
+    },
+    "funding_z": {
+     "n": 0,
+     "hits": 0,
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
+    },
+    "funding_nivel": {
+     "n": 0,
+     "hits": 0,
+     "reward": 0.0,
+     "ic_n": 0,
+     "sx": 0.0,
+     "sy": 0.0,
+     "sxx": 0.0,
+     "syy": 0.0,
+     "sxy": 0.0
     }
    }
   }
@@ -919,64 +1618,115 @@
   "updates": 0,
   "weights": {
    "tendencia": {
-    "tendencia": 0.16666666666666666,
-    "reversión": 0.16666666666666666,
-    "flujo": 0.16666666666666666,
-    "volatilidad": 0.16666666666666666,
-    "multi-marco": 0.16666666666666666,
-    "mercado": 0.16666666666666666
+    "tendencia": 0.14583333333333334,
+    "reversión": 0.14583333333333334,
+    "flujo": 0.14583333333333334,
+    "volatilidad": 0.14583333333333334,
+    "multi-marco": 0.14583333333333334,
+    "mercado": 0.14583333333333334,
+    "posicionamiento": 0.125
    },
    "lateral": {
-    "tendencia": 0.16666666666666666,
-    "reversión": 0.16666666666666666,
-    "flujo": 0.16666666666666666,
-    "volatilidad": 0.16666666666666666,
-    "multi-marco": 0.16666666666666666,
-    "mercado": 0.16666666666666666
+    "tendencia": 0.14583333333333334,
+    "reversión": 0.14583333333333334,
+    "flujo": 0.14583333333333334,
+    "volatilidad": 0.14583333333333334,
+    "multi-marco": 0.14583333333333334,
+    "mercado": 0.14583333333333334,
+    "posicionamiento": 0.125
    },
    "volátil": {
-    "tendencia": 0.16666666666666666,
-    "reversión": 0.16666666666666666,
-    "flujo": 0.16666666666666666,
-    "volatilidad": 0.16666666666666666,
-    "multi-marco": 0.16666666666666666,
-    "mercado": 0.16666666666666666
+    "tendencia": 0.14583333333333334,
+    "reversión": 0.14583333333333334,
+    "flujo": 0.14583333333333334,
+    "volatilidad": 0.14583333333333334,
+    "multi-marco": 0.14583333333333334,
+    "mercado": 0.14583333333333334,
+    "posicionamiento": 0.125
    }
   },
   "stats": {
    "tendencia": {
     "n": 0,
     "hits": 0,
-    "reward": 0.0
+    "reward": 0.0,
+    "ic_n": 0,
+    "sx": 0.0,
+    "sy": 0.0,
+    "sxx": 0.0,
+    "syy": 0.0,
+    "sxy": 0.0
    },
    "reversión": {
     "n": 0,
     "hits": 0,
-    "reward": 0.0
+    "reward": 0.0,
+    "ic_n": 0,
+    "sx": 0.0,
+    "sy": 0.0,
+    "sxx": 0.0,
+    "syy": 0.0,
+    "sxy": 0.0
    },
    "flujo": {
     "n": 0,
     "hits": 0,
-    "reward": 0.0
+    "reward": 0.0,
+    "ic_n": 0,
+    "sx": 0.0,
+    "sy": 0.0,
+    "sxx": 0.0,
+    "syy": 0.0,
+    "sxy": 0.0
    },
    "volatilidad": {
     "n": 0,
     "hits": 0,
-    "reward": 0.0
+    "reward": 0.0,
+    "ic_n": 0,
+    "sx": 0.0,
+    "sy": 0.0,
+    "sxx": 0.0,
+    "syy": 0.0,
+    "sxy": 0.0
    },
    "multi-marco": {
     "n": 0,
     "hits": 0,
-    "reward": 0.0
+    "reward": 0.0,
+    "ic_n": 0,
+    "sx": 0.0,
+    "sy": 0.0,
+    "sxx": 0.0,
+    "syy": 0.0,
+    "sxy": 0.0
    },
    "mercado": {
     "n": 0,
     "hits": 0,
-    "reward": 0.0
+    "reward": 0.0,
+    "ic_n": 0,
+    "sx": 0.0,
+    "sy": 0.0,
+    "sxx": 0.0,
+    "syy": 0.0,
+    "sxy": 0.0
+   },
+   "posicionamiento": {
+    "n": 0,
+    "hits": 0,
+    "reward": 0.0,
+    "ic_n": 0,
+    "sx": 0.0,
+    "sy": 0.0,
+    "sxx": 0.0,
+    "syy": 0.0,
+    "sxy": 0.0
    }
   }
  },
  "calibrator": {
-  "results": {}
+  "results": {},
+  "missed": {}
  }
 }
