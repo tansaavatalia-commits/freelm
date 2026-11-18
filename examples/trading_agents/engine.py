@@ -75,6 +75,10 @@ class Config:
     taker_fee: float = 0.001
     limit_offset_atr: float = 0.0  # la orden límite se coloca a close - offset x ATR
     limit_wait: int = 2            # velas que espera la orden límite antes de cancelarse
+    # en modo límite, ¿el objetivo se cobra con venta límite (maker)? En papel sí; en el exchange
+    # real el objetivo se vigila vela a vela y se vende a mercado (el stop ya está puesto en el
+    # exchange y Binance no deja dos órdenes de venta sobre las mismas monedas sin OCO)
+    target_maker: bool = True
     teams: Tuple[str, ...] = ()    # vacío = todos los equipos
 
     def to_dict(self) -> dict:
@@ -176,6 +180,7 @@ class PaperExecutor:
     mercado. Mismo interfaz que exchange.CcxtExecutor."""
     name = "papel"
     real_money = False
+    simulated = True
 
     def __init__(self, slippage: float = SLIPPAGE) -> None:
         self.slippage = slippage
@@ -187,8 +192,14 @@ class PaperExecutor:
         # una orden límite (maker) se ejecuta a su precio; una a mercado sufre deslizamiento
         return price if maker else price * (1 - self.slippage)
 
-    def fill_limit_buy(self, symbol: str, qty: float, price: float) -> Tuple[float, float]:
-        return qty, price
+    def place_limit_buy(self, symbol: str, qty: float, price: float) -> Optional[str]:
+        return None  # en papel la ejecución se decide con las velas siguientes
+
+    def limit_status(self, symbol: str, oid: Optional[str]) -> Tuple[float, float, str]:
+        return 0.0, 0.0, "open"
+
+    def cancel_limit(self, symbol: str, oid: Optional[str]) -> None:
+        pass
 
     def protect(self, symbol: str, qty: float, stop: float) -> None:
         pass
@@ -252,11 +263,12 @@ class Engine:
         # las operaciones en la sombra pagan comisión + deslizamiento, igual que las reales
         taker_side, maker_side = self.cfg.taker_fee + SLIPPAGE, self.cfg.maker_fee
         limit = self.cfg.entry_mode == "limit"
+        tmaker = limit and self.cfg.target_maker
         self.cal = Calibrator.from_dict(state.get("calibrator"), min_samples=self.cfg.min_samples,
                                         min_edge=self.cfg.min_edge, horizon=self.cfg.shadow_horizon,
                                         fee=taker_side, sample_gap=SHADOW_GAP,
                                         entry_cost=maker_side if limit else taker_side,
-                                        target_cost=maker_side if limit else taker_side, stop_cost=taker_side,
+                                        target_cost=maker_side if tmaker else taker_side, stop_cost=taker_side,
                                         limit_offset=self.cfg.limit_offset_atr if limit else None,
                                         limit_wait=self.cfg.limit_wait)
         self.pf = Portfolio(cash=cash)
@@ -341,7 +353,7 @@ class Engine:
             team_sigs = [ctx[f"team:{n}"] for n in self.teams]
             score, agree = self.council.combine(team_sigs, m["regime"])
             # cada modo de entrada tiene su propia estadística (costes y ejecución distintos)
-            mode = "L|" if cfg.entry_mode == "limit" else ""
+            mode = ("L|" if cfg.target_maker else "LT|") if cfg.entry_mode == "limit" else ""
             d = Decision(ctx["symbol"], score, agree, m["regime"], mode + bucket(m["regime"], abs(score), agree),
                          teams=team_sigs)
             if score < cfg.enter:
@@ -387,7 +399,7 @@ class Engine:
             old_stop = p.stop if p else None
             ex = self.risk.check_exit(self.pf, sym, c.high, c.low, c.close, m["atr"], d.score)
             if ex:
-                maker = cfg.entry_mode == "limit" and ex[1] == "objetivo alcanzado"  # venta límite en el objetivo
+                maker = cfg.entry_mode == "limit" and cfg.target_maker and ex[1] == "objetivo alcanzado"
                 self.close_position(sym, ex[0], c.time, ex[1], ctx["report"], maker=maker)
             elif p and p.stop != old_stop:
                 self.executor.protect(sym, p.qty, p.stop)
@@ -418,10 +430,19 @@ class Engine:
             sym, c = ctx["symbol"], ctx["candle"]
             o = self.pf.pending.get(sym)
             if o:
-                if c.low < o["limit"]:  # el precio atravesó la orden: ejecutada a su precio
+                simulated = getattr(self.executor, "simulated", False)
+                if simulated:  # papel: ejecutada solo si el precio ATRAVESÓ la orden
+                    done = c.low < o["limit"]
+                    qty, fill = (o["qty"], o["limit"]) if done else (0.0, 0.0)
+                else:  # exchange: se pregunta el estado real de la orden
+                    qty, fill, status = self.executor.limit_status(sym, o["oid"])
+                    done = status == "closed"
+                    if not done and qty > 0 and o["wait"] <= 1:  # parcial al vencer: cancelar el resto
+                        self.executor.cancel_limit(sym, o["oid"])
+                        done = True
+                if done:
                     del self.pf.pending[sym]
-                    qty, fill = self.executor.fill_limit_buy(sym, o["qty"], o["limit"])
-                    qty = min(qty, self.pf.cash / (fill * (1 + cfg.maker_fee)))
+                    qty = min(qty, self.pf.cash / (fill * (1 + cfg.maker_fee))) if fill > 0 else 0.0
                     if qty * fill >= MIN_ORDER:
                         stop = fill - cfg.stop_atr * o["atr"]
                         pos = Position(sym, qty, fill, stop, fill + o["target"] * o["atr"], fill - stop, c.time, fill,
@@ -430,12 +451,14 @@ class Engine:
                         self.pf.open(pos, fee=cfg.maker_fee)
                         self.executor.protect(sym, qty, stop)
                         ctx["report"].opened.append(pos)
-                        if c.low <= stop:  # en la misma vela pudo tocar el stop: supuesto pesimista
+                        if simulated and c.low <= stop:  # en la misma vela pudo tocar el stop: pesimista
                             self.close_position(sym, stop, c.time, "stop", ctx["report"])
                 else:
                     o["wait"] -= 1
                     if o["wait"] <= 0:
                         del self.pf.pending[sym]
+                        if not simulated:
+                            self.executor.cancel_limit(sym, o["oid"])
                         ctx["report"].notes.append(f"{sym}: orden límite no ejecutada")
             ctx["orders"] = True
 
@@ -483,7 +506,10 @@ class Engine:
                         continue
                 if self.cfg.entry_mode == "limit":
                     lim = price - self.cfg.limit_offset_atr * atr
-                    self.pf.pending[sym] = {"limit": lim, "qty": qty * price / lim, "atr": atr,
+                    oid = self.executor.place_limit_buy(sym, qty * price / lim, lim)
+                    if oid is False:  # el exchange la rechazó (mínimos, saldo...)
+                        continue
+                    self.pf.pending[sym] = {"limit": lim, "qty": qty * price / lim, "atr": atr, "oid": oid,
                                             "target": d.exit_target or self.cfg.target_atr, "p_win": d.p_win,
                                             "wait": self.cfg.limit_wait, "equity": ctx["equity"],
                                             "reason": f"límite {lim:.4f}; consejo {d.score:+.2f}, {d.edge_note}"}

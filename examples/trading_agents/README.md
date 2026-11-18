@@ -65,9 +65,13 @@ movimiento. Con `--entry-mode limit`:
 
 En Binance spot, la cuenta estándar cobra **la misma comisión** a maker y a
 taker. Lo que se ahorra con órdenes límite es el deslizamiento y el spread, así
-que el coste baja ~1,5–2 veces, no más. Por ahora es **solo en papel**: en
-real hace falta una orden OCO (límite + stop) en el exchange, todavía no
-implementada, y `live` lo rechaza en testnet/real.
+que el coste baja ~1,5–2 veces, no más.
+
+**En testnet o dinero real** la compra límite se coloca de verdad en el exchange.
+En cada vela se consulta su estado (ejecutada, parcial o pendiente) y se cancela
+al vencer. Como el stop ya está puesto como orden en el exchange, el objetivo se
+vigila vela a vela y se vende **a mercado** (taker). Ese modo lleva su propia
+estadística (claves `LT|`), así que el 77 % se verifica con esos costes.
 
 ## Arquitectura: nodos enlazados
 
@@ -179,6 +183,14 @@ ciego.
 
 `gate` solo da el visto bueno si hay **20 días en vivo**, **rendimiento
 positivo**, **caída ≤ 10 %** y **al menos 5 operaciones cerradas**.
+
+## Windows: asistente de instalación
+
+Descarga el ZIP del repositorio, descomprímelo y haz doble clic en
+`examples/trading_agents/windows/Instalar-Bot.bat`. El asistente instala
+Python si falta, el bot, las claves (opcionales) y el arranque automático en
+papel, y crea accesos directos para el panel y el informe. Guía completa:
+[`windows/LEEME.md`](windows/LEEME.md).
 
 ## Servidor gratuito
 

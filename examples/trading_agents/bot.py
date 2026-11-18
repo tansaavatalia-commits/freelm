@@ -91,7 +91,12 @@ def apply_cost_flags(cfg: Config, args: argparse.Namespace) -> Config:
         kw["entry_mode"] = args.entry_mode
     if getattr(args, "bnb", False):
         kw["maker_fee"] = kw["taker_fee"] = 0.00075
-    return replace(cfg, **kw) if kw else cfg
+    cfg = replace(cfg, **kw) if kw else cfg
+    if getattr(args, "exchange", "papel") in ("testnet", "real") and cfg.entry_mode == "limit" and cfg.target_maker:
+        # en el exchange el stop ya está puesto como orden: el objetivo se vigila y se vende a mercado.
+        # La estadística de ese modo (claves LT|) cuenta el objetivo como taker.
+        cfg = replace(cfg, target_maker=False)
+    return cfg
 
 
 def state_file(args: argparse.Namespace) -> Optional[str]:
@@ -406,10 +411,6 @@ def cmd_live(args: argparse.Namespace) -> int:
         if not args.confirm_real_money:
             print("Añade --confirm-real-money para operar con dinero real.")
             return 2
-    if args.exchange in ("testnet", "real") and config_for(args).entry_mode == "limit":
-        print("El modo de órdenes límite solo está disponible en papel por ahora (falta la orden OCO "
-              "límite + stop en el exchange). Usa --entry-mode market para testnet/real.")
-        return 2
     if args.exchange in ("testnet", "real"):
         executor = CcxtExecutor(args.exchange_id, testnet=args.exchange == "testnet", max_capital=args.max_capital)
         cash = executor.starting_cash()
@@ -696,7 +697,18 @@ def parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _utf8_console() -> None:
+    """En Windows, la consola o un fichero redirigido pueden usar cp1252: los acentos y
+    símbolos (≥, ✔, …) romperían el bot con UnicodeEncodeError. Se fuerza UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001 - flujos sin reconfigure (tests, pipes antiguos)
+            pass
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    _utf8_console()
     args = parser().parse_args(argv)
     return args.func(args)
 
