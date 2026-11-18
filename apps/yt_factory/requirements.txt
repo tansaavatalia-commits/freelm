@@ -1,0 +1,4 @@
+freelm>=0.6
+httpx>=0.27
+edge-tts>=7.0
+pillow>=10

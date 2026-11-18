@@ -1,0 +1,93 @@
+# Fabbrica YouTube: ogni giorno produce (e, se abilitato, programma) i video di tutti i canali.
+# Attivazione: Settings > Secrets and variables > Actions (vedi apps/yt_factory/README.md, passo 5).
+name: yt-factory
+
+on:
+  schedule:
+    - cron: "17 5 * * *"        # ogni giorno alle 05:17 UTC (06:17/07:17 in Italia): video pronti prima degli slot
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Caricare su YouTube? (false = solo produzione, video scaricabili dagli artifact)"
+        type: boolean
+        default: false
+      count:
+        description: "Shorts per canale (vuoto = videos_per_day)"
+        required: false
+      long:
+        description: "Produrre anche il video lungo oggi"
+        type: boolean
+        default: false
+
+concurrency:
+  group: yt-factory
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  produce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    defaults:
+      run:
+        working-directory: apps/yt_factory
+    env:
+      # LLM gratuiti (più chiavi = più capacità e failover)
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      # dati e media
+      YT_API_KEY: ${{ secrets.YT_API_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      # pubblicazione
+      YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+      YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+      YT_REFRESH_TOKEN_FATTI: ${{ secrets.YT_REFRESH_TOKEN_FATTI }}
+      YT_REFRESH_TOKEN_SOLDI: ${{ secrets.YT_REFRESH_TOKEN_SOLDI }}
+      YT_REFRESH_TOKEN_MISTERI: ${{ secrets.YT_REFRESH_TOKEN_MISTERI }}
+      YTF_DATA_DIR: ${{ github.workspace }}/apps/yt_factory/data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: ffmpeg + font
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - name: Dipendenze
+        run: pip install -e ../.. -r requirements.txt
+      - name: Ripristina memoria della fabbrica (storico video, apprendimenti, quota)
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/yt_factory/data/factory.sqlite
+          key: ytf-db-${{ github.run_id }}
+          restore-keys: ytf-db-
+      - name: Produci (e pubblica)
+        run: |
+          ARGS=""
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ vars.YTF_PUBLISH }}" = "true" ]; then ARGS="$ARGS --publish"; fi
+          if [ "${{ inputs.publish }}" = "true" ]; then ARGS="$ARGS --publish"; fi
+          if [ -n "${{ inputs.count }}" ]; then ARGS="$ARGS --count ${{ inputs.count }}"; fi
+          if [ "${{ inputs.long }}" = "true" ]; then ARGS="$ARGS --long"; fi
+          python -m yt_factory run $ARGS
+      - name: Salva memoria della fabbrica
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: apps/yt_factory/data/factory.sqlite
+          key: ytf-db-${{ github.run_id }}
+      - name: Video e report (scaricabili per 7 giorni)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-${{ github.run_id }}
+          path: |
+            apps/yt_factory/data/videos/
+            apps/yt_factory/data/reports/
+          retention-days: 7
+          if-no-files-found: ignore
