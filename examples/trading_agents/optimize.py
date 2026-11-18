@@ -47,8 +47,9 @@ BOUNDS: Dict[str, Tuple[float, float]] = {
     "max_positions": (1, 6), "max_exposure": (0.15, 0.50),
     "exit_score": (-0.6, 0.0), "team_eta": (0.05, 1.0), "council_eta": (0.05, 1.0),
     "shadow_horizon": (12, 96), "riskoff_breadth": (0.2, 0.5), "max_heat": (0.01, 0.06),
+    "learn_horizon": (1, 36),
 }
-INTS = {"min_samples", "max_positions", "shadow_horizon"}
+INTS = {"min_samples", "max_positions", "shadow_horizon", "learn_horizon"}
 BOOLS = ("block_volatile", "trend_filter", "riskoff")
 FOLDS = 3
 

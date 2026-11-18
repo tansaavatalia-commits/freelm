@@ -967,3 +967,26 @@ def test_reconcile_closes_positions_missing_on_exchange_and_reprotects():
     gone = ex.reconcile(positions)
     assert gone == ["ETHUSDT"]                                    # el stop de ETH se ejecutó con el bot apagado
     assert "old" in fx.cancelled and fx.orders[-1][5]["stopLossPrice"] == 49_000.0   # stop de BTC repuesto
+
+
+def test_learn_horizon_rewards_agents_over_several_candles():
+    data = {"A": synthetic(400, seed=3)}
+    one, many = Engine(Config()), Engine(Config(learn_horizon=6))
+    for i in range(330, 345):
+        w = {"A": data["A"][i - 320:i + 1]}
+        one.step(w, trading=False)
+        many.step(w, trading=False)
+    upd1 = one.council.updates
+    upd6 = many.council.updates
+    # el horizonte largo espera a que pasen h velas antes de juzgar la primera señal
+    assert upd1 == 14 and upd6 == 15 - 6 and len(many._pending["A"]) == 6
+
+
+def test_ic_t_is_corrected_for_overlapping_horizons():
+    c = Coordinator(["a"], eta=0.3)
+    for i in range(50):
+        r = 0.01 if i % 2 else -0.01
+        c.learn_arrays((1.0 if r > 0 else -1.0,), (1.0,), "lateral", r, 0.01)
+    raw = bot.agent_ic_table({"teams": {"t": c.to_dict()}})[0][4]
+    adj = bot.agent_ic_table({"config": {"learn_horizon": 4}, "teams": {"t": c.to_dict()}})[0][4]
+    assert adj == pytest.approx(raw / 2)

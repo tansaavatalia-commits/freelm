@@ -201,13 +201,17 @@ def print_stress(trades: List[ClosedTrade]) -> None:
 
 
 def agent_ic_table(state: dict) -> List[tuple]:
-    """(agente, equipo, observaciones, IC, t) de cada agente, del más al menos predictivo."""
+    """(agente, equipo, observaciones, IC, t) de cada agente, del más al menos predictivo.
+
+    Con ``learn_horizon`` = h > 1 los retornos de h velas se solapan: las observaciones no son
+    independientes y la t ingenua sale inflada ~sqrt(h). Se corrige dividiendo por sqrt(h)."""
+    h = max(1, int((state.get("config") or {}).get("learn_horizon", 1) or 1))
     rows = []
     for team, t in state.get("teams", {}).items():
         for name, st in t.get("stats", {}).items():
             a = AgentStats(**st)
             if a.ic_n > 2:
-                rows.append((name, team, a.ic_n, a.ic, a.ic_t))
+                rows.append((name, team, a.ic_n, a.ic, a.ic_t / math.sqrt(h)))
     return sorted(rows, key=lambda r: -r[4])
 
 

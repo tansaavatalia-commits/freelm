@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections import deque
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -63,6 +64,7 @@ class Config:
     team_eta: float = 0.3
     council_eta: float = 0.5
     shadow_horizon: int = 48
+    learn_horizon: int = 1         # velas hacia delante con las que se premia/castiga a cada agente
     riskoff: bool = True           # no comprar con BTC bajo su media 200 y poca amplitud
     riskoff_breadth: float = 0.35
     max_heat: float = 0.03         # riesgo total abierto (suma de distancias al stop) <= 3 % del capital
@@ -288,7 +290,7 @@ class Engine:
         self.track_stats = True  # el optimizador lo apaga: no necesita estadísticas por agente
         self.check_data = True   # comprobación de integridad de datos por vela (safety.check_window)
         self.warmup = min(WINDOW, max(a.warmup for t in self.teams.values() for a in t.agents) + 1)
-        self._pending: Dict[str, tuple] = {}
+        self._pending: Dict[str, deque] = {}
         self._last_shadow: Dict[str, int] = {}
         self._step = 0
         self.total_signals = 0
@@ -304,10 +306,14 @@ class Engine:
         cfg = self.cfg
 
         def learn(ctx: Dict[str, Any]) -> None:
-            pend = self._pending.get(ctx["symbol"])
-            if pend:
-                obs, team_sigs, regime, prev_close, vol = pend
+            # cada agente se juzga por el retorno de las ``learn_horizon`` velas siguientes a
+            # su señal (el mismo plazo que una operación), no solo por la vela siguiente
+            q = self._pending.get(ctx["symbol"])
+            h = max(1, cfg.learn_horizon)
+            if q and len(q) >= h:
+                obs, team_sigs, regime, prev_close, vol = q.popleft()
                 ret = math.log(ctx["candle"].close / prev_close)
+                vol = vol * math.sqrt(h)
                 for name, o in obs.items():
                     self.teams[name].coord.learn_arrays(o[0], o[1], regime, ret, vol, self.track_stats, o[2])
                 self.council.learn(team_sigs, regime, ret, vol)
@@ -420,7 +426,8 @@ class Engine:
         def remember(ctx: Dict[str, Any]) -> None:
             m = ctx["market"]
             obs = {n: m["obs"][n] for n in self.teams}
-            self._pending[ctx["symbol"]] = (obs, ctx["decision"].teams, m["regime"], ctx["candle"].close, m["vol"])
+            q = self._pending.setdefault(ctx["symbol"], deque())
+            q.append((obs, ctx["decision"].teams, m["regime"], ctx["candle"].close, m["vol"]))
 
         g.add(Node("consejo", tuple(f"team:{n}" for n in self.teams), ("decision",), council,
                    "confronta a los equipos con pesos aprendidos"))

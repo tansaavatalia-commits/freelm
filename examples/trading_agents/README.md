@@ -150,6 +150,12 @@ flowchart LR
 y `status` muestran qué agentes predicen de verdad el retorno siguiente
 (|t| > 2) y cuáles son ruido. `status --all-agents` da la tabla completa.
 
+**Horizonte de aprendizaje** (`learn_horizon`, por defecto 1): cada agente se
+premia o castiga con el retorno de las *h* velas siguientes a su señal, no solo
+con la de la vela siguiente. Así se le juzga en el mismo plazo que dura una
+operación. Con *h* > 1 los retornos se solapan, y la t del IC se divide por
+√h para no inflarla. El optimizador busca *h* entre 1 y 36 velas.
+
 **Informe profesional** (al estilo quantstats, sin dependencias): Sortino,
 Calmar, duración de la peor caída, días positivos, mejor y peor día,
 rendimiento por meses, esperanza por operación y rachas. Aparece en
@@ -355,6 +361,29 @@ el tramo fuera de muestra:
   probabilidad de acabar en pérdidas con esas mismas operaciones. Es una
   señal prometedora en un mercado bajista, no una ventaja demostrada. Para
   eso están los 20 días en vivo.
+
+**Tercera ronda, con la regla del 77 % verificado** (noviembre de 2026; 8
+monedas, 5000 velas, comisión 0,1 % y deslizamiento 0,05 % por lado):
+
+| Prueba | Bot | Comprar y mantener la cesta |
+|---|---|---|
+| 1 h, por defecto (regla 77 %) | 0,00 % (0 operaciones) | −28,3 % |
+| 4 h, por defecto (regla 77 %) | 0,00 % (0 operaciones) | +2,6 % |
+| 1 h y 4 h, `learn_horizon` 6, 12 o 24 (regla 77 %) | 0,00 % (0 operaciones) | — |
+
+- El +2,42 % de la segunda ronda es **anterior** a la regla del 77 %. Con esa
+  regla, ningún tipo de señal ha llegado al 77 % *verificable*. Es la cota
+  inferior de Wilson con z = 3, necesaria porque se prueban ~100 combinaciones
+  de tipo × perfil. El mejor llegó al 62–66 %, así que el bot no opera. No es un
+  fallo, y la comprobación de datos de la fase 1 no descartó ni una vela.
+- `learn_horizon` triplica el IC de los mejores agentes en 1 h (de 0,019 a
+  0,06). Con la t corregida por solape, los agentes significativos pasan de 9 a 24.
+- **Experimento, NO activado** (filtro rebajado al 50 % verificable, solo para
+  medir): en 4 h con `learn_horizon` 24, +9,9 % con 37 operaciones, acierto
+  real del 78 %, factor de beneficio 2,4 y caída del 3,8 %. En ese tramo la cesta
+  hizo de −55 % a +2,6 %, según la ventana. Pero con *h* = 18 dio −4,2 % (5
+  operaciones) y con *h* = 36, +1,9 %. Esa sensibilidad indica **fragilidad**,
+  no una ventaja demostrada. La regla del 77 % sigue intacta.
 
 ## Resultados de referencia (datos sintéticos, NO reales)
 
