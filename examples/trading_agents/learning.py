@@ -225,6 +225,7 @@ class Shadow:
     target: float
     expires: int  # velas restantes
     age: int = 0  # velas transcurridas (para medir cuánto se solapan las muestras)
+    wait: int = 0  # >0: orden límite de entrada aún sin ejecutar (velas que le quedan)
 
 
 def wilson_lower(wins: float, n: float, z: float) -> float:
@@ -265,6 +266,13 @@ class Calibrator:
     horizon: int = 48
     fee: float = 0.001
     sample_gap: int = 6     # velas entre dos sombras del mismo símbolo
+    # costes por lado (fracción del precio). None = usar ``fee`` en ambos lados (modo clásico)
+    entry_cost: Optional[float] = None
+    target_cost: Optional[float] = None
+    stop_cost: Optional[float] = None
+    limit_offset: Optional[float] = None  # None = entrada a mercado; si no, límite a close - offset x ATR
+    limit_wait: int = 2                   # velas que la orden límite espera antes de cancelarse
+    missed: Dict[str, int] = field(default_factory=dict)  # órdenes límite que no se ejecutaron
     results: Dict[str, List[float]] = field(default_factory=dict)  # key -> [n, ΣR, ΣR², ganadas, Σduración]
     open: Dict[str, List[Shadow]] = field(default_factory=dict)  # por símbolo
 
@@ -276,6 +284,14 @@ class Calibrator:
         if len(book) >= 400:
             return
         if profiles and atr:
+            if self.limit_offset is not None:
+                # entrada con orden límite: se ejecuta (o no) en las velas SIGUIENTES
+                lim = entry - self.limit_offset * atr
+                dist = entry - stop
+                for tm in profiles:
+                    book.append(Shadow(profile_key(key, tm), lim, lim - dist, lim + tm * atr, self.horizon,
+                                       wait=self.limit_wait))
+                return
             for tm in profiles:
                 book.append(Shadow(profile_key(key, tm), entry, stop, entry + tm * atr, self.horizon))
         else:
@@ -283,20 +299,38 @@ class Calibrator:
 
     def update(self, symbol: str, high: float, low: float, close: float) -> None:
         keep = []
+        ce = self.fee if self.entry_cost is None else self.entry_cost
+        ct = self.fee if self.target_cost is None else self.target_cost
+        cs = self.fee if self.stop_cost is None else self.stop_cost
         for s in self.open.get(symbol, []):
+            fill_candle = False
+            if s.wait > 0:
+                # supuesto conservador: la orden límite solo se ejecuta si el precio la ATRAVIESA
+                # (tocarla no basta: en la cola puede haber órdenes delante)
+                if low < s.entry:
+                    s.wait = 0
+                    fill_candle = True
+                else:
+                    s.wait -= 1
+                    if s.wait <= 0:
+                        base = s.key.split("#")[0]
+                        self.missed[base] = self.missed.get(base, 0) + 1
+                    else:
+                        keep.append(s)
+                    continue
             s.expires -= 1
             s.age += 1
             risk = s.entry - s.stop
             if low <= s.stop:
-                exit_px = s.stop
-            elif high >= s.target:
-                exit_px = s.target
+                exit_px, c_exit = s.stop, cs
+            elif high >= s.target and not fill_candle:  # en la vela de entrada no se sabe el orden: pesimista
+                exit_px, c_exit = s.target, ct
             elif s.expires <= 0:
-                exit_px = close
+                exit_px, c_exit = close, cs
             else:
                 keep.append(s)
                 continue
-            r = (exit_px - s.entry - self.fee * (s.entry + exit_px)) / risk
+            r = (exit_px - s.entry - ce * s.entry - c_exit * exit_px) / risk
             st = self.results.setdefault(s.key, [0, 0.0, 0.0, 0, 0.0])
             if len(st) < 5:  # memorias antiguas sin duración
                 st.append(st[0] * self.horizon / 2)
@@ -373,11 +407,12 @@ class Calibrator:
         return sorted(rows, key=lambda r: (-r[5], -r[4]))
 
     def to_dict(self) -> dict:
-        return {"results": self.results}
+        return {"results": self.results, "missed": self.missed}
 
     @classmethod
     def from_dict(cls, d: Optional[dict], **kw: float) -> "Calibrator":
         c = cls(**kw)  # type: ignore[arg-type]
         if d:
             c.results = {k: list(v) for k, v in d.get("results", {}).items()}
+            c.missed = dict(d.get("missed", {}))
         return c

@@ -24,7 +24,7 @@ import math
 import os
 import sys
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from types import SimpleNamespace
 from typing import Dict, List, Optional
 
@@ -77,12 +77,21 @@ def build_llm(enabled: bool, model: str) -> Optional[LLMAnalystAgent]:
 
 def config_for(args: argparse.Namespace) -> Config:
     if args.config:
-        return Config.from_dict(load_json(args.config).get("config"))
-    if not args.default_config:
-        champ = load_champion(p(args, "champion.json"))
-        if champ:
-            return champ
-    return Config()
+        cfg = Config.from_dict(load_json(args.config).get("config"))
+    else:
+        champ = None if args.default_config else load_champion(p(args, "champion.json"))
+        cfg = champ or Config()
+    return apply_cost_flags(cfg, args)
+
+
+def apply_cost_flags(cfg: Config, args: argparse.Namespace) -> Config:
+    """--entry-mode limit|market y --bnb (comisión 0,075 % pagando con BNB) desde la línea de órdenes."""
+    kw: Dict[str, object] = {}
+    if getattr(args, "entry_mode", None):
+        kw["entry_mode"] = args.entry_mode
+    if getattr(args, "bnb", False):
+        kw["maker_fee"] = kw["taker_fee"] = 0.00075
+    return replace(cfg, **kw) if kw else cfg
 
 
 def state_file(args: argparse.Namespace) -> Optional[str]:
@@ -311,7 +320,8 @@ def cmd_optimize(args: argparse.Namespace) -> int:
     if not data:
         raise SystemExit("sin datos")
     champ_path, hist_path = p(args, "champion.json"), p(args, "optimize_history.jsonl")
-    champ = None if args.default_config else load_champion(champ_path)
+    saved = None if args.default_config else load_champion(champ_path)
+    champ = apply_cost_flags(saved or Config(), args)
     opt = Optimizer(data, PERIODS_PER_YEAR.get(args.interval, 8_760), cash=args.cash, seed=args.seed,
                     min_trades=args.min_trades, workers=args.workers, sentiment=load_sentiment(args),
                     funding=load_funding(args, list(data), _first_ms(data)))
@@ -319,7 +329,8 @@ def cmd_optimize(args: argparse.Namespace) -> int:
           "examen": opt.n - opt.test_from}
     print(f"Optimizando sobre {', '.join(data)} ({args.source}, {args.interval}): "
           + ", ".join(f"{k} {v} velas" for k, v in sp.items()))
-    print(f"Campeona de partida: {'la guardada' if champ else 'configuración por defecto'}")
+    print(f"Campeona de partida: {'la guardada' if saved else 'configuración por defecto'} "
+          f"(entrada {champ.entry_mode}, comisión {champ.taker_fee:.3%})")
     res = opt.run(champ, population=args.population, generations=args.generations)
     ct, ht = res["candidate_test"], res["champion_test"]
     cv = res["candidate_val"]
@@ -395,6 +406,10 @@ def cmd_live(args: argparse.Namespace) -> int:
         if not args.confirm_real_money:
             print("Añade --confirm-real-money para operar con dinero real.")
             return 2
+    if args.exchange in ("testnet", "real") and config_for(args).entry_mode == "limit":
+        print("El modo de órdenes límite solo está disponible en papel por ahora (falta la orden OCO "
+              "límite + stop en el exchange). Usa --entry-mode market para testnet/real.")
+        return 2
     if args.exchange in ("testnet", "real"):
         executor = CcxtExecutor(args.exchange_id, testnet=args.exchange == "testnet", max_capital=args.max_capital)
         cash = executor.starting_cash()
@@ -621,6 +636,9 @@ def parser() -> argparse.ArgumentParser:
         sp.add_argument("--llm-model", default="chat:fast")
         sp.add_argument("--no-sentiment", action="store_true", help="no descargar el índice Fear & Greed")
         sp.add_argument("--no-funding", action="store_true", help="no descargar el funding rate de futuros")
+        sp.add_argument("--entry-mode", choices=["market", "limit"],
+                        help="tipo de orden de entrada (por defecto, el de la configuración: market)")
+        sp.add_argument("--bnb", action="store_true", help="comisiones con descuento BNB (0,075 %% por lado)")
 
     b = sub.add_parser("backtest", help="aprender y validar fuera de muestra")
     common(b)

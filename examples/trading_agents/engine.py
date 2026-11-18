@@ -69,6 +69,12 @@ class Config:
     min_win_prob: float = 0.77     # cota inferior de Wilson de la probabilidad de cerrar en positivo
     prob_z: float = 3.0            # z de esa cota: 3 ~ 99,9 %, corrige las muchas pruebas (tipos x perfiles)
     exit_profiles: Tuple[float, ...] = (0.75, 1.125, 1.5, 3.0)  # objetivos en ATR (stop fijo = stop_atr)
+    # --- costes y tipo de orden de entrada
+    entry_mode: str = "market"     # "market" (taker + deslizamiento) o "limit" (maker, puede no ejecutarse)
+    maker_fee: float = 0.001       # Binance spot estándar: 0,1 % (0,075 % pagando con BNB)
+    taker_fee: float = 0.001
+    limit_offset_atr: float = 0.0  # la orden límite se coloca a close - offset x ATR
+    limit_wait: int = 2            # velas que espera la orden límite antes de cancelarse
     teams: Tuple[str, ...] = ()    # vacío = todos los equipos
 
     def to_dict(self) -> dict:
@@ -177,8 +183,12 @@ class PaperExecutor:
     def buy(self, symbol: str, qty: float, price: float) -> Tuple[float, float]:
         return qty, price * (1 + self.slippage)
 
-    def sell(self, symbol: str, qty: float, price: float) -> float:
-        return price * (1 - self.slippage)
+    def sell(self, symbol: str, qty: float, price: float, maker: bool = False) -> float:
+        # una orden límite (maker) se ejecuta a su precio; una a mercado sufre deslizamiento
+        return price if maker else price * (1 - self.slippage)
+
+    def fill_limit_buy(self, symbol: str, qty: float, price: float) -> Tuple[float, float]:
+        return qty, price
 
     def protect(self, symbol: str, qty: float, stop: float) -> None:
         pass
@@ -240,9 +250,15 @@ class Engine:
                                              alpha=0.03)
         self.council.eta = self.cfg.council_eta
         # las operaciones en la sombra pagan comisión + deslizamiento, igual que las reales
+        taker_side, maker_side = self.cfg.taker_fee + SLIPPAGE, self.cfg.maker_fee
+        limit = self.cfg.entry_mode == "limit"
         self.cal = Calibrator.from_dict(state.get("calibrator"), min_samples=self.cfg.min_samples,
                                         min_edge=self.cfg.min_edge, horizon=self.cfg.shadow_horizon,
-                                        fee=0.001 + SLIPPAGE, sample_gap=SHADOW_GAP)
+                                        fee=taker_side, sample_gap=SHADOW_GAP,
+                                        entry_cost=maker_side if limit else taker_side,
+                                        target_cost=maker_side if limit else taker_side, stop_cost=taker_side,
+                                        limit_offset=self.cfg.limit_offset_atr if limit else None,
+                                        limit_wait=self.cfg.limit_wait)
         self.pf = Portfolio(cash=cash)
         self.risk = RiskManager(risk_per_trade=self.cfg.risk_per_trade, stop_atr=self.cfg.stop_atr,
                                 target_atr=self.cfg.target_atr, max_positions=self.cfg.max_positions,
@@ -324,7 +340,9 @@ class Engine:
             m = ctx["market"]
             team_sigs = [ctx[f"team:{n}"] for n in self.teams]
             score, agree = self.council.combine(team_sigs, m["regime"])
-            d = Decision(ctx["symbol"], score, agree, m["regime"], bucket(m["regime"], abs(score), agree),
+            # cada modo de entrada tiene su propia estadística (costes y ejecución distintos)
+            mode = "L|" if cfg.entry_mode == "limit" else ""
+            d = Decision(ctx["symbol"], score, agree, m["regime"], mode + bucket(m["regime"], abs(score), agree),
                          teams=team_sigs)
             if score < cfg.enter:
                 d.vetoes.append("sin consenso alcista")
@@ -369,14 +387,16 @@ class Engine:
             old_stop = p.stop if p else None
             ex = self.risk.check_exit(self.pf, sym, c.high, c.low, c.close, m["atr"], d.score)
             if ex:
-                self.close_position(sym, ex[0], c.time, ex[1], ctx["report"])
+                maker = cfg.entry_mode == "limit" and ex[1] == "objetivo alcanzado"  # venta límite en el objetivo
+                self.close_position(sym, ex[0], c.time, ex[1], ctx["report"], maker=maker)
             elif p and p.stop != old_stop:
                 self.executor.protect(sym, p.qty, p.stop)
             ctx["exit"] = True
 
         def candidate(ctx: Dict[str, Any]) -> None:
             d, m, sym = ctx["decision"], ctx["market"], ctx["symbol"]
-            if ctx["trading"] and d.approved and m["atr"] and sym not in self.pf.positions:
+            if (ctx["trading"] and d.approved and m["atr"] and sym not in self.pf.positions
+                    and sym not in self.pf.pending):
                 # prioridad: la probabilidad verificada más alta
                 ctx["candidates"].append((d.p_win, sym, d, m["atr"], ctx))
 
@@ -393,7 +413,34 @@ class Engine:
                    "solo señales con ventaja demostrada"))
         g.add(Node("registrar_sombra", ("decision", "shadows_resolved"), ("shadow",), shadow,
                    "prueba cada señal sin dinero"))
-        g.add(Node("gestionar_posición", ("decision",), ("exit",), position, "stop, objetivo, break-even"))
+        def limit_orders(ctx: Dict[str, Any]) -> None:
+            """Órdenes límite de entrada colocadas en velas anteriores: ¿se ejecutaron en esta?"""
+            sym, c = ctx["symbol"], ctx["candle"]
+            o = self.pf.pending.get(sym)
+            if o:
+                if c.low < o["limit"]:  # el precio atravesó la orden: ejecutada a su precio
+                    del self.pf.pending[sym]
+                    qty, fill = self.executor.fill_limit_buy(sym, o["qty"], o["limit"])
+                    qty = min(qty, self.pf.cash / (fill * (1 + cfg.maker_fee)))
+                    if qty * fill >= MIN_ORDER:
+                        stop = fill - cfg.stop_atr * o["atr"]
+                        pos = Position(sym, qty, fill, stop, fill + o["target"] * o["atr"], fill - stop, c.time, fill,
+                                       o["reason"], risk_frac=qty * (fill - stop) / max(o["equity"], 1e-9),
+                                       p_win=o["p_win"], expires=cfg.shadow_horizon, strict=True)
+                        self.pf.open(pos, fee=cfg.maker_fee)
+                        self.executor.protect(sym, qty, stop)
+                        ctx["report"].opened.append(pos)
+                        if c.low <= stop:  # en la misma vela pudo tocar el stop: supuesto pesimista
+                            self.close_position(sym, stop, c.time, "stop", ctx["report"])
+                else:
+                    o["wait"] -= 1
+                    if o["wait"] <= 0:
+                        del self.pf.pending[sym]
+                        ctx["report"].notes.append(f"{sym}: orden límite no ejecutada")
+            ctx["orders"] = True
+
+        g.add(Node("órdenes_límite", ("candle",), ("orders",), limit_orders, "¿se ejecutó la orden límite?"))
+        g.add(Node("gestionar_posición", ("decision", "orders"), ("exit",), position, "stop, objetivo, horizonte"))
         g.add(Node("candidata", ("gate", "exit"), ("candidate",), candidate, "propone la compra"))
         g.add(Node("recordar", ("decision", "shadow"), ("pending",), remember, "guarda para aprender luego"))
         return g
@@ -434,6 +481,14 @@ class Engine:
                         self.llm_vetoes += 1
                         d.vetoes.append(f"IA en contra: {s.reason}")
                         continue
+                if self.cfg.entry_mode == "limit":
+                    lim = price - self.cfg.limit_offset_atr * atr
+                    self.pf.pending[sym] = {"limit": lim, "qty": qty * price / lim, "atr": atr,
+                                            "target": d.exit_target or self.cfg.target_atr, "p_win": d.p_win,
+                                            "wait": self.cfg.limit_wait, "equity": ctx["equity"],
+                                            "reason": f"límite {lim:.4f}; consejo {d.score:+.2f}, {d.edge_note}"}
+                    rep.notes.append(f"{sym}: orden límite de compra a {lim:.4f}")
+                    continue
                 qty, fill = self.executor.buy(sym, qty, price)
                 # el deslizamiento encarece la compra: nunca gastar más caja de la que hay
                 qty = min(qty, self.pf.cash / (fill * (1 + self.pf.fee)))
@@ -447,7 +502,7 @@ class Engine:
                                f"consejo {d.score:+.2f}, acuerdo {d.agreement:.0%}, {d.edge_note}",
                                risk_frac=qty * (fill - stop) / ctx["equity"] if ctx["equity"] > 0 else 0.0,
                                p_win=d.p_win, expires=self.cfg.shadow_horizon, strict=True)
-                self.pf.open(pos)
+                self.pf.open(pos, fee=self.cfg.taker_fee)
                 self.executor.protect(sym, qty, stop)
                 rep.opened.append(pos)
 
@@ -462,10 +517,10 @@ class Engine:
         k = why.split(" (")[0]
         self.veto_counts[k] = self.veto_counts.get(k, 0) + 1
 
-    def close_position(self, sym: str, price: float, t: int, why: str, rep: StepReport) -> None:
+    def close_position(self, sym: str, price: float, t: int, why: str, rep: StepReport, maker: bool = False) -> None:
         p = self.pf.positions[sym]
-        fill = self.executor.sell(sym, p.qty, price)
-        tr = self.pf.close(sym, fill, t, why)
+        fill = self.executor.sell(sym, p.qty, price, maker=maker) if maker else self.executor.sell(sym, p.qty, price)
+        tr = self.pf.close(sym, fill, t, why, fee=self.cfg.maker_fee if maker else self.cfg.taker_fee)
         self.risk.on_closed(tr)
         rep.closed.append(tr)
 

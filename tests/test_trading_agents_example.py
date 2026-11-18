@@ -701,3 +701,59 @@ def test_sleep_to_next_close_aligns_to_candle(monkeypatch):
     assert (1_000_000_010.0 + slept[0]) % 300 == pytest.approx(1.5)
     bot.sleep_to_next_close("5m", 7)
     assert slept[-1] == 7
+
+
+# ---------------------------------------------------------------- órdenes límite (maker)
+
+def test_limit_shadow_fills_only_when_price_trades_through():
+    cal = Calibrator(min_samples=1, horizon=10, sample_gap=1, entry_cost=0.0, target_cost=0.0, stop_cost=0.0,
+                     limit_offset=0.5, limit_wait=2)
+    cal.record("X", "k", 100.0, 98.5, atr=2.0, profiles=(1.0,))       # límite a 99, stop 97.5, objetivo 101
+    cal.update("X", 101.0, 99.0, 100.0)    # toca 99 pero no lo atraviesa: no ejecuta
+    assert cal.open["X"][0].wait == 1 and not cal.results
+    cal.update("X", 99.5, 98.9, 99.2)      # atraviesa: ejecutada a 99 (sin objetivo en la vela de entrada)
+    assert cal.open["X"][0].wait == 0 and cal.open["X"][0].entry == 99.0
+    cal.update("X", 101.5, 99.0, 101.0)    # objetivo 101
+    k = "k#t1"
+    assert cal.results[k][0] == 1 and cal.results[k][3] == 1
+    cal.record("X", "k", 100.0, 98.5, atr=2.0, profiles=(1.0,))
+    cal.update("X", 102, 100, 101)
+    cal.update("X", 103, 101, 102)          # nunca bajó a 99: se cancela y cuenta como perdida
+    assert cal.missed["k"] == 1 and not cal.open["X"]
+
+
+def test_maker_costs_are_cheaper_than_taker_in_the_shadow():
+    def r_for(entry_cost, target_cost):
+        cal = Calibrator(min_samples=1, horizon=10, sample_gap=1, entry_cost=entry_cost, target_cost=target_cost,
+                         stop_cost=0.0015)
+        cal.record("X", "k", 100.0, 98.5, atr=1.0, profiles=(1.0,))
+        cal.update("X", 101.5, 99.5, 101.0)
+        return cal.results["k#t1"][1]
+    assert r_for(0.00075, 0.00075) > r_for(0.0015, 0.0015)
+
+
+def test_engine_limit_order_lifecycle():
+    eng = Engine(Config(entry_mode="limit", limit_offset_atr=0.5, limit_wait=2, max_positions=4,
+                        max_exposure=1.0, risk_per_trade=0.02, max_heat=1.0), cash=1000)
+    rep = engine_mod.StepReport()
+    d = engine_mod.Decision("A", .8, .9, "tendencia", "L|k", exit_target=1.0, p_win=0.8)
+    eng.portfolio_graph.run({"prices": {"A": 100}, "time": 0, "report": rep,
+                             "candidates": [(0.8, "A", d, 2.0, {"features": None, "window": []})]})
+    assert not eng.pf.positions and eng.pf.pending["A"]["limit"] == pytest.approx(99.0)
+    assert eng.risk.can_open(eng.pf) is None and eng.pf.cash == 1000  # pendiente: aún no gasta caja
+    node = next(n for n in eng.symbol_graph.nodes if n.name == "órdenes_límite")
+    node.fn({"symbol": "A", "candle": Candle(1, 100, 100.5, 98.9, 99.5, 1), "report": rep})
+    p = eng.pf.positions["A"]
+    assert p.entry == 99.0 and p.entry_fee == eng.cfg.maker_fee and p.strict and not eng.pf.pending
+    assert p.target == pytest.approx(101.0) and p.stop == pytest.approx(96.0)
+
+
+def test_live_refuses_limit_mode_with_real_exchange(tmp_path, capsys):
+    rc = bot.main(["live", "--exchange", "testnet", "--entry-mode", "limit", "--dir", str(tmp_path), "--once"])
+    assert rc == 2 and "solo está disponible en papel" in capsys.readouterr().out
+
+
+def test_cost_flags():
+    args = bot.parser().parse_args(["backtest", "--entry-mode", "limit", "--bnb", "--default-config"])
+    cfg = bot.config_for(args)
+    assert cfg.entry_mode == "limit" and cfg.maker_fee == cfg.taker_fee == 0.00075
