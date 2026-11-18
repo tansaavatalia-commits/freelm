@@ -4,6 +4,7 @@
   Lee el modo (papel/real) de %USERPROFILE%\freelm-bot-datos\modo.txt y las claves de bot.env.
   Si el bot se cae (sin red, error), espera 30 s y vuelve a arrancar. Registro diario en ...\registros.
 #>
+param([string]$Modo = "")   # "" = leer modo.txt (papel/real); "testnet" = cuenta demo de Binance
 $ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 
@@ -29,19 +30,32 @@ if (Test-Path $EnvFile) {
     }
 }
 
+$prefijo = "bot-"
+if ($Modo -eq "testnet") {
+    # claves de testnet en lugar de las reales, y memoria/cartera separadas de las del modo papel
+    $env:FREELM_EXCHANGE_KEY = $env:FREELM_TESTNET_KEY
+    $env:FREELM_EXCHANGE_SECRET = $env:FREELM_TESTNET_SECRET
+    $TestnetDir = Join-Path $DataDir "testnet"
+    New-Item -ItemType Directory -Force -Path $TestnetDir | Out-Null
+    $env:FREELM_TRADING_DIR = $TestnetDir
+    $prefijo = "testnet-"
+}
+
 while ($true) {
     $modo = "papel"
-    if (Test-Path $ModeFile) { $modo = (Get-Content $ModeFile -Raw).Trim() }
+    if ($Modo -eq "testnet") { $modo = "testnet" }
+    elseif (Test-Path $ModeFile) { $modo = (Get-Content $ModeFile -Raw).Trim() }
     $argumentos = @($Bot, "live", "--interval", "5m", "--exchange", $modo, "--auto-optimize",
                     "--optimize-limit", "8000", "--llm")
+    if ($modo -eq "testnet") { $argumentos += @("--entry-mode", "limit") }   # probar también las órdenes límite
     if ($modo -eq "real") { $argumentos += @("--confirm-real-money", "--max-capital", "100") }
-    $log = Join-Path $LogDir ("bot-" + (Get-Date -Format "yyyyMMdd") + ".log")
+    $log = Join-Path $LogDir ($prefijo + (Get-Date -Format "yyyyMMdd") + ".log")
     # todo el registro en UTF-8 (en PowerShell 5.1, «>>» escribiría UTF-16 y mezclaría codificaciones)
     Add-Content -Path $log -Encoding UTF8 -Value ("==== " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + " arranque en modo " + $modo)
     & $Py @argumentos 2>&1 | ForEach-Object { "$_" } | Out-File -FilePath $log -Append -Encoding utf8
     $codigo = $LASTEXITCODE
     Add-Content -Path $log -Encoding UTF8 -Value ("==== salida con código " + $codigo + "; reinicio en 30 s")
-    if ($codigo -eq 2) {
+    if ($codigo -eq 2 -and $Modo -ne "testnet") {
         # 2 = dinero real bloqueado por la puerta o falta de confirmación: volver a papel
         Set-Content -Path $ModeFile -Value "papel" -Encoding ASCII
     }

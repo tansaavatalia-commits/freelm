@@ -30,7 +30,7 @@ from typing import Dict, List, Optional
 
 from agents import LLMAnalystAgent
 from engine import SHADOW_GAP, WINDOW, Config, Engine, metrics, run_backtest, stress_test, trade_stats
-from exchange import CcxtExecutor, check_gate, load_track, record_equity
+from exchange import CcxtExecutor, check_gate, load_track, record_equity, to_market
 from learning import REGIMES, AgentStats, Calibrator
 from market import DEFAULT_SYMBOLS, Candle, align, fetch_candles, fetch_fear_greed, fetch_funding, load_csv, synthetic
 from notify import Notifier
@@ -384,6 +384,57 @@ def _track_path(args: argparse.Namespace) -> str:
     return p(args, f"historial-{args.exchange}.jsonl")
 
 
+def cmd_conexion(args: argparse.Namespace, client: object = None) -> int:
+    """Comprueba la conexión con el exchange: claves, saldo, mínimos de orden de cada moneda y,
+    con --orden-prueba (solo testnet), una compra límite muy por debajo del precio que nunca
+    se ejecuta y se cancela al momento. No compra ni vende nada."""
+    if args.exchange == "papel":
+        print("El modo papel no se conecta a ningún exchange: usa --exchange testnet (o real).")
+        return 2
+    if args.orden_prueba and args.exchange != "testnet":
+        print("La orden de prueba solo se permite en testnet.")
+        return 2
+    syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    try:
+        ex = CcxtExecutor(args.exchange_id, testnet=args.exchange == "testnet", max_capital=args.max_capital,
+                          client=client)
+        print(f"Conectado a {ex.name}.")
+        free = ex.free_quote()
+        print(f"  Saldo libre: {free:,.2f} {ex.quote} · capital que usaría el bot: {ex.starting_cash():,.2f} "
+              f"(tope {args.max_capital:,.2f})")
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001 - mensaje claro en vez de traza
+        print(f"  [X] No se pudo conectar: {type(e).__name__}: {e}")
+        print("      Revisa que las claves sean de la testnet (testnet.binance.vision) o de la cuenta real, según el modo.")
+        return 1
+    ok = True
+    for s in syms:
+        m = to_market(s, ex.quote)
+        mk = ex.ex.markets.get(m)
+        if not mk:
+            print(f"  [!] {m}: no existe en este exchange")
+            ok = False
+            continue
+        lim = mk.get("limits", {})
+        print(f"  [OK] {m}: mínimo {((lim.get('cost') or {}).get('min') or 0):g} {ex.quote} por orden")
+    if args.orden_prueba:
+        s = syms[0]
+        m = to_market(s, ex.quote)
+        price = float(ex.ex.fetch_ticker(m)["last"]) * 0.5  # a mitad de precio: no se ejecuta nunca
+        min_cost = ((ex.ex.markets[m].get("limits", {}).get("cost") or {}).get("min") or 5)
+        qty = (min_cost * 1.2) / price
+        oid = ex.place_limit_buy(s, qty, price)
+        if oid in (False, None):
+            print("  [X] El exchange rechazó la orden de prueba (¿permiso de trading activado en la clave?).")
+            return 1
+        filled, _, status = ex.limit_status(s, oid)
+        ex.cancel_limit(s, oid)
+        print(f"  [OK] Orden de prueba colocada y cancelada ({m} a {price:,.2f}, estado '{status}', ejecutado {filled:g}).")
+    print("Conexión correcta." if ok else "Conexión correcta, con avisos.")
+    return 0 if ok else 1
+
+
 def cmd_gate(args: argparse.Namespace) -> int:
     args.exchange = "papel"
     book = load_json(_book_path(args))
@@ -685,6 +736,15 @@ def parser() -> argparse.ArgumentParser:
     rp.add_argument("--exchange", default="papel", choices=["papel", "testnet", "real"])
     rp.add_argument("--plain", action="store_true", help="texto sin formato (para Telegram)")
     rp.set_defaults(func=cmd_report)
+
+    cx = sub.add_parser("conexion", help="comprobar claves, saldo y órdenes con el exchange (testnet o real)")
+    common(cx, "binance")
+    cx.add_argument("--exchange", default="testnet", choices=["papel", "testnet", "real"])
+    cx.add_argument("--exchange-id", default="binance")
+    cx.add_argument("--max-capital", type=float, default=100.0)
+    cx.add_argument("--orden-prueba", action="store_true",
+                    help="(solo testnet) coloca y cancela una compra límite a mitad de precio")
+    cx.set_defaults(func=cmd_conexion)
 
     gt = sub.add_parser("gate", help="¿ha superado la prueba de 20 días?")
     common(gt, "binance")

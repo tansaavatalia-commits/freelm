@@ -836,6 +836,27 @@ def test_windows_assistant_only_uses_existing_bot_commands():
         ["optimize", "--source", "binance", "--limit", "5000", "--population", "12", "--generations", "5"],
         ["optimize", "--source", "binance", "--limit", "5000"],
         ["report", "--plain"],
+        ["report", "--plain", "--exchange", "testnet"],
         ["gate"],
+        ["conexion", "--exchange", "testnet", "--orden-prueba"],
+        ["live", "--interval", "5m", "--exchange", "testnet", "--entry-mode", "limit", "--llm"],
+        ["live", "--interval", "5m", "--exchange", "testnet", "--auto-optimize", "--optimize-limit", "8000", "--llm",
+         "--entry-mode", "limit"],
     ):
         p.parse_args(argv)  # SystemExit si alguna opción no existe
+
+
+def test_conexion_command_with_test_order(capsys):
+    fx = FakeExchange()
+    fx.fetch_ticker = lambda m: {"last": 50_000.0}
+    fx.fetch_order = lambda oid, m: {"id": oid, "filled": 0.0, "status": "open", "fees": []}
+    args = bot.parser().parse_args(["conexion", "--exchange", "testnet", "--symbols", "BTCUSDT,FOOUSDT",
+                                    "--orden-prueba"])
+    rc = bot.cmd_conexion(args, client=fx)
+    out = capsys.readouterr().out
+    assert "Saldo libre: 500.00" in out and "BTC/USDT: mínimo 5" in out and "FOO/USDT: no existe" in out
+    assert "Orden de prueba colocada y cancelada" in out and fx.cancelled  # nunca queda una orden abierta
+    assert fx.orders[-1][1:3] == ("limit", "buy") and fx.orders[-1][4] == pytest.approx(25_000.0)
+    assert rc == 1  # FOO no existe -> aviso
+    real = bot.parser().parse_args(["conexion", "--exchange", "real", "--orden-prueba"])
+    assert bot.cmd_conexion(real, client=fx) == 2  # nunca orden de prueba con dinero real

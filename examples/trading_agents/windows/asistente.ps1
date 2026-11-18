@@ -81,11 +81,122 @@ function Cargar-Entorno {
     }
 }
 
-function Ejecutar-Bot([string[]]$argumentos) {
+function Ejecutar-Bot([string[]]$argumentos, [switch]$Testnet) {
     if (-not (Test-Path $Py)) { Fallo "El bot no está instalado todavía (opción 1 del menú)."; return 1 }
     Cargar-Entorno
+    if ($Testnet) { Entorno-Testnet }
     & $Py $Bot @argumentos | Out-Host   # a la pantalla, no al valor de retorno
     return $LASTEXITCODE
+}
+
+# ---------------------------------------------------------------- testnet (cuenta demo de Binance)
+$TestnetDir = Join-Path $DataDir "testnet"
+
+function Entorno-Testnet {
+    # las claves de la testnet se guardan aparte y solo se usan en este proceso: nunca pisan las reales
+    $env:FREELM_EXCHANGE_KEY = $env:FREELM_TESTNET_KEY
+    $env:FREELM_EXCHANGE_SECRET = $env:FREELM_TESTNET_SECRET
+    $env:FREELM_TRADING_DIR = $TestnetDir   # memoria y cartera separadas de las del modo papel
+    New-Item -ItemType Directory -Force -Path $TestnetDir | Out-Null
+    $champ = Join-Path $DataDir "champion.json"
+    if ((Test-Path $champ) -and -not (Test-Path (Join-Path $TestnetDir "champion.json"))) {
+        Copy-Item $champ $TestnetDir
+    }
+}
+
+function Pausa([string]$texto = "Pulsa Enter para continuar") { Read-Host "  $texto" | Out-Null }
+
+function Guardar-Clave([string]$k, [string]$v) {
+    New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
+    $lineas = @()
+    if (Test-Path $EnvFile) { $lineas = @(Get-Content $EnvFile | Where-Object { $_ -notmatch "^\s*$k\s*=" }) }
+    if ($lineas.Count -eq 0) { $lineas = @("# Claves del bot de trading. NO compartas este archivo.") }
+    $lineas += "$k=$v"
+    Set-Content -Path $EnvFile -Value $lineas -Encoding UTF8
+    & icacls $EnvFile /inheritance:r /grant:r "$($env:USERNAME):(R,W)" | Out-Null
+}
+
+function Parar-Testnet {
+    Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*bot.py*live*--exchange*testnet*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*iniciar-bot.ps1*-Modo testnet*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+}
+
+function Probar-Testnet {
+    Titulo "Probar en la TESTNET de Binance (cuenta demo, dinero ficticio)"
+    Write-Host "  Para qué sirve: comprobar que las claves, las órdenes, el stop en el exchange y las órdenes"
+    Write-Host "  límite funcionan, sin arriesgar nada. NO sirve para medir si la estrategia gana: los precios"
+    Write-Host "  y la liquidez de la testnet no son los del mercado real (eso lo mide el modo papel)."
+    Write-Host "  Recomendado: 2-3 días, justo antes de pasar a dinero real."
+    if (-not (Test-Path $Py)) { Fallo "Primero instala el bot (opción 1)."; return }
+
+    Titulo "Paso 1 de 6 · Entrar en la testnet"
+    Write-Host "  Se abrirá https://testnet.binance.vision en tu navegador."
+    Write-Host "  Pulsa 'Log In with GitHub' y entra con tu cuenta de GitHub (es gratis; no pide datos bancarios)."
+    Pausa "Pulsa Enter para abrir la página"
+    Start-Process "https://testnet.binance.vision/"
+    Pausa "Cuando hayas entrado, pulsa Enter"
+
+    Titulo "Paso 2 de 6 · Crear la clave API de la testnet"
+    Write-Host "  En esa página pulsa 'Generate HMAC_SHA256 Key', pon de descripción 'bot' y pulsa 'Generate'."
+    Write-Host "  Verás 'API Key' y 'Secret Key'. COPIA LAS DOS AHORA: el secret solo se muestra una vez."
+    Write-Host "  (Estas claves solo valen para la testnet; no tienen nada que ver con tu dinero real.)"
+    Pausa "Cuando las tengas copiadas, pulsa Enter"
+
+    Titulo "Paso 3 de 6 · Guardar las claves"
+    Write-Host "  Pega cada una con clic derecho (o Ctrl+V) y Enter. No se verá al escribir: es normal."
+    $k = Leer-Secreto "API Key de la testnet"
+    $s = Leer-Secreto "Secret Key de la testnet"
+    if ($k -ne "") { Guardar-Clave "FREELM_TESTNET_KEY" $k }
+    if ($s -ne "") { Guardar-Clave "FREELM_TESTNET_SECRET" $s }
+    Cargar-Entorno
+    if (-not $env:FREELM_TESTNET_KEY -or -not $env:FREELM_TESTNET_SECRET) {
+        Fallo "Faltan las claves de la testnet. Vuelve a esta opción cuando las tengas."; return
+    }
+    Ok "Claves de testnet guardadas (aparte de las reales)."
+
+    Titulo "Paso 4 de 6 · Comprobar la conexión"
+    Write-Host "  El bot se conecta, lee tu saldo de prueba y los mínimos de cada moneda, y coloca una compra"
+    Write-Host "  límite a MITAD de precio (nunca se ejecuta) que cancela al momento."
+    $rc = Ejecutar-Bot @("conexion", "--exchange", "testnet", "--orden-prueba") -Testnet
+    if ($rc -eq 2) { Fallo "Comprobación rechazada."; return }
+    if ($rc -ne 0) {
+        Aviso "Hubo avisos o errores (arriba). Si dice 'Invalid API-key' o similar, repite el paso 2 y 3."
+        if (-not (SiNo "¿Seguir de todos modos?" $false)) { return }
+    } else { Ok "Conexión y órdenes verificadas." }
+
+    Titulo "Paso 5 de 6 · Poner el bot a funcionar en la testnet"
+    Write-Host "  a) En esta ventana: ves cada decisión en directo (Ctrl+C para parar)."
+    Write-Host "  b) En segundo plano: sigue funcionando aunque cierres esto (registro aparte)."
+    Write-Host "  El modo papel (el que cuenta los 20 días) sigue funcionando igual en ambos casos."
+    $op = Read-Host "  Elige a o b"
+    if ($op.Trim().ToLower() -eq "b") {
+        Parar-Testnet
+        Start-Process powershell.exe -WindowStyle Minimized -ArgumentList @(
+            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$Starter`"", "-Modo", "testnet")
+        Ok "Bot de testnet en marcha en segundo plano (ventana minimizada)."
+        Write-Host "  Registro: $LogDir\testnet-AAAAMMDD.log"
+    } else {
+        Ejecutar-Bot @("live", "--interval", "5m", "--exchange", "testnet", "--entry-mode", "limit", "--llm") -Testnet | Out-Null
+    }
+
+    Titulo "Paso 6 de 6 · Qué revisar en 2-3 días"
+    Write-Host "  - Opción 13 del menú: informe de la testnet (operaciones, órdenes límite, errores)."
+    Write-Host "  - En https://testnet.binance.vision verás las órdenes reales que colocó el bot."
+    Write-Host "  - Que el stop aparezca como orden en el exchange en cada compra."
+    Write-Host "  - Que no haya errores repetidos en el registro."
+    Write-Host "  Si todo va bien y la puerta (opción 2) dice APTO, ya puedes plantearte el dinero real (opción 9)."
+    Write-Host "  Para parar el bot de testnet: opción 12."
+}
+
+function Informe-Testnet {
+    Titulo "Informe de la testnet"
+    Ejecutar-Bot @("report", "--plain", "--exchange", "testnet") -Testnet | Out-Null
+    $hoy = Join-Path $LogDir ("testnet-" + (Get-Date -Format "yyyyMMdd") + ".log")
+    if (Test-Path $hoy) { Titulo "Últimas líneas del registro de testnet"; Get-Content $hoy -Tail 25 }
 }
 
 # ---------------------------------------------------------------- pasos
@@ -252,7 +363,7 @@ function Estado {
 
 function Parar-Procesos {
     Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*trading_agents*bot.py*live*" } |
+        Where-Object { $_.CommandLine -like "*trading_agents*bot.py*live*" -and $_.CommandLine -notlike "*--exchange testnet*" } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 
@@ -319,6 +430,9 @@ function Menu {
         Write-Host "   8  Actualizar el bot"
         Write-Host "   9  Pasar a dinero real (solo si la puerta dice APTO)"
         Write-Host "  10  Volver a papel"
+        Write-Host "  11  Probar en la TESTNET de Binance (cuenta demo), paso a paso"
+        Write-Host "  12  Parar el bot de testnet"
+        Write-Host "  13  Informe de la testnet"
         Write-Host "   0  Salir"
         $op = Read-Host "  Elige"
         try {
@@ -338,6 +452,9 @@ function Menu {
                 "8"  { Actualizar }
                 "9"  { Dinero-Real }
                 "10" { Volver-Papel }
+                "11" { Probar-Testnet }
+                "12" { Parar-Testnet; Ok "Bot de testnet parado." }
+                "13" { Informe-Testnet }
                 "0"  { return }
                 default { Aviso "Opción no válida." }
             }
