@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import math
 import time
+from collections import deque
 from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -33,6 +34,7 @@ from features import Features
 from learning import Calibrator, Coordinator, bucket, detect_regime
 from market import Candle, market_context
 from risk import ClosedTrade, Portfolio, Position, RiskManager
+from safety import check_window
 from teams import Team
 
 WINDOW = 320
@@ -62,9 +64,11 @@ class Config:
     team_eta: float = 0.3
     council_eta: float = 0.5
     shadow_horizon: int = 48
+    learn_horizon: int = 1         # velas hacia delante con las que se premia/castiga a cada agente
     riskoff: bool = True           # no comprar con BTC bajo su media 200 y poca amplitud
     riskoff_breadth: float = 0.35
     max_heat: float = 0.03         # riesgo total abierto (suma de distancias al stop) <= 3 % del capital
+    max_daily_loss: float = 0.03   # pérdida diaria que bloquea nuevas entradas hasta el día siguiente (UTC)
     # --- modo «alta probabilidad» (petición del usuario: solo operar con >= 77 % de acierto VERIFICADO)
     min_win_prob: float = 0.77     # cota inferior de Wilson de la probabilidad de cerrar en positivo
     prob_z: float = 3.0            # z de esa cota: 3 ~ 99,9 %, corrige las muchas pruebas (tipos x perfiles)
@@ -232,6 +236,7 @@ class StepReport:
     seconds: float = 0.0
     event: Optional[str] = None
     notes: List[str] = field(default_factory=list)
+    data_issues: Dict[str, List[str]] = field(default_factory=dict)  # símbolos omitidos por datos dudosos
 
 
 def group_swarm(swarm: Optional[Sequence[Agent]] = None) -> Dict[str, List[Agent]]:
@@ -275,15 +280,17 @@ class Engine:
         self.risk = RiskManager(risk_per_trade=self.cfg.risk_per_trade, stop_atr=self.cfg.stop_atr,
                                 target_atr=self.cfg.target_atr, max_positions=self.cfg.max_positions,
                                 max_exposure=self.cfg.max_exposure, max_drawdown=self.cfg.max_drawdown,
-                                exit_score=self.cfg.exit_score, peak_equity=cash)
+                                exit_score=self.cfg.exit_score, peak_equity=cash,
+                                max_daily_loss=self.cfg.max_daily_loss)
         self.executor = executor or PaperExecutor()
         self.llm = llm
         self.cache = cache
         self.sentiment = sentiment
         self.funding = funding
         self.track_stats = True  # el optimizador lo apaga: no necesita estadísticas por agente
+        self.check_data = True   # comprobación de integridad de datos por vela (safety.check_window)
         self.warmup = min(WINDOW, max(a.warmup for t in self.teams.values() for a in t.agents) + 1)
-        self._pending: Dict[str, tuple] = {}
+        self._pending: Dict[str, deque] = {}
         self._last_shadow: Dict[str, int] = {}
         self._step = 0
         self.total_signals = 0
@@ -299,10 +306,14 @@ class Engine:
         cfg = self.cfg
 
         def learn(ctx: Dict[str, Any]) -> None:
-            pend = self._pending.get(ctx["symbol"])
-            if pend:
-                obs, team_sigs, regime, prev_close, vol = pend
+            # cada agente se juzga por el retorno de las ``learn_horizon`` velas siguientes a
+            # su señal (el mismo plazo que una operación), no solo por la vela siguiente
+            q = self._pending.get(ctx["symbol"])
+            h = max(1, cfg.learn_horizon)
+            if q and len(q) >= h:
+                obs, team_sigs, regime, prev_close, vol = q.popleft()
                 ret = math.log(ctx["candle"].close / prev_close)
+                vol = vol * math.sqrt(h)
                 for name, o in obs.items():
                     self.teams[name].coord.learn_arrays(o[0], o[1], regime, ret, vol, self.track_stats, o[2])
                 self.council.learn(team_sigs, regime, ret, vol)
@@ -415,7 +426,8 @@ class Engine:
         def remember(ctx: Dict[str, Any]) -> None:
             m = ctx["market"]
             obs = {n: m["obs"][n] for n in self.teams}
-            self._pending[ctx["symbol"]] = (obs, ctx["decision"].teams, m["regime"], ctx["candle"].close, m["vol"])
+            q = self._pending.setdefault(ctx["symbol"], deque())
+            q.append((obs, ctx["decision"].teams, m["regime"], ctx["candle"].close, m["vol"]))
 
         g.add(Node("consejo", tuple(f"team:{n}" for n in self.teams), ("decision",), council,
                    "confronta a los equipos con pesos aprendidos"))
@@ -475,7 +487,10 @@ class Engine:
         def guard(ctx: Dict[str, Any]) -> None:
             eq = self.pf.equity(ctx["prices"])
             ctx["equity"] = eq
-            ev = self.risk.tick(eq)
+            ev = self.risk.tick(eq, ctx["time"])
+            if ev == "DAILY":
+                ctx["report"].notes.append(f"límite de pérdida diaria alcanzado (capital {eq:,.2f})")
+                ctx["report"].event = ev
             if ev == "HALT":
                 for s in list(self.pf.positions):
                     self.close_position(s, ctx["prices"][s], ctx["time"], "interruptor de emergencia", ctx["report"])
@@ -562,9 +577,20 @@ class Engine:
             mctx = market_context(windows, self.sentiment, funding=self.funding)
             if self.cache is not None:
                 self.cache[t_key] = mctx
+        if hasattr(self.executor, "step_time"):  # identificadores de orden deterministas por vela
+            self.executor.step_time = next(iter(windows.values()))[-1].time
         for sym, window in windows.items():
             c = window[-1]
             now, prices[sym] = c.time, c.close
+            if self.check_data:
+                problems = check_window(window)
+                if problems:
+                    # datos dudosos: ni se aprende, ni se decide, ni se gestiona con ellos en esta vela
+                    # (la posición, si la hay, sigue protegida por su stop en el exchange)
+                    rep.data_issues[sym] = problems
+                    rep.notes.append(f"{sym}: datos dudosos, se omite esta vela ({problems[0]})")
+                    self._pending.pop(sym, None)
+                    continue
             ctx = {"symbol": sym, "window": window, "candle": c, "trading": trading,
                    "candidates": candidates, "report": rep, "mctx": mctx[sym]}
             self.symbol_graph.run(ctx)

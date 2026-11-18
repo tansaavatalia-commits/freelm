@@ -22,6 +22,9 @@
   estado de la **puerta del dinero real**.
 - **Panel**, opción 4: ver en directo lo que decide el bot, vela a vela (Ctrl+C para salir).
 - Registros: `%USERPROFILE%\freelm-bot-datos\registros\bot-AAAAMMDD.log`.
+- **Diario de decisiones**, una línea por cada decisión, con su motivo:
+  `%USERPROFILE%\freelm-bot-datos\diario\decisiones-AAAAMMDD.jsonl` (se abre con
+  el Bloc de notas).
 - Toda la memoria del bot (aprendizaje, configuración campeona, cartera simulada)
   está en `%USERPROFILE%\freelm-bot-datos`. Actualizar o reinstalar el bot no la borra.
 

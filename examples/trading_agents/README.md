@@ -73,6 +73,31 @@ al vencer. Como el stop ya está puesto como orden en el exchange, el objetivo s
 vigila vela a vela y se vende **a mercado** (taker). Ese modo lleva su propia
 estadística (claves `LT|`), así que el 77 % se verifica con esos costes.
 
+## Seguridad operativa (fase 1)
+
+- **Integridad de datos.** Antes de decidir, cada ventana de velas se valida:
+  huecos, velas repetidas o fuera de orden, precios no válidos, máximo/mínimo
+  incoherentes, saltos de más del 35 % en una vela. Si algo falla, **ese símbolo no
+  se aprende ni se decide en esa vela** (`report.data_issues`).
+- **Datos atrasados (en vivo).** Si la última vela cerrada tiene más de 2
+  intervalos, no se opera y se avisa una vez por Telegram.
+- **Límite de pérdida diaria** (`max_daily_loss`, 3 %). Si la pérdida realizada
+  más la no realizada del día UTC supera el límite, no hay entradas nuevas hasta el día
+  siguiente. Es independiente del interruptor del 10 %.
+- **Diario de decisiones** (`<datos>/diario/decisiones-AAAAMMDD.jsonl`): una línea
+  por símbolo y vela, con el veredicto de cada equipo, los vetos y su motivo, la
+  probabilidad verificada, las aperturas y cierres, la cartera, los avisos y los
+  errores. Nunca guarda claves.
+- **Órdenes idempotentes.** Cada orden lleva un `clientOrderId` determinista
+  (tipo + moneda + vela). Si la red corta la respuesta, antes de reintentar se
+  busca la orden en el exchange: **nunca se envía dos veces**.
+- **Conciliación al arrancar** (testnet/real). Si una posición guardada ya no
+  está en la cuenta (por ejemplo, el stop se ejecutó con el bot apagado), se cierra
+  en el libro. Las que siguen reciben de nuevo su stop en el exchange y se borran
+  los stops viejos del bot.
+- **Alertas de conexión.** Tras 3 errores seguidos se avisa por Telegram, y
+  también cuando la conexión se recupera.
+
 ## Arquitectura: nodos enlazados
 
 `python bot.py graph` dibuja el grafo real en formato Mermaid. Cada vela, cada
@@ -125,6 +150,12 @@ flowchart LR
 y `status` muestran qué agentes predicen de verdad el retorno siguiente
 (|t| > 2) y cuáles son ruido. `status --all-agents` da la tabla completa.
 
+**Horizonte de aprendizaje** (`learn_horizon`, por defecto 1): cada agente se
+premia o castiga con el retorno de las *h* velas siguientes a su señal, no solo
+con la de la vela siguiente. Así se le juzga en el mismo plazo que dura una
+operación. Con *h* > 1 los retornos se solapan, y la t del IC se divide por
+√h para no inflarla. El optimizador busca *h* entre 1 y 36 velas.
+
 **Informe profesional** (al estilo quantstats, sin dependencias): Sortino,
 Calmar, duración de la peor caída, días positivos, mejor y peor día,
 rendimiento por meses, esperanza por operación y rachas. Aparece en
@@ -132,6 +163,77 @@ rendimiento por meses, esperanza por operación y rachas. Aparece en
 
 Los nodos se añaden o se quitan con `Graph.add` / `Graph.remove`. El orden de
 ejecución se calcula solo, a partir de lo que cada nodo necesita y produce.
+
+## Validación estadística de estrategias (`validate`)
+
+Ganar en un backtest no basta. `python bot.py validate --source binance --interval 4h`
+prueba una **familia** de estrategias: la regla de entrada (`77` = la tuya,
+`ev50` = esperanza > 0 y acierto verificado ≥ 50 %) combinada con cada horizonte
+de aprendizaje (1, 6, 12, 24 y 36 velas). Solo declara **VALIDADA** una
+estrategia que pasa **todas** estas pruebas:
+
+| Prueba | Exigencia |
+|---|---|
+| Walk-forward: aprende con el 40 % inicial y opera el 60 % restante sin dejar de aprender, siempre solo con el pasado | ≥ 30 operaciones, gana dinero, caída ≤ 10 % |
+| Constancia: el tramo operado se parte en 4 | ≥ 3 de 4 tramos en positivo |
+| Deflated Sharpe (Bailey y López de Prado), que descuenta **todas** las pruebas hechas (`--prior-trials`) | ≥ 0,95 |
+| PBO por CSCV: probabilidad de que la mejor de la familia sea sobreajuste | ≤ 25 % |
+| Sensibilidad: los horizontes vecinos | también ganan |
+| Bootstrap del resultado medio por operación | intervalo del 95 % > 0 R |
+
+Guarda el detalle en `validation.json`. Sale con código 3 si no se valida
+ninguna estrategia. El workflow de investigación la ejecuta en cada PR, a 4 h y a 1 h.
+
+**Resultado con datos reales** (noviembre de 2026; 8 monedas, 5000 velas, 30
+pruebas descontadas):
+
+| | 4 h (~68 semanas operadas) | 1 h (~17 semanas operadas) |
+|---|---|---|
+| Regla 77 %, todos los horizontes | 0 operaciones | 0 operaciones |
+| Mejor `ev50` | h24: +9,9 %, 37 ops, acierto 78 %, IC95 % [+0,06, +0,53] R | h36: +1,2 % con solo 2 ops |
+| …pero | todo el beneficio en el último tramo (0 %, 0 %, 0 %, +9,9 %); DSR 0,42 | el resto de `ev50`, entre −0,8 % y −5 % |
+| PBO de la familia | **53 %** | **39 %** |
+| Cesta comprar y mantener | −55,5 % | −2,8 % |
+| **Veredicto** | **ninguna validada** | **ninguna validada** |
+
+En pocas palabras: el bot protege el capital, pero **no se ha demostrado una
+ventaja real**. Elegir «la mejor» de estas variantes no generaliza: el PBO es
+cercano al 50 %, lo mismo que elegir al azar. Por eso no se recomienda pasar a
+dinero real con ninguna de ellas.
+
+### Estrategias clásicas (`classic`)
+
+`python bot.py classic --source binance` aplica las **mismas pruebas** a las
+dos familias con más evidencia publicada, en velas diarias (`strategies.py`):
+
+- **Momentum de tendencia** (`tsmom`): se compra cuando el cierre está por
+  encima de su media de 20, 50, 100, 150 o 200 días.
+- **Momentum relativo** (`xsmom`): cada semana se compran las monedas que más
+  subieron en 7, 14, 28, 56 o 90 días, solo si subieron.
+- **El conjunto**: todas las variantes a partes iguales, sin elegir ninguna.
+
+Todas son solo spot, con un máximo de 4 posiciones de ≤ 25 % cada una y la
+exposición ajustada a una volatilidad objetivo (`--target-vol`, 12 % anual).
+Pagan comisión y deslizamiento.
+
+**Resultado con datos reales** (8 monedas, ~5,6 años operados de 2021 a 2026,
+51 pruebas descontadas):
+
+| | Resultado | Caída máx. | Acierto | Deflated Sharpe |
+|---|---|---|---|---|
+| Las 10 variantes | de +5 % a +64 %: **todas ganan** | 12–23 % | 29–42 % | 0,24–0,87 |
+| Conjunto | +34 % (**+5,4 % al año**) | 13,8 % | 35 % | 0,66 |
+| Cesta comprar y mantener | −12,6 % | | | |
+
+- Es lo **más prometedor** encontrado: a diferencia de los agentes técnicos,
+  toda la familia gana y supera a la cesta.
+- Pero **no está validado**: la caída supera el 10 % y el Deflated Sharpe
+  no llega a 0,95. Además, elegir la mejor variante es sobreajuste (PBO 34 %),
+  y el último tramo (2025–2026) fue flojo.
+- Con volatilidad objetivo del 8 %, la caída del conjunto baja al 9,6 % y el
+  rendimiento a +4,1 % al año. Sigue sin validarse.
+- El seguimiento de tendencia gana con **pocas operaciones grandes**: su acierto
+  es del 29–42 %. Es **incompatible con la regla del 77 %** por construcción.
 
 ## Mejora automática (`optimize`)
 
@@ -330,6 +432,29 @@ el tramo fuera de muestra:
   probabilidad de acabar en pérdidas con esas mismas operaciones. Es una
   señal prometedora en un mercado bajista, no una ventaja demostrada. Para
   eso están los 20 días en vivo.
+
+**Tercera ronda, con la regla del 77 % verificado** (noviembre de 2026; 8
+monedas, 5000 velas, comisión 0,1 % y deslizamiento 0,05 % por lado):
+
+| Prueba | Bot | Comprar y mantener la cesta |
+|---|---|---|
+| 1 h, por defecto (regla 77 %) | 0,00 % (0 operaciones) | −28,3 % |
+| 4 h, por defecto (regla 77 %) | 0,00 % (0 operaciones) | +2,6 % |
+| 1 h y 4 h, `learn_horizon` 6, 12 o 24 (regla 77 %) | 0,00 % (0 operaciones) | — |
+
+- El +2,42 % de la segunda ronda es **anterior** a la regla del 77 %. Con esa
+  regla, ningún tipo de señal ha llegado al 77 % *verificable*. Es la cota
+  inferior de Wilson con z = 3, necesaria porque se prueban ~100 combinaciones
+  de tipo × perfil. El mejor llegó al 62–66 %, así que el bot no opera. No es un
+  fallo, y la comprobación de datos de la fase 1 no descartó ni una vela.
+- `learn_horizon` triplica el IC de los mejores agentes en 1 h (de 0,019 a
+  0,06). Con la t corregida por solape, los agentes significativos pasan de 9 a 24.
+- **Experimento, NO activado** (filtro rebajado al 50 % verificable, solo para
+  medir): en 4 h con `learn_horizon` 24, +9,9 % con 37 operaciones, acierto
+  real del 78 %, factor de beneficio 2,4 y caída del 3,8 %. En ese tramo la cesta
+  hizo de −55 % a +2,6 %, según la ventana. Pero con *h* = 18 dio −4,2 % (5
+  operaciones) y con *h* = 36, +1,9 %. Esa sensibilidad indica **fragilidad**,
+  no una ventaja demostrada. La regla del 77 % sigue intacta.
 
 ## Resultados de referencia (datos sintéticos, NO reales)
 

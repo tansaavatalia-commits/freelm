@@ -104,6 +104,10 @@ class RiskManager:
     losing_streak: int = 0
     pause_left: int = 0
     halted: bool = False
+    max_daily_loss: float = 0.03  # pérdida diaria (realizada + no realizada) que bloquea nuevas entradas
+    day: int = -1
+    day_start_equity: float = 0.0
+    daily_halted: bool = False
 
     def levels(self, price: float, atr: float) -> tuple:
         return price - self.stop_atr * atr, price + self.target_atr * atr
@@ -111,6 +115,8 @@ class RiskManager:
     def can_open(self, pf: Portfolio) -> Optional[str]:
         if self.halted:
             return "interruptor activado"
+        if self.daily_halted:
+            return f"límite de pérdida diaria ({self.max_daily_loss:.0%}) alcanzado: sin nuevas entradas hasta mañana (UTC)"
         if self.pause_left > 0:
             return f"pausa tras {self.max_losing_streak} pérdidas ({self.pause_left} velas)"
         if len(pf.positions) + len(pf.pending) >= self.max_positions:
@@ -169,11 +175,19 @@ class RiskManager:
         self.on_closed(t)
         return t
 
-    def tick(self, equity: float) -> Optional[str]:
-        """Una vez por paso: pausa y control de drawdown global. Si devuelve
-        "HALT", quien llama debe cerrar todas las posiciones."""
+    def tick(self, equity: float, now_ms: Optional[int] = None) -> Optional[str]:
+        """Una vez por paso: pausa, límite de pérdida diaria y control de drawdown global.
+        Si devuelve "HALT", quien llama debe cerrar todas las posiciones."""
         if self.pause_left > 0:
             self.pause_left -= 1
+        if now_ms is not None:
+            day = int(now_ms // 86_400_000)
+            if day != self.day:  # nuevo día UTC: se reinicia la referencia
+                self.day, self.day_start_equity, self.daily_halted = day, equity, False
+            elif (not self.daily_halted and self.day_start_equity > 0
+                  and equity < self.day_start_equity * (1 - self.max_daily_loss)):
+                self.daily_halted = True
+                return "DAILY"
         self.peak_equity = max(self.peak_equity, equity)
         if not self.halted and self.peak_equity and equity < self.peak_equity * (1 - self.max_drawdown):
             self.halted = True

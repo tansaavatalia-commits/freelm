@@ -271,11 +271,11 @@ mide solo cuál es la mejor **base técnica y segura** para construir y validar.
 | Fase | Contenido | Criterio de salida |
 |---|---|---|
 | **0 (hecha)** | Investigación y este informe | Revisado por ti |
-| **1. Seguridad operativa** | Integridad de datos, límite de pérdida diaria, diario de decisiones, idempotencia y conciliación | Tests + 7 días en testnet sin errores |
+| **1. Seguridad operativa ✔ (hecha)** | Integridad de datos, límite de pérdida diaria, diario de decisiones, idempotencia, conciliación, datos atrasados, alertas de conexión | Tests ✔ · pendiente: 7 días en testnet sin errores |
 | **2. Limpieza de señales** | Retirar los agentes sin IC significativo y validar fuera de muestra que no empeora | Validación en 3 tramos + examen final |
 | **3. Universo sin sesgo** | Top-N histórico | Re-backtest con datos reales |
 | **4. Estrategia de carry** | Módulo en papel | 90 días en papel con funding real |
-| **5. Validación científica completa** | Sensibilidad, PBO, Deflated Sharpe, Monte Carlo, regímenes, benchmarks | PBO < 0,2 y Sharpe deflactado > 0 |
+| **5. Validación científica completa ◐ (herramienta hecha: `bot.py validate`)** | Sensibilidad, PBO, Deflated Sharpe, Monte Carlo, regímenes, benchmarks | PBO ≤ 0,25 y Deflated Sharpe ≥ 0,95 · resultado 2026-11: **ninguna estrategia validada**; la más prometedora es el momentum clásico diario (`classic`: conjunto +5,4 %/año, DSR 0,66, caída 13,8 %) |
 | **6. Papel en vivo** | ≥ 20 días (recomendado 90) | `gate` = APTO |
 | **7. Testnet** | 2–3 días | Sin errores técnicos |
 | **8. Real mínimo** | Solo con tu **autorización expresa** | 180 días para hablar de consistencia |
@@ -294,8 +294,8 @@ mide solo cuál es la mejor **base técnica y segura** para construir y validar.
 | Survivorship bias | ✘ **pendiente**: el universo es el top 8 de hoy (fase 3) |
 | Monte Carlo | ✔ prueba de estrés con el riesgo realmente tomado |
 | Regímenes de mercado | ✔ estadística separada por régimen |
-| Sensibilidad de parámetros | ✘ **pendiente** (fase 5) |
-| PBO / Deflated Sharpe | ✘ **pendiente** (fase 5) |
+| Sensibilidad de parámetros | ✔ `validate`: los parámetros vecinos también deben ganar |
+| PBO / Deflated Sharpe | ✔ `validate`: PBO por CSCV (16 bloques) y Deflated Sharpe con todas las pruebas descontadas |
 | Buy & Hold y benchmarks | ✔ cesta equiponderada; falta BTC solo (fase 5) |
 | Paper trading obligatorio | ✔ puerta de 20 días en el código |
 

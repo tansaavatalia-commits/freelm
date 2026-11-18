@@ -4,6 +4,8 @@
     python bot.py bench                         # señales por segundo
     python bot.py backtest                      # aprender + validar fuera de muestra
     python bot.py optimize                      # una ronda de mejora automática
+    python bot.py validate                      # walk-forward, Deflated Sharpe, PBO, sensibilidad
+    python bot.py classic                       # lo mismo con momentum clásico (velas diarias)
     python bot.py live                          # tiempo real, en papel (por defecto)
     python bot.py live --exchange testnet       # órdenes en el testnet del exchange
     python bot.py gate                          # ¿listo para dinero real? (20 días)
@@ -26,7 +28,7 @@ import sys
 import time
 from dataclasses import asdict, replace
 from types import SimpleNamespace
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 from agents import LLMAnalystAgent
 from engine import SHADOW_GAP, WINDOW, Config, Engine, metrics, run_backtest, stress_test, trade_stats
@@ -37,6 +39,7 @@ from notify import Notifier
 from optimize import Optimizer, load_champion, save_result
 from report import format_performance, performance
 from risk import ClosedTrade, Position
+from safety import DecisionJournal, check_fresh
 
 STATE_DIR = os.environ.get("FREELM_TRADING_DIR", os.path.join(os.path.expanduser("~"), ".cache", "freelm-trading"))
 PERIODS_PER_YEAR = {"1m": 525_600, "5m": 105_120, "15m": 35_040, "1h": 8_760, "4h": 2_190, "1d": 365}
@@ -200,13 +203,17 @@ def print_stress(trades: List[ClosedTrade]) -> None:
 
 
 def agent_ic_table(state: dict) -> List[tuple]:
-    """(agente, equipo, observaciones, IC, t) de cada agente, del más al menos predictivo."""
+    """(agente, equipo, observaciones, IC, t) de cada agente, del más al menos predictivo.
+
+    Con ``learn_horizon`` = h > 1 los retornos de h velas se solapan: las observaciones no son
+    independientes y la t ingenua sale inflada ~sqrt(h). Se corrige dividiendo por sqrt(h)."""
+    h = max(1, int((state.get("config") or {}).get("learn_horizon", 1) or 1))
     rows = []
     for team, t in state.get("teams", {}).items():
         for name, st in t.get("stats", {}).items():
             a = AgentStats(**st)
             if a.ic_n > 2:
-                rows.append((name, team, a.ic_n, a.ic, a.ic_t))
+                rows.append((name, team, a.ic_n, a.ic, a.ic_t / math.sqrt(h)))
     return sorted(rows, key=lambda r: -r[4])
 
 
@@ -354,6 +361,122 @@ def cmd_optimize(args: argparse.Namespace) -> int:
     return 0
 
 
+def print_judgement(rep: dict, rules: Sequence[str] = ()) -> List[str]:
+    """Tabla y veredicto de ``validation.judge``. Devuelve las estrategias validadas."""
+    from validation import MAX_PBO
+    print(f"  {'estrategia':<11}{'resultado':>10}{'caída':>7}{'ops':>5}{'acierto':>8}{'media R':>9}"
+          f"{'IC95 % media R':>18}{'DSR':>6}   tramos")
+    for k, v in rep["strategies"].items():
+        lo, hi = v["ci_r"]
+        ci = f"[{lo:+.2f}, {hi:+.2f}]" if lo == lo else "—"
+        print(f"  {k:<11}{v['return']:>+10.2%}{v['max_drawdown']:>7.1%}{v['trades']:>5}{v['win_rate']:>8.0%}"
+              f"{v['mean_r']:>+9.2f}{ci:>18}{v['dsr']:>6.2f}   " + " ".join(f"{x:+.1%}" for x in v["segments"]))
+    pbo = rep["pbo"]
+    print("\n  Probabilidad de sobreajuste de la familia (PBO, CSCV): "
+          + ("no medible (todas las estrategias dieron lo mismo)" if pbo is None else
+             f"{pbo:.0%} ({'aceptable' if pbo <= MAX_PBO else 'ALTA: elegir la mejor de esta familia no generaliza'})"))
+    if rules:
+        print("  Reglas: " + "; ".join(f"{r} = {RULE_LABEL[r]}" for r in rules))
+    ok = [k for k, v in rep["strategies"].items() if v["validated"]]
+    print()
+    for k, v in rep["strategies"].items():
+        print(f"  {k:<11}" + ("VALIDADA" if v["validated"] else "NO VALIDADA: " + "; ".join(v["why"])))
+    print("\n=> " + (f"Estrategias validadas: {', '.join(ok)}." if ok else
+                      "Ninguna estrategia supera la validación. No hay ventaja demostrada: no se recomienda "
+                      "operar con dinero real con ninguna de ellas."))
+    return ok
+
+
+RULES = {"77": {}, "ev50": {"min_win_prob": 0.5}}
+RULE_LABEL = {"77": "acierto verificado >= 77 %", "ev50": "esperanza > 0 y acierto verificado >= 50 %"}
+
+
+def cmd_validate(args: argparse.Namespace) -> int:
+    """Valida una familia de estrategias con walk-forward, Deflated Sharpe, PBO,
+    sensibilidad de parámetros y bootstrap. Solo declara VALIDADA la que pasa todo."""
+    from validation import judge
+    data = load_universe(args)
+    if not data:
+        raise SystemExit("sin datos")
+    saved = None if args.default_config else load_champion(p(args, "champion.json"))
+    base = apply_cost_flags(saved or Config(), args)
+    horizons = [int(x) for x in args.horizons.split(",") if x.strip()]
+    rules = [r for r in args.rules.split(",") if r.strip()]
+    for r in rules:
+        if r not in RULES:
+            raise SystemExit(f"regla desconocida: {r} (usa {', '.join(RULES)})")
+    family = {f"{r}·h{h}": replace(base, learn_horizon=h, **RULES[r]) for r in rules for h in horizons}
+    neighbours = {}
+    for r in rules:
+        for i, h in enumerate(horizons):
+            neighbours[f"{r}·h{h}"] = [f"{r}·h{horizons[j]}" for j in (i - 1, i + 1) if 0 <= j < len(horizons)]
+    opt = Optimizer(data, PERIODS_PER_YEAR.get(args.interval, 8_760), cash=args.cash, workers=args.workers,
+                    sentiment=load_sentiment(args), funding=load_funding(args, list(data), _first_ms(data)))
+    trade_from = opt.start + int((opt.n - opt.start) * args.learn)
+    weeks = (opt.n - trade_from) * INTERVAL_SECONDS.get(args.interval, 3600) / 604_800
+    n_trials = len(family) + args.prior_trials
+    print(f"Validación de {len(family)} estrategias sobre {', '.join(data)} ({args.source}, {args.interval})")
+    print(f"  walk-forward: aprende {trade_from - opt.start} velas y luego opera {opt.n - trade_from} velas "
+          f"(~{weeks:.0f} semanas) sin dejar de aprender, siempre solo con el pasado")
+    print(f"  pruebas que se descuentan (Deflated Sharpe): {n_trials} "
+          f"({len(family)} de esta familia + {args.prior_trials} anteriores)")
+    t0 = time.time()
+    res = opt.walk_forward_many(list(family.values()), trade_from)
+    results = dict(zip(family, res))
+    rep = judge(results, neighbours, n_trials)
+    bh = res[0]["buy_hold"] if res else 0.0
+    print(f"  ({time.time() - t0:.0f}s) cesta comprar y mantener en el mismo tramo: {bh:+.2%}\n")
+    ok = print_judgement(rep, rules)
+    rows = {k: {**v, "config": family[k].to_dict()} for k, v in rep["strategies"].items()}
+    save_json(p(args, "validation.json"), {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "interval": args.interval,
+                                          "symbols": list(data), "source": args.source, "pbo": rep["pbo"],
+                                          "n_trials": n_trials, "buy_hold": bh, "strategies": rows})
+    return 0 if ok else 3
+
+
+def cmd_classic(args: argparse.Namespace) -> int:
+    """Valida las estrategias clásicas con respaldo académico (strategies.py): momentum de
+    tendencia y momentum relativo, más el conjunto de todas, con las mismas pruebas que
+    ``validate``. Por defecto con velas diarias."""
+    import strategies as stg
+    from validation import judge
+    data = load_universe(args)
+    if not data:
+        raise SystemExit("sin datos")
+    ppy = PERIODS_PER_YEAR.get(args.interval, 365)
+    cost = Config(taker_fee=0.00075) if args.bnb else Config()
+    family = {k: replace(c, target_vol=args.target_vol, fee=cost.taker_fee)
+              for k, c in stg.default_family().items()}
+    trade_from = max(c.warmup for c in family.values())
+    n = min(len(v) for v in data.values())
+    if n - trade_from < 200:
+        raise SystemExit(f"pocas velas ({n}); usa --limit mayor")
+    results = {k: stg.simulate(data, c, trade_from, ppy) for k, c in family.items()}
+    results["conjunto"] = stg.ensemble({k: results[k] for k in family})
+    n_trials = len(results) + args.prior_trials
+    days = (n - trade_from) * INTERVAL_SECONDS.get(args.interval, 86_400) / 86_400
+    print(f"Estrategias clásicas sobre {', '.join(data)} ({args.source}, {args.interval}): "
+          f"{n - trade_from} velas operadas (~{days / 365:.1f} años); volatilidad objetivo {args.target_vol:.0%}")
+    print(f"  pruebas que se descuentan (Deflated Sharpe): {n_trials} "
+          f"({len(results)} de esta familia + {args.prior_trials} anteriores)")
+    print(f"  cesta comprar y mantener en el mismo tramo: {results['conjunto']['buy_hold']:+.2%}\n")
+    rep = judge(results, stg.neighbours(family), n_trials)
+    for k, v in rep["strategies"].items():
+        years = max(days / 365, 1e-9)
+        v["annual"] = (1 + v["return"]) ** (1 / years) - 1 if v["return"] > -1 else -1.0
+    ok = print_judgement(rep)
+    best = rep["strategies"]["conjunto"]
+    print(f"\n  conjunto (sin elegir ninguna variante): {best['annual']:+.1%} al año, caída {best['max_drawdown']:.1%}, "
+          f"acierto por operación {best['win_rate']:.0%}")
+    if best["win_rate"] < 0.77:
+        print("  ojo: el seguimiento de tendencia gana con pocas operaciones grandes; su acierto NUNCA llega "
+              "al 77 % exigido por la regla de entrada del bot")
+    save_json(p(args, "classic.json"), {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "interval": args.interval,
+                                       "symbols": list(data), "pbo": rep["pbo"], "n_trials": n_trials,
+                                       "strategies": rep["strategies"]})
+    return 0 if ok else 3
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
     args.limit = max(args.limit, WINDOW + args.steps + 10)
     data = load_universe(args)
@@ -487,12 +610,41 @@ def cmd_live(args: argparse.Namespace) -> int:
     sent_try = time.time()  # se acaba de descargar al crear el motor
     tag = "" if mode_is_paper(args) else "💶 REAL " if args.exchange == "real" else "🧪 TESTNET "
     mode = {"paper": "papel"}.get(args.exchange, args.exchange)
+    journal = DecisionJournal(p(args, "diario"))
+    reconciled = executor is None  # en papel no hay nada que conciliar
+    errors = 0
+    stale_warned = False
     print(f"Modo vivo ({eng.executor.name}): {', '.join(syms)} {args.interval}. Ctrl+C para salir.")
+    print(f"  Diario de decisiones: {journal.dir}")
     while True:
         try:
             data = fetch_universe(syms, args.interval, WINDOW + 1)
             data = {s: cs[:-1] for s, cs in data.items()}  # la última vela aún está abierta
             t = min(cs[-1].time for cs in data.values())
+            if errors >= 3:
+                tg.send(f"{tag}✅ Conexión recuperada tras {errors} intentos fallidos.")
+            errors = 0
+            stale = [f"{s}: {m}" for s, cs in data.items()
+                     if (m := check_fresh(cs, INTERVAL_SECONDS.get(args.interval, 3600)))]
+            if stale:  # el exchange devuelve datos viejos: no se decide con ellos
+                print(f"[aviso] {stale[0]} - no se opera en esta vuelta", file=sys.stderr)
+                journal.write(int(time.time() * 1000), {"tipo": "aviso", "datos_atrasados": stale})
+                if not stale_warned:
+                    tg.send(f"{tag}⚠️ Datos atrasados del exchange ({stale[0]}). El bot no opera hasta que se normalicen.")
+                    stale_warned = True
+                if args.once:
+                    return 1
+                sleep_to_next_close(args.interval, args.poll)
+                continue
+            stale_warned = False
+            if not reconciled:  # al arrancar: ¿la cartera guardada coincide con el exchange?
+                prices0 = {s: cs[-1].close for s, cs in data.items()}
+                for s in executor.reconcile(eng.pf.positions):
+                    tr = eng.pf.close(s, prices0[s], t, "conciliación: ya no estaba en el exchange (stop ejecutado)")
+                    eng.risk.on_closed(tr)
+                    journal.write(t, {"tipo": "conciliacion", "simbolo": s, "resultado": round(tr.pnl, 6)})
+                    tg.send(f"{tag}🔄 {s}: la posición ya no estaba en el exchange al arrancar; cerrada en el libro.")
+                reconciled = True
             if t > last_seen:
                 last_seen = t
                 rep = eng.step(data)
@@ -520,6 +672,11 @@ def cmd_live(args: argparse.Namespace) -> int:
                                       "closed": [asdict(c) for c in eng.pf.closed[-1000:]],
                                       "last_time": t, "last_optimize": last_opt, "last_summary": last_summary})
                 record_equity(track_path, eq, mode)
+                journal.step(t, rep, prices, eq)
+                if rep.event == "DAILY":
+                    tg.send(f"{tag}⛔ Límite de pérdida diaria alcanzado: sin nuevas entradas hasta mañana (UTC).")
+                for s, probs in rep.data_issues.items():
+                    print(f"  [datos dudosos] {s}: {probs[0]}", file=sys.stderr)
                 day = time.strftime("%Y-%m-%d", time.gmtime())
                 # el índice es diario y se publica a lo largo del día: reintentar (como mucho
                 # una vez por hora) mientras falte el dato de hoy
@@ -548,7 +705,12 @@ def cmd_live(args: argparse.Namespace) -> int:
         except KeyboardInterrupt:
             return 0
         except Exception as e:  # noqa: BLE001 - un fallo de red no debe matar el bucle
+            errors += 1
             print(f"[error] {type(e).__name__}: {e}", file=sys.stderr)
+            journal.write(int(time.time() * 1000), {"tipo": "error", "error": f"{type(e).__name__}: {e}"})
+            if errors == 3:
+                tg.send(f"{tag}⚠️ Sin conexión o error repetido (3 veces): {type(e).__name__}. El bot no opera "
+                        "mientras dure; las posiciones siguen protegidas por su stop en el exchange.")
             if args.once:
                 return 1
         try:
@@ -705,6 +867,24 @@ def parser() -> argparse.ArgumentParser:
     o.add_argument("--min-trades", type=int, default=10)
     o.add_argument("--workers", type=int, default=0, help="procesos en paralelo (0 = todos los núcleos)")
     o.set_defaults(func=cmd_optimize)
+
+    va = sub.add_parser("validate", help="validación estadística: walk-forward, Deflated Sharpe, PBO, sensibilidad")
+    common(va)
+    va.add_argument("--horizons", default="1,6,12,24,36", help="valores de learn_horizon a validar")
+    va.add_argument("--rules", default="77,ev50", help="reglas de entrada: 77 (la del usuario) y/o ev50")
+    va.add_argument("--learn", type=float, default=0.4, help="fracción inicial solo para aprender")
+    va.add_argument("--prior-trials", type=int, default=20,
+                    help="pruebas hechas antes con estos datos (se descuentan en el Deflated Sharpe)")
+    va.add_argument("--workers", type=int, default=0, help="procesos en paralelo (0 = todos los núcleos)")
+    va.set_defaults(func=cmd_validate)
+
+    cl = sub.add_parser("classic", help="validar estrategias clásicas (momentum) con las mismas pruebas")
+    common(cl, limit=3000)
+    cl.set_defaults(interval="1d")
+    cl.add_argument("--target-vol", type=float, default=0.12, help="volatilidad anual objetivo de la cartera")
+    cl.add_argument("--prior-trials", type=int, default=40,
+                    help="pruebas hechas antes con estos datos (se descuentan en el Deflated Sharpe)")
+    cl.set_defaults(func=cmd_classic)
 
     be = sub.add_parser("bench", help="medir señales por segundo")
     common(be)

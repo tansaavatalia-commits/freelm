@@ -27,6 +27,9 @@ def _no_network(monkeypatch):
     monkeypatch.setattr(_m, "fetch_fear_greed", offline)
     monkeypatch.setattr(bot, "fetch_fear_greed", offline)
     monkeypatch.setattr(bot, "fetch_funding", offline)
+    # las velas sintéticas de los tests son «antiguas»: en estos tests se dan por frescas
+    # (la comprobación de frescura tiene su propio test)
+    monkeypatch.setattr(bot, "check_fresh", lambda *a, **k: None)
 
 
 def test_indicators_basic():
@@ -269,7 +272,7 @@ def test_ccxt_executor_caps_capital_and_places_exchange_stops():
     qty, px = ex.buy("BTCUSDT", 0.0015, 50_000)
     assert qty == pytest.approx(0.0015) and px == 50_000.0
     ex.protect("BTCUSDT", qty, 49_000)
-    assert fx.orders[-1][5] == {"stopLossPrice": 49_000.0}
+    assert fx.orders[-1][5]["stopLossPrice"] == 49_000.0 and fx.orders[-1][5]["clientOrderId"].startswith("fls")
     ex.protect("BTCUSDT", qty, 49_500)                     # trailing: old stop is cancelled first
     assert fx.cancelled == ["2"]
     ex.sell("BTCUSDT", qty, 51_000)
@@ -860,3 +863,249 @@ def test_conexion_command_with_test_order(capsys):
     assert rc == 1  # FOO no existe -> aviso
     real = bot.parser().parse_args(["conexion", "--exchange", "real", "--orden-prueba"])
     assert bot.cmd_conexion(real, client=fx) == 2  # nunca orden de prueba con dinero real
+
+
+# ---------------------------------------------------------------- fase 1: seguridad operativa
+
+import safety  # noqa: E402
+
+
+def _good_window(n=40, step=3_600_000):
+    return [Candle(i * step, 100 + i * 0.1, 101 + i * 0.1, 99 + i * 0.1, 100.05 + i * 0.1, 10) for i in range(n)]
+
+
+def test_integrity_detects_bad_data():
+    assert safety.check_window(_good_window()) == []
+    w = _good_window()
+    del w[-5]
+    assert "faltan 1 velas" in safety.check_window(w)[0]
+    w = _good_window()
+    w[-1] = Candle(w[-1].time, 100, 101, 99, 180, 10)       # +80 % en una vela y cierre fuera del rango
+    assert safety.check_window(w)
+    w = _good_window()
+    w[-2] = Candle(w[-2].time, 100, 101, 99, float("nan"), 10)
+    assert "inválido" in safety.check_window(w)[0]
+    w = _good_window()
+    w[-1] = Candle(w[-2].time, 100, 101, 99, 100, 10)        # vela repetida
+    assert "fuera de orden" in safety.check_window(w)[0]
+
+
+def test_engine_skips_symbols_with_bad_data():
+    eng = Engine(Config())
+    good = synthetic(330, seed=1)
+    bad = list(synthetic(330, seed=2))
+    del bad[-3]
+    rep = eng.step({"A": good[-320:], "B": bad[-320:]})
+    assert "A" in rep.decisions and "B" not in rep.decisions and "B" in rep.data_issues
+
+
+def test_check_fresh():
+    w = _good_window(5, 300_000)
+    last_open_s = w[-1].time / 1000
+    assert safety.check_fresh(w, 300, now_s=last_open_s + 400) is None
+    assert "atrasados" in safety.check_fresh(w, 300, now_s=last_open_s + 3600)
+
+
+def test_daily_loss_limit_blocks_new_entries_until_next_utc_day():
+    pf, r = Portfolio(cash=1000), RiskManager(peak_equity=1000, max_daily_loss=0.03, max_drawdown=0.5)
+    day = 86_400_000
+    assert r.tick(1000, 10 * day) is None and r.can_open(pf) is None
+    assert r.tick(975, 10 * day + 1_800_000) is None            # -2,5 %: aún dentro del límite
+    assert r.tick(965, 10 * day + 3_600_000) == "DAILY"         # -3,5 %: bloquea
+    assert "pérdida diaria" in r.can_open(pf)
+    assert r.tick(960, 10 * day + 7_200_000) is None          # avisa una sola vez
+    assert r.tick(960, 11 * day) is None and r.can_open(pf) is None   # nuevo día: se levanta
+
+
+def test_decision_journal_writes_auditable_jsonl(tmp_path):
+    import json as _json
+    eng = Engine(Config())
+    w = synthetic(330, seed=1)[-320:]
+    rep = eng.step({"BTCUSDT": w})
+    j = safety.DecisionJournal(str(tmp_path / "diario"))
+    j.step(w[-1].time, rep, {"BTCUSDT": w[-1].close}, 100.0)
+    files = list((tmp_path / "diario").iterdir())
+    rows = [_json.loads(x) for x in files[0].read_text().splitlines()]
+    dec = next(r for r in rows if r["tipo"] == "decision")
+    assert dec["simbolo"] == "BTCUSDT" and "vetos" in dec and "equipos" in dec and "prob_verificada" in dec
+    assert rows[-1]["tipo"] == "cartera"
+
+
+def test_orders_are_idempotent_after_network_error():
+    fx = FakeExchange()
+    real_create = fx.create_order
+    calls = {"n": 0}
+    sent = {}
+
+    def flaky(m, typ, side, qty, price=None, params=None):
+        calls["n"] += 1
+        o = real_create(m, typ, side, qty, price, params)
+        o["clientOrderId"] = (params or {}).get("clientOrderId")
+        sent[o["clientOrderId"]] = o
+        if calls["n"] == 1:
+            raise TimeoutError("la respuesta se perdió")    # la orden SÍ llegó al exchange
+        return o
+
+    fx.create_order = flaky
+    fx.fetch_order = lambda oid, m, params=None: sent.get((params or {}).get("clientOrderId"))
+    ex = CcxtExecutor(testnet=True, client=fx, log=lambda m: None)
+    ex.step_time = 1_700_000_000_000
+    qty, _ = ex.buy("BTCUSDT", 0.001, 50_000)
+    assert calls["n"] == 1 and qty == pytest.approx(0.001)   # no se reenvió: se recuperó la existente
+    assert list(sent)[0] == "flbBTC1700000000"
+
+
+def test_reconcile_closes_positions_missing_on_exchange_and_reprotects():
+    fx = FakeExchange()
+    fx.balance = {"USDT": {"free": 100.0, "total": 100.0}, "BTC": {"free": 0.0, "total": 0.002},
+                  "ETH": {"free": 0.0, "total": 0.0}}
+    fx.fetch_open_orders = lambda m: [{"id": "old", "side": "sell", "clientOrderId": "flsBTC1"}] if m == "BTC/USDT" else []
+    fx.markets["ETH/USDT"] = {"limits": {"amount": {"min": 0.0001}, "cost": {"min": 5}}}
+    ex = CcxtExecutor(testnet=True, client=fx, log=lambda m: None)
+    positions = {"BTCUSDT": Position("BTCUSDT", 0.002, 50_000, 49_000, 52_000, 1000, 0, 50_000, ""),
+                 "ETHUSDT": Position("ETHUSDT", 0.05, 3_000, 2_900, 3_200, 100, 0, 3_000, "")}
+    gone = ex.reconcile(positions)
+    assert gone == ["ETHUSDT"]                                    # el stop de ETH se ejecutó con el bot apagado
+    assert "old" in fx.cancelled and fx.orders[-1][5]["stopLossPrice"] == 49_000.0   # stop de BTC repuesto
+
+
+def test_learn_horizon_rewards_agents_over_several_candles():
+    data = {"A": synthetic(400, seed=3)}
+    one, many = Engine(Config()), Engine(Config(learn_horizon=6))
+    for i in range(330, 345):
+        w = {"A": data["A"][i - 320:i + 1]}
+        one.step(w, trading=False)
+        many.step(w, trading=False)
+    upd1 = one.council.updates
+    upd6 = many.council.updates
+    # el horizonte largo espera a que pasen h velas antes de juzgar la primera señal
+    assert upd1 == 14 and upd6 == 15 - 6 and len(many._pending["A"]) == 6
+
+
+def test_ic_t_is_corrected_for_overlapping_horizons():
+    c = Coordinator(["a"], eta=0.3)
+    for i in range(50):
+        r = 0.01 if i % 2 else -0.01
+        c.learn_arrays((1.0 if r > 0 else -1.0,), (1.0,), "lateral", r, 0.01)
+    raw = bot.agent_ic_table({"teams": {"t": c.to_dict()}})[0][4]
+    adj = bot.agent_ic_table({"config": {"learn_horizon": 4}, "teams": {"t": c.to_dict()}})[0][4]
+    assert adj == pytest.approx(raw / 2)
+
+
+import validation  # noqa: E402
+
+
+def test_deflated_sharpe_discounts_many_trials():
+    import random
+    rng = random.Random(1)
+    edge = [0.002 + rng.gauss(0, 0.01) for _ in range(1500)]
+    noise = [rng.gauss(0, 0.01) for _ in range(1500)]
+    assert validation.probabilistic_sharpe(edge) > 0.99
+    assert validation.probabilistic_sharpe(noise) < 0.95
+    # cuantas más pruebas se hicieron, más alto el listón del azar y más bajo el DSR
+    few = validation.deflated_sharpe(edge, 2, 0.002)
+    many = validation.deflated_sharpe(edge, 500, 0.002)
+    assert many < few and validation.expected_max_sharpe(500, 0.002) > validation.expected_max_sharpe(2, 0.002)
+    assert validation.expected_max_sharpe(1, 0.002) == 0.0
+
+
+def test_pbo_detects_overfitting_and_real_edge():
+    import random
+    t, n = 400, 10
+    pbos = []
+    for seed in range(12):
+        rng = random.Random(seed)
+        pbos.append(validation.pbo_cscv([[rng.gauss(0, 0.01) for _ in range(n)] for _ in range(t)], blocks=8))
+    # elegir la mejor de estrategias sin ventaja es lanzar una moneda: PBO medio ~50 %
+    assert 0.35 < sum(pbos) / len(pbos) < 0.65
+    rng = random.Random(2)
+    t = 800
+    real = [[rng.gauss(0.003 if j == 0 else 0.0, 0.01) for j in range(n)] for _ in range(t)]
+    assert validation.pbo_cscv(real, blocks=10) < 0.1
+    flat = [[0.0] * 3 for _ in range(100)]
+    assert validation.pbo_cscv(flat, blocks=8) is None
+
+
+def test_judge_requires_every_test_to_pass():
+    import random
+    rng = random.Random(3)
+
+    def run(mu, k=300):
+        eq, rs = [100.0], []
+        for i in range(k):
+            r = rng.gauss(mu, 0.004)
+            eq.append(eq[-1] * (1 + r))
+            if i % 5 == 0:
+                rs.append(r / 0.004)
+        return {"equity": eq, "r": rs, "max_drawdown": 0.03}
+
+    res = {"good": run(0.004), "bad": run(-0.001), "flat": {"equity": [100.0] * 301, "r": [], "max_drawdown": 0.0}}
+    rep = validation.judge(res, {"good": ["bad"]}, n_trials=3, blocks=10)
+    g, f = rep["strategies"]["good"], rep["strategies"]["flat"]
+    assert g["dsr"] > 0.95 and g["ci_r"][0] > 0 and g["segments"][0] > 0
+    assert not g["validated"] and any("vecinos" in w for w in g["why"])  # su vecina pierde
+    assert not f["validated"] and any("pocas operaciones" in w for w in f["why"])
+    rep2 = validation.judge(res, {}, n_trials=3, blocks=10)
+    assert rep2["strategies"]["good"]["validated"] and rep2["pbo"] is not None and rep2["pbo"] <= 0.25
+
+
+def test_validate_command_offline(tmp_path, capsys):
+    import json
+    rc = bot.main(["validate", "--symbols", "A,B", "--limit", "760", "--dir", str(tmp_path), "--horizons", "1,6",
+                   "--rules", "77", "--workers", "1", "--prior-trials", "0"])
+    out = capsys.readouterr().out
+    assert rc in (0, 3) and "PBO" in out and "Deflated Sharpe" in out
+    saved = json.load(open(tmp_path / "validation.json"))
+    assert set(saved["strategies"]) == {"77·h1", "77·h6"} and saved["n_trials"] == 2
+
+
+import strategies as stg  # noqa: E402
+
+
+def _series(prices):
+    return [Candle(86_400_000 * i, p, p * 1.01, p * 0.99, p, 1.0) for i, p in enumerate(prices)]
+
+
+def test_classic_strategies_follow_trend_and_go_to_cash():
+    up = [100 * 1.01 ** i for i in range(300)]
+    down = [100 * 0.99 ** i for i in range(300)]
+    data = {"UP": _series(up), "DOWN": _series(down)}
+    cfg = stg.StratConfig("tsmom", 50, max_positions=2, target_vol=10.0)
+    t = 299
+    w = stg.targets({k: [c.close for c in v] for k, v in data.items()}, t, cfg)
+    assert set(w) == {"UP"} and w["UP"] == pytest.approx(0.5)  # nunca más de 1/max_positions
+    res = stg.simulate(data, cfg)
+    assert res["equity"][-1] > 1.0 and res["open"] == ["UP"] and res["max_drawdown"] < 0.01
+    xs = stg.simulate(data, stg.StratConfig("xsmom", 20, max_positions=2, rebalance=7, target_vol=10.0))
+    assert xs["equity"][-1] > 1.0
+
+
+def test_classic_strategy_has_no_lookahead():
+    import random
+    rng = random.Random(4)
+    base = [100.0]
+    for _ in range(399):
+        base.append(base[-1] * (1 + rng.gauss(0, 0.03)))
+    other = base[:300] + [x * 3 for x in base[300:]]  # el futuro cambia por completo
+    cfg = stg.StratConfig("tsmom", 50)
+    a = stg.simulate({"A": _series(base[:300])}, cfg)
+    b = stg.simulate({"A": _series(other)}, cfg)
+    assert b["equity"][:len(a["equity"])] == pytest.approx(a["equity"])
+
+
+def test_ensemble_and_neighbours():
+    runs = {"a": {"equity": [1.0, 1.1, 1.21], "r": [0.1], "max_drawdown": 0.0, "buy_hold": 0.0},
+            "b": {"equity": [1.0, 0.9, 0.99], "r": [-0.1], "max_drawdown": 0.1, "buy_hold": 0.0}}
+    e = stg.ensemble(runs)
+    assert e["equity"] == pytest.approx([1.0, 1.0, 1.1]) and sorted(e["r"]) == [-0.1, 0.1]
+    nb = stg.neighbours(stg.default_family())
+    assert nb["tsmom·50"] == ["tsmom·20", "tsmom·100"] and nb["xsmom·7"] == ["xsmom·14"]
+
+
+def test_classic_command_offline(tmp_path, capsys):
+    import json
+    rc = bot.main(["classic", "--symbols", "A,B,C", "--limit", "700", "--dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert rc in (0, 3) and "conjunto" in out and "77 %" in out
+    saved = json.load(open(tmp_path / "classic.json"))
+    assert "conjunto" in saved["strategies"] and saved["interval"] == "1d" and saved["n_trials"] == 51
