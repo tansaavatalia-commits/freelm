@@ -5,6 +5,7 @@
     python bot.py backtest                      # aprender + validar fuera de muestra
     python bot.py optimize                      # una ronda de mejora automática
     python bot.py validate                      # walk-forward, Deflated Sharpe, PBO, sensibilidad
+    python bot.py classic                       # lo mismo con momentum clásico (velas diarias)
     python bot.py live                          # tiempo real, en papel (por defecto)
     python bot.py live --exchange testnet       # órdenes en el testnet del exchange
     python bot.py gate                          # ¿listo para dinero real? (20 días)
@@ -27,7 +28,7 @@ import sys
 import time
 from dataclasses import asdict, replace
 from types import SimpleNamespace
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 from agents import LLMAnalystAgent
 from engine import SHADOW_GAP, WINDOW, Config, Engine, metrics, run_backtest, stress_test, trade_stats
@@ -360,6 +361,32 @@ def cmd_optimize(args: argparse.Namespace) -> int:
     return 0
 
 
+def print_judgement(rep: dict, rules: Sequence[str] = ()) -> List[str]:
+    """Tabla y veredicto de ``validation.judge``. Devuelve las estrategias validadas."""
+    from validation import MAX_PBO
+    print(f"  {'estrategia':<11}{'resultado':>10}{'caída':>7}{'ops':>5}{'acierto':>8}{'media R':>9}"
+          f"{'IC95 % media R':>18}{'DSR':>6}   tramos")
+    for k, v in rep["strategies"].items():
+        lo, hi = v["ci_r"]
+        ci = f"[{lo:+.2f}, {hi:+.2f}]" if lo == lo else "—"
+        print(f"  {k:<11}{v['return']:>+10.2%}{v['max_drawdown']:>7.1%}{v['trades']:>5}{v['win_rate']:>8.0%}"
+              f"{v['mean_r']:>+9.2f}{ci:>18}{v['dsr']:>6.2f}   " + " ".join(f"{x:+.1%}" for x in v["segments"]))
+    pbo = rep["pbo"]
+    print("\n  Probabilidad de sobreajuste de la familia (PBO, CSCV): "
+          + ("no medible (todas las estrategias dieron lo mismo)" if pbo is None else
+             f"{pbo:.0%} ({'aceptable' if pbo <= MAX_PBO else 'ALTA: elegir la mejor de esta familia no generaliza'})"))
+    if rules:
+        print("  Reglas: " + "; ".join(f"{r} = {RULE_LABEL[r]}" for r in rules))
+    ok = [k for k, v in rep["strategies"].items() if v["validated"]]
+    print()
+    for k, v in rep["strategies"].items():
+        print(f"  {k:<11}" + ("VALIDADA" if v["validated"] else "NO VALIDADA: " + "; ".join(v["why"])))
+    print("\n=> " + (f"Estrategias validadas: {', '.join(ok)}." if ok else
+                      "Ninguna estrategia supera la validación. No hay ventaja demostrada: no se recomienda "
+                      "operar con dinero real con ninguna de ellas."))
+    return ok
+
+
 RULES = {"77": {}, "ev50": {"min_win_prob": 0.5}}
 RULE_LABEL = {"77": "acierto verificado >= 77 %", "ev50": "esperanza > 0 y acierto verificado >= 50 %"}
 
@@ -367,7 +394,7 @@ RULE_LABEL = {"77": "acierto verificado >= 77 %", "ev50": "esperanza > 0 y acier
 def cmd_validate(args: argparse.Namespace) -> int:
     """Valida una familia de estrategias con walk-forward, Deflated Sharpe, PBO,
     sensibilidad de parámetros y bootstrap. Solo declara VALIDADA la que pasa todo."""
-    from validation import MAX_PBO, judge
+    from validation import judge
     data = load_universe(args)
     if not data:
         raise SystemExit("sin datos")
@@ -399,29 +426,54 @@ def cmd_validate(args: argparse.Namespace) -> int:
     rep = judge(results, neighbours, n_trials)
     bh = res[0]["buy_hold"] if res else 0.0
     print(f"  ({time.time() - t0:.0f}s) cesta comprar y mantener en el mismo tramo: {bh:+.2%}\n")
-    print(f"  {'estrategia':<11}{'resultado':>10}{'caída':>7}{'ops':>5}{'acierto':>8}{'media R':>9}"
-          f"{'IC95 % media R':>18}{'DSR':>6}   tramos")
-    for k, v in rep["strategies"].items():
-        lo, hi = v["ci_r"]
-        ci = f"[{lo:+.2f}, {hi:+.2f}]" if lo == lo else "—"
-        print(f"  {k:<11}{v['return']:>+10.2%}{v['max_drawdown']:>7.1%}{v['trades']:>5}{v['win_rate']:>8.0%}"
-              f"{v['mean_r']:>+9.2f}{ci:>18}{v['dsr']:>6.2f}   " + " ".join(f"{x:+.1%}" for x in v["segments"]))
-    pbo = rep["pbo"]
-    print("\n  Probabilidad de sobreajuste de la familia (PBO, CSCV): "
-          + ("no medible (todas las estrategias dieron lo mismo)" if pbo is None else
-             f"{pbo:.0%} ({'aceptable' if pbo <= MAX_PBO else 'ALTA: elegir la mejor de esta familia no generaliza'})"))
-    print("  Reglas: " + "; ".join(f"{r} = {RULE_LABEL[r]}" for r in rules))
-    ok = [k for k, v in rep["strategies"].items() if v["validated"]]
-    print()
-    for k, v in rep["strategies"].items():
-        print(f"  {k:<11}" + ("VALIDADA" if v["validated"] else "NO VALIDADA: " + "; ".join(v["why"])))
-    print("\n=> " + (f"Estrategias validadas: {', '.join(ok)}." if ok else
-                      "Ninguna estrategia supera la validación. No hay ventaja demostrada: no se recomienda "
-                      "operar con dinero real con ninguna de ellas."))
+    ok = print_judgement(rep, rules)
     rows = {k: {**v, "config": family[k].to_dict()} for k, v in rep["strategies"].items()}
     save_json(p(args, "validation.json"), {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "interval": args.interval,
-                                          "symbols": list(data), "source": args.source, "pbo": pbo,
+                                          "symbols": list(data), "source": args.source, "pbo": rep["pbo"],
                                           "n_trials": n_trials, "buy_hold": bh, "strategies": rows})
+    return 0 if ok else 3
+
+
+def cmd_classic(args: argparse.Namespace) -> int:
+    """Valida las estrategias clásicas con respaldo académico (strategies.py): momentum de
+    tendencia y momentum relativo, más el conjunto de todas, con las mismas pruebas que
+    ``validate``. Por defecto con velas diarias."""
+    import strategies as stg
+    from validation import judge
+    data = load_universe(args)
+    if not data:
+        raise SystemExit("sin datos")
+    ppy = PERIODS_PER_YEAR.get(args.interval, 365)
+    cost = Config(taker_fee=0.00075) if args.bnb else Config()
+    family = {k: replace(c, target_vol=args.target_vol, fee=cost.taker_fee)
+              for k, c in stg.default_family().items()}
+    trade_from = max(c.warmup for c in family.values())
+    n = min(len(v) for v in data.values())
+    if n - trade_from < 200:
+        raise SystemExit(f"pocas velas ({n}); usa --limit mayor")
+    results = {k: stg.simulate(data, c, trade_from, ppy) for k, c in family.items()}
+    results["conjunto"] = stg.ensemble({k: results[k] for k in family})
+    n_trials = len(results) + args.prior_trials
+    days = (n - trade_from) * INTERVAL_SECONDS.get(args.interval, 86_400) / 86_400
+    print(f"Estrategias clásicas sobre {', '.join(data)} ({args.source}, {args.interval}): "
+          f"{n - trade_from} velas operadas (~{days / 365:.1f} años); volatilidad objetivo {args.target_vol:.0%}")
+    print(f"  pruebas que se descuentan (Deflated Sharpe): {n_trials} "
+          f"({len(results)} de esta familia + {args.prior_trials} anteriores)")
+    print(f"  cesta comprar y mantener en el mismo tramo: {results['conjunto']['buy_hold']:+.2%}\n")
+    rep = judge(results, stg.neighbours(family), n_trials)
+    for k, v in rep["strategies"].items():
+        years = max(days / 365, 1e-9)
+        v["annual"] = (1 + v["return"]) ** (1 / years) - 1 if v["return"] > -1 else -1.0
+    ok = print_judgement(rep)
+    best = rep["strategies"]["conjunto"]
+    print(f"\n  conjunto (sin elegir ninguna variante): {best['annual']:+.1%} al año, caída {best['max_drawdown']:.1%}, "
+          f"acierto por operación {best['win_rate']:.0%}")
+    if best["win_rate"] < 0.77:
+        print("  ojo: el seguimiento de tendencia gana con pocas operaciones grandes; su acierto NUNCA llega "
+              "al 77 % exigido por la regla de entrada del bot")
+    save_json(p(args, "classic.json"), {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "interval": args.interval,
+                                       "symbols": list(data), "pbo": rep["pbo"], "n_trials": n_trials,
+                                       "strategies": rep["strategies"]})
     return 0 if ok else 3
 
 
@@ -825,6 +877,14 @@ def parser() -> argparse.ArgumentParser:
                     help="pruebas hechas antes con estos datos (se descuentan en el Deflated Sharpe)")
     va.add_argument("--workers", type=int, default=0, help="procesos en paralelo (0 = todos los núcleos)")
     va.set_defaults(func=cmd_validate)
+
+    cl = sub.add_parser("classic", help="validar estrategias clásicas (momentum) con las mismas pruebas")
+    common(cl, limit=3000)
+    cl.set_defaults(interval="1d")
+    cl.add_argument("--target-vol", type=float, default=0.12, help="volatilidad anual objetivo de la cartera")
+    cl.add_argument("--prior-trials", type=int, default=40,
+                    help="pruebas hechas antes con estos datos (se descuentan en el Deflated Sharpe)")
+    cl.set_defaults(func=cmd_classic)
 
     be = sub.add_parser("bench", help="medir señales por segundo")
     common(be)

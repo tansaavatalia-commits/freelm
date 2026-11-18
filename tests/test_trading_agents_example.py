@@ -1057,3 +1057,55 @@ def test_validate_command_offline(tmp_path, capsys):
     assert rc in (0, 3) and "PBO" in out and "Deflated Sharpe" in out
     saved = json.load(open(tmp_path / "validation.json"))
     assert set(saved["strategies"]) == {"77·h1", "77·h6"} and saved["n_trials"] == 2
+
+
+import strategies as stg  # noqa: E402
+
+
+def _series(prices):
+    return [Candle(86_400_000 * i, p, p * 1.01, p * 0.99, p, 1.0) for i, p in enumerate(prices)]
+
+
+def test_classic_strategies_follow_trend_and_go_to_cash():
+    up = [100 * 1.01 ** i for i in range(300)]
+    down = [100 * 0.99 ** i for i in range(300)]
+    data = {"UP": _series(up), "DOWN": _series(down)}
+    cfg = stg.StratConfig("tsmom", 50, max_positions=2, target_vol=10.0)
+    t = 299
+    w = stg.targets({k: [c.close for c in v] for k, v in data.items()}, t, cfg)
+    assert set(w) == {"UP"} and w["UP"] == pytest.approx(0.5)  # nunca más de 1/max_positions
+    res = stg.simulate(data, cfg)
+    assert res["equity"][-1] > 1.0 and res["open"] == ["UP"] and res["max_drawdown"] < 0.01
+    xs = stg.simulate(data, stg.StratConfig("xsmom", 20, max_positions=2, rebalance=7, target_vol=10.0))
+    assert xs["equity"][-1] > 1.0
+
+
+def test_classic_strategy_has_no_lookahead():
+    import random
+    rng = random.Random(4)
+    base = [100.0]
+    for _ in range(399):
+        base.append(base[-1] * (1 + rng.gauss(0, 0.03)))
+    other = base[:300] + [x * 3 for x in base[300:]]  # el futuro cambia por completo
+    cfg = stg.StratConfig("tsmom", 50)
+    a = stg.simulate({"A": _series(base[:300])}, cfg)
+    b = stg.simulate({"A": _series(other)}, cfg)
+    assert b["equity"][:len(a["equity"])] == pytest.approx(a["equity"])
+
+
+def test_ensemble_and_neighbours():
+    runs = {"a": {"equity": [1.0, 1.1, 1.21], "r": [0.1], "max_drawdown": 0.0, "buy_hold": 0.0},
+            "b": {"equity": [1.0, 0.9, 0.99], "r": [-0.1], "max_drawdown": 0.1, "buy_hold": 0.0}}
+    e = stg.ensemble(runs)
+    assert e["equity"] == pytest.approx([1.0, 1.0, 1.1]) and sorted(e["r"]) == [-0.1, 0.1]
+    nb = stg.neighbours(stg.default_family())
+    assert nb["tsmom·50"] == ["tsmom·20", "tsmom·100"] and nb["xsmom·7"] == ["xsmom·14"]
+
+
+def test_classic_command_offline(tmp_path, capsys):
+    import json
+    rc = bot.main(["classic", "--symbols", "A,B,C", "--limit", "700", "--dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert rc in (0, 3) and "conjunto" in out and "77 %" in out
+    saved = json.load(open(tmp_path / "classic.json"))
+    assert "conjunto" in saved["strategies"] and saved["interval"] == "1d" and saved["n_trials"] == 51

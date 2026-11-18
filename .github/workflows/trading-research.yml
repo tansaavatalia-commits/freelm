@@ -74,12 +74,18 @@ jobs:
           python "$BOT" validate --source binance --limit "$LIMIT" --cash 100 --default-config --dir r > val-1h.txt 2>&1 || rc=$?
           cat val-1h.txt
           [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ]
+      - name: "7. Estrategias clásicas (momentum, velas diarias) con las mismas pruebas"
+        run: |
+          rc=0
+          python "$BOT" classic --source binance --limit 3000 --dir r > classic.txt 2>&1 || rc=$?
+          cat classic.txt
+          [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ]
       - name: Resumen
         if: always()
         run: |
           {
             echo "## Investigación con datos reales de Binance"
-            for f in bt-1h.txt bt-1h-limit.txt bt-4h.txt bt-5m.txt bt-5m-limit.txt opt.txt bt-champ.txt val-4h.txt val-1h.txt; do
+            for f in bt-1h.txt bt-1h-limit.txt bt-4h.txt bt-5m.txt bt-5m-limit.txt opt.txt bt-champ.txt val-4h.txt val-1h.txt classic.txt; do
               [ -f "$f" ] || continue
               echo "### $f"
               echo '```'

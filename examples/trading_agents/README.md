@@ -201,6 +201,40 @@ ventaja real**. Elegir «la mejor» de estas variantes no generaliza: el PBO es
 cercano al 50 %, lo mismo que elegir al azar. Por eso no se recomienda pasar a
 dinero real con ninguna de ellas.
 
+### Estrategias clásicas (`classic`)
+
+`python bot.py classic --source binance` aplica las **mismas pruebas** a las
+dos familias con más evidencia publicada, en velas diarias (`strategies.py`):
+
+- **Momentum de tendencia** (`tsmom`): se compra cuando el cierre está por
+  encima de su media de 20, 50, 100, 150 o 200 días.
+- **Momentum relativo** (`xsmom`): cada semana se compran las monedas que más
+  subieron en 7, 14, 28, 56 o 90 días, solo si subieron.
+- **El conjunto**: todas las variantes a partes iguales, sin elegir ninguna.
+
+Todas son solo spot, con un máximo de 4 posiciones de ≤ 25 % cada una y la
+exposición ajustada a una volatilidad objetivo (`--target-vol`, 12 % anual).
+Pagan comisión y deslizamiento.
+
+**Resultado con datos reales** (8 monedas, ~5,6 años operados de 2021 a 2026,
+51 pruebas descontadas):
+
+| | Resultado | Caída máx. | Acierto | Deflated Sharpe |
+|---|---|---|---|---|
+| Las 10 variantes | de +5 % a +64 %: **todas ganan** | 12–23 % | 29–42 % | 0,24–0,87 |
+| Conjunto | +34 % (**+5,4 % al año**) | 13,8 % | 35 % | 0,66 |
+| Cesta comprar y mantener | −12,6 % | | | |
+
+- Es lo **más prometedor** encontrado: a diferencia de los agentes técnicos,
+  toda la familia gana y supera a la cesta.
+- Pero **no está validado**: la caída supera el 10 % y el Deflated Sharpe
+  no llega a 0,95. Además, elegir la mejor variante es sobreajuste (PBO 34 %),
+  y el último tramo (2025–2026) fue flojo.
+- Con volatilidad objetivo del 8 %, la caída del conjunto baja al 9,6 % y el
+  rendimiento a +4,1 % al año. Sigue sin validarse.
+- El seguimiento de tendencia gana con **pocas operaciones grandes**: su acierto
+  es del 29–42 %. Es **incompatible con la regla del 77 %** por construcción.
+
 ## Mejora automática (`optimize`)
 
 Un optimizador evolutivo cruza y muta configuraciones: umbrales, riesgo, stops,
