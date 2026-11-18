@@ -4,6 +4,7 @@
     python bot.py bench                         # señales por segundo
     python bot.py backtest                      # aprender + validar fuera de muestra
     python bot.py optimize                      # una ronda de mejora automática
+    python bot.py validate                      # walk-forward, Deflated Sharpe, PBO, sensibilidad
     python bot.py live                          # tiempo real, en papel (por defecto)
     python bot.py live --exchange testnet       # órdenes en el testnet del exchange
     python bot.py gate                          # ¿listo para dinero real? (20 días)
@@ -357,6 +358,71 @@ def cmd_optimize(args: argparse.Namespace) -> int:
                                              "symbols": list(data)})
     print(f"  ({res['evals']} simulaciones en {res['seconds']:.0f}s; historial en {hist_path})")
     return 0
+
+
+RULES = {"77": {}, "ev50": {"min_win_prob": 0.5}}
+RULE_LABEL = {"77": "acierto verificado >= 77 %", "ev50": "esperanza > 0 y acierto verificado >= 50 %"}
+
+
+def cmd_validate(args: argparse.Namespace) -> int:
+    """Valida una familia de estrategias con walk-forward, Deflated Sharpe, PBO,
+    sensibilidad de parámetros y bootstrap. Solo declara VALIDADA la que pasa todo."""
+    from validation import MAX_PBO, judge
+    data = load_universe(args)
+    if not data:
+        raise SystemExit("sin datos")
+    saved = None if args.default_config else load_champion(p(args, "champion.json"))
+    base = apply_cost_flags(saved or Config(), args)
+    horizons = [int(x) for x in args.horizons.split(",") if x.strip()]
+    rules = [r for r in args.rules.split(",") if r.strip()]
+    for r in rules:
+        if r not in RULES:
+            raise SystemExit(f"regla desconocida: {r} (usa {', '.join(RULES)})")
+    family = {f"{r}·h{h}": replace(base, learn_horizon=h, **RULES[r]) for r in rules for h in horizons}
+    neighbours = {}
+    for r in rules:
+        for i, h in enumerate(horizons):
+            neighbours[f"{r}·h{h}"] = [f"{r}·h{horizons[j]}" for j in (i - 1, i + 1) if 0 <= j < len(horizons)]
+    opt = Optimizer(data, PERIODS_PER_YEAR.get(args.interval, 8_760), cash=args.cash, workers=args.workers,
+                    sentiment=load_sentiment(args), funding=load_funding(args, list(data), _first_ms(data)))
+    trade_from = opt.start + int((opt.n - opt.start) * args.learn)
+    weeks = (opt.n - trade_from) * INTERVAL_SECONDS.get(args.interval, 3600) / 604_800
+    n_trials = len(family) + args.prior_trials
+    print(f"Validación de {len(family)} estrategias sobre {', '.join(data)} ({args.source}, {args.interval})")
+    print(f"  walk-forward: aprende {trade_from - opt.start} velas y luego opera {opt.n - trade_from} velas "
+          f"(~{weeks:.0f} semanas) sin dejar de aprender, siempre solo con el pasado")
+    print(f"  pruebas que se descuentan (Deflated Sharpe): {n_trials} "
+          f"({len(family)} de esta familia + {args.prior_trials} anteriores)")
+    t0 = time.time()
+    res = opt.walk_forward_many(list(family.values()), trade_from)
+    results = dict(zip(family, res))
+    rep = judge(results, neighbours, n_trials)
+    bh = res[0]["buy_hold"] if res else 0.0
+    print(f"  ({time.time() - t0:.0f}s) cesta comprar y mantener en el mismo tramo: {bh:+.2%}\n")
+    print(f"  {'estrategia':<11}{'resultado':>10}{'caída':>7}{'ops':>5}{'acierto':>8}{'media R':>9}"
+          f"{'IC95 % media R':>18}{'DSR':>6}   tramos")
+    for k, v in rep["strategies"].items():
+        lo, hi = v["ci_r"]
+        ci = f"[{lo:+.2f}, {hi:+.2f}]" if lo == lo else "—"
+        print(f"  {k:<11}{v['return']:>+10.2%}{v['max_drawdown']:>7.1%}{v['trades']:>5}{v['win_rate']:>8.0%}"
+              f"{v['mean_r']:>+9.2f}{ci:>18}{v['dsr']:>6.2f}   " + " ".join(f"{x:+.1%}" for x in v["segments"]))
+    pbo = rep["pbo"]
+    print("\n  Probabilidad de sobreajuste de la familia (PBO, CSCV): "
+          + ("no medible (todas las estrategias dieron lo mismo)" if pbo is None else
+             f"{pbo:.0%} ({'aceptable' if pbo <= MAX_PBO else 'ALTA: elegir la mejor de esta familia no generaliza'})"))
+    print("  Reglas: " + "; ".join(f"{r} = {RULE_LABEL[r]}" for r in rules))
+    ok = [k for k, v in rep["strategies"].items() if v["validated"]]
+    print()
+    for k, v in rep["strategies"].items():
+        print(f"  {k:<11}" + ("VALIDADA" if v["validated"] else "NO VALIDADA: " + "; ".join(v["why"])))
+    print("\n=> " + (f"Estrategias validadas: {', '.join(ok)}." if ok else
+                      "Ninguna estrategia supera la validación. No hay ventaja demostrada: no se recomienda "
+                      "operar con dinero real con ninguna de ellas."))
+    rows = {k: {**v, "config": family[k].to_dict()} for k, v in rep["strategies"].items()}
+    save_json(p(args, "validation.json"), {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "interval": args.interval,
+                                          "symbols": list(data), "source": args.source, "pbo": pbo,
+                                          "n_trials": n_trials, "buy_hold": bh, "strategies": rows})
+    return 0 if ok else 3
 
 
 def cmd_bench(args: argparse.Namespace) -> int:
@@ -749,6 +815,16 @@ def parser() -> argparse.ArgumentParser:
     o.add_argument("--min-trades", type=int, default=10)
     o.add_argument("--workers", type=int, default=0, help="procesos en paralelo (0 = todos los núcleos)")
     o.set_defaults(func=cmd_optimize)
+
+    va = sub.add_parser("validate", help="validación estadística: walk-forward, Deflated Sharpe, PBO, sensibilidad")
+    common(va)
+    va.add_argument("--horizons", default="1,6,12,24,36", help="valores de learn_horizon a validar")
+    va.add_argument("--rules", default="77,ev50", help="reglas de entrada: 77 (la del usuario) y/o ev50")
+    va.add_argument("--learn", type=float, default=0.4, help="fracción inicial solo para aprender")
+    va.add_argument("--prior-trials", type=int, default=20,
+                    help="pruebas hechas antes con estos datos (se descuentan en el Deflated Sharpe)")
+    va.add_argument("--workers", type=int, default=0, help="procesos en paralelo (0 = todos los núcleos)")
+    va.set_defaults(func=cmd_validate)
 
     be = sub.add_parser("bench", help="medir señales por segundo")
     common(be)

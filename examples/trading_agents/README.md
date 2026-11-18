@@ -164,6 +164,43 @@ rendimiento por meses, esperanza por operación y rachas. Aparece en
 Los nodos se añaden o se quitan con `Graph.add` / `Graph.remove`. El orden de
 ejecución se calcula solo, a partir de lo que cada nodo necesita y produce.
 
+## Validación estadística de estrategias (`validate`)
+
+Ganar en un backtest no basta. `python bot.py validate --source binance --interval 4h`
+prueba una **familia** de estrategias: la regla de entrada (`77` = la tuya,
+`ev50` = esperanza > 0 y acierto verificado ≥ 50 %) combinada con cada horizonte
+de aprendizaje (1, 6, 12, 24 y 36 velas). Solo declara **VALIDADA** una
+estrategia que pasa **todas** estas pruebas:
+
+| Prueba | Exigencia |
+|---|---|
+| Walk-forward: aprende con el 40 % inicial y opera el 60 % restante sin dejar de aprender, siempre solo con el pasado | ≥ 30 operaciones, gana dinero, caída ≤ 10 % |
+| Constancia: el tramo operado se parte en 4 | ≥ 3 de 4 tramos en positivo |
+| Deflated Sharpe (Bailey y López de Prado), que descuenta **todas** las pruebas hechas (`--prior-trials`) | ≥ 0,95 |
+| PBO por CSCV: probabilidad de que la mejor de la familia sea sobreajuste | ≤ 25 % |
+| Sensibilidad: los horizontes vecinos | también ganan |
+| Bootstrap del resultado medio por operación | intervalo del 95 % > 0 R |
+
+Guarda el detalle en `validation.json`. Sale con código 3 si no se valida
+ninguna estrategia. El workflow de investigación la ejecuta en cada PR, a 4 h y a 1 h.
+
+**Resultado con datos reales** (noviembre de 2026; 8 monedas, 5000 velas, 30
+pruebas descontadas):
+
+| | 4 h (~68 semanas operadas) | 1 h (~17 semanas operadas) |
+|---|---|---|
+| Regla 77 %, todos los horizontes | 0 operaciones | 0 operaciones |
+| Mejor `ev50` | h24: +9,9 %, 37 ops, acierto 78 %, IC95 % [+0,06, +0,53] R | h36: +1,2 % con solo 2 ops |
+| …pero | todo el beneficio en el último tramo (0 %, 0 %, 0 %, +9,9 %); DSR 0,42 | el resto de `ev50`, entre −0,8 % y −5 % |
+| PBO de la familia | **53 %** | **39 %** |
+| Cesta comprar y mantener | −55,5 % | −2,8 % |
+| **Veredicto** | **ninguna validada** | **ninguna validada** |
+
+En pocas palabras: el bot protege el capital, pero **no se ha demostrado una
+ventaja real**. Elegir «la mejor» de estas variantes no generaliza: el PBO es
+cercano al 50 %, lo mismo que elegir al azar. Por eso no se recomienda pasar a
+dinero real con ninguna de ellas.
+
 ## Mejora automática (`optimize`)
 
 Un optimizador evolutivo cruza y muta configuraciones: umbrales, riesgo, stops,

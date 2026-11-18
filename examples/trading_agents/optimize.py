@@ -148,6 +148,11 @@ def _eval_in_worker(cfg: Config) -> dict:
     return _WORKER.evaluate(cfg)
 
 
+def _wf_in_worker(job: Tuple[Config, int]) -> dict:
+    assert _WORKER is not None
+    return _WORKER.walk_forward(*job)
+
+
 class Optimizer:
     def __init__(self, data: Dict[str, List[Candle]], periods_per_year: int = 8_760, cash: float = 10_000.0,
                  seed: int = 0, min_trades: int = 10, log: Callable[[str], None] = print,
@@ -191,6 +196,35 @@ class Optimizer:
                 "dd_p95": dd95,
                 "win_rate": ts["win_rate"], "profit_factor": ts["profit_factor"] if ts["profit_factor"] != math.inf
                 else 99.0, "buy_hold": out["buy_hold"], "halted": eng.risk.halted}
+
+    def walk_forward(self, cfg: Config, trade_from: int) -> dict:
+        """Una pasada en línea: aprende siempre con el pasado y opera desde ``trade_from``
+        hasta el final. Para la validación estadística (validation.judge)."""
+        eng = Engine(cfg, cash=self.cash, cache=self.cache, sentiment=self.sentiment, funding=self.funding)
+        eng.track_stats = False
+        out = run_backtest(eng, self.data, self.start, self.n, trade_from)
+        m = metrics(out["equity"], self.ppy)
+        return {"equity": out["equity"], "r": [t.r for t in eng.pf.closed], "max_drawdown": m["max_drawdown"],
+                "buy_hold": out["buy_hold"]}
+
+    def walk_forward_many(self, cfgs: List[Config], trade_from: int) -> List[dict]:
+        jobs = [(c, trade_from) for c in cfgs]
+        if self.workers <= 1 or len(cfgs) <= 1 or "fork" not in mp.get_all_start_methods():
+            return [self.walk_forward(*j) for j in jobs]
+        global _WORKER
+        self.warm()
+        _WORKER = self
+        gc.collect()
+        gc.freeze()
+        try:
+            with ProcessPoolExecutor(min(self.workers, len(cfgs)), mp_context=mp.get_context("fork")) as ex:
+                return list(ex.map(_wf_in_worker, jobs))
+        except BrokenProcessPool:
+            self.log("  [aviso] un proceso paralelo murió (¿memoria?); repitiendo en serie")
+            return [self.walk_forward(*j) for j in jobs]
+        finally:
+            _WORKER = None
+            gc.unfreeze()
 
     def warm(self) -> None:
         """Calcula una vez las señales de todos los agentes en todas las velas

@@ -990,3 +990,70 @@ def test_ic_t_is_corrected_for_overlapping_horizons():
     raw = bot.agent_ic_table({"teams": {"t": c.to_dict()}})[0][4]
     adj = bot.agent_ic_table({"config": {"learn_horizon": 4}, "teams": {"t": c.to_dict()}})[0][4]
     assert adj == pytest.approx(raw / 2)
+
+
+import validation  # noqa: E402
+
+
+def test_deflated_sharpe_discounts_many_trials():
+    import random
+    rng = random.Random(1)
+    edge = [0.002 + rng.gauss(0, 0.01) for _ in range(1500)]
+    noise = [rng.gauss(0, 0.01) for _ in range(1500)]
+    assert validation.probabilistic_sharpe(edge) > 0.99
+    assert validation.probabilistic_sharpe(noise) < 0.95
+    # cuantas más pruebas se hicieron, más alto el listón del azar y más bajo el DSR
+    few = validation.deflated_sharpe(edge, 2, 0.002)
+    many = validation.deflated_sharpe(edge, 500, 0.002)
+    assert many < few and validation.expected_max_sharpe(500, 0.002) > validation.expected_max_sharpe(2, 0.002)
+    assert validation.expected_max_sharpe(1, 0.002) == 0.0
+
+
+def test_pbo_detects_overfitting_and_real_edge():
+    import random
+    t, n = 400, 10
+    pbos = []
+    for seed in range(12):
+        rng = random.Random(seed)
+        pbos.append(validation.pbo_cscv([[rng.gauss(0, 0.01) for _ in range(n)] for _ in range(t)], blocks=8))
+    # elegir la mejor de estrategias sin ventaja es lanzar una moneda: PBO medio ~50 %
+    assert 0.35 < sum(pbos) / len(pbos) < 0.65
+    rng = random.Random(2)
+    t = 800
+    real = [[rng.gauss(0.003 if j == 0 else 0.0, 0.01) for j in range(n)] for _ in range(t)]
+    assert validation.pbo_cscv(real, blocks=10) < 0.1
+    flat = [[0.0] * 3 for _ in range(100)]
+    assert validation.pbo_cscv(flat, blocks=8) is None
+
+
+def test_judge_requires_every_test_to_pass():
+    import random
+    rng = random.Random(3)
+
+    def run(mu, k=300):
+        eq, rs = [100.0], []
+        for i in range(k):
+            r = rng.gauss(mu, 0.004)
+            eq.append(eq[-1] * (1 + r))
+            if i % 5 == 0:
+                rs.append(r / 0.004)
+        return {"equity": eq, "r": rs, "max_drawdown": 0.03}
+
+    res = {"good": run(0.004), "bad": run(-0.001), "flat": {"equity": [100.0] * 301, "r": [], "max_drawdown": 0.0}}
+    rep = validation.judge(res, {"good": ["bad"]}, n_trials=3, blocks=10)
+    g, f = rep["strategies"]["good"], rep["strategies"]["flat"]
+    assert g["dsr"] > 0.95 and g["ci_r"][0] > 0 and g["segments"][0] > 0
+    assert not g["validated"] and any("vecinos" in w for w in g["why"])  # su vecina pierde
+    assert not f["validated"] and any("pocas operaciones" in w for w in f["why"])
+    rep2 = validation.judge(res, {}, n_trials=3, blocks=10)
+    assert rep2["strategies"]["good"]["validated"] and rep2["pbo"] is not None and rep2["pbo"] <= 0.25
+
+
+def test_validate_command_offline(tmp_path, capsys):
+    import json
+    rc = bot.main(["validate", "--symbols", "A,B", "--limit", "760", "--dir", str(tmp_path), "--horizons", "1,6",
+                   "--rules", "77", "--workers", "1", "--prior-trials", "0"])
+    out = capsys.readouterr().out
+    assert rc in (0, 3) and "PBO" in out and "Deflated Sharpe" in out
+    saved = json.load(open(tmp_path / "validation.json"))
+    assert set(saved["strategies"]) == {"77·h1", "77·h6"} and saved["n_trials"] == 2
