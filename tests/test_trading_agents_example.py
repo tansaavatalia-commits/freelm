@@ -27,6 +27,9 @@ def _no_network(monkeypatch):
     monkeypatch.setattr(_m, "fetch_fear_greed", offline)
     monkeypatch.setattr(bot, "fetch_fear_greed", offline)
     monkeypatch.setattr(bot, "fetch_funding", offline)
+    # las velas sintéticas de los tests son «antiguas»: en estos tests se dan por frescas
+    # (la comprobación de frescura tiene su propio test)
+    monkeypatch.setattr(bot, "check_fresh", lambda *a, **k: None)
 
 
 def test_indicators_basic():
@@ -269,7 +272,7 @@ def test_ccxt_executor_caps_capital_and_places_exchange_stops():
     qty, px = ex.buy("BTCUSDT", 0.0015, 50_000)
     assert qty == pytest.approx(0.0015) and px == 50_000.0
     ex.protect("BTCUSDT", qty, 49_000)
-    assert fx.orders[-1][5] == {"stopLossPrice": 49_000.0}
+    assert fx.orders[-1][5]["stopLossPrice"] == 49_000.0 and fx.orders[-1][5]["clientOrderId"].startswith("fls")
     ex.protect("BTCUSDT", qty, 49_500)                     # trailing: old stop is cancelled first
     assert fx.cancelled == ["2"]
     ex.sell("BTCUSDT", qty, 51_000)
@@ -860,3 +863,107 @@ def test_conexion_command_with_test_order(capsys):
     assert rc == 1  # FOO no existe -> aviso
     real = bot.parser().parse_args(["conexion", "--exchange", "real", "--orden-prueba"])
     assert bot.cmd_conexion(real, client=fx) == 2  # nunca orden de prueba con dinero real
+
+
+# ---------------------------------------------------------------- fase 1: seguridad operativa
+
+import safety  # noqa: E402
+
+
+def _good_window(n=40, step=3_600_000):
+    return [Candle(i * step, 100 + i * 0.1, 101 + i * 0.1, 99 + i * 0.1, 100.05 + i * 0.1, 10) for i in range(n)]
+
+
+def test_integrity_detects_bad_data():
+    assert safety.check_window(_good_window()) == []
+    w = _good_window()
+    del w[-5]
+    assert "faltan 1 velas" in safety.check_window(w)[0]
+    w = _good_window()
+    w[-1] = Candle(w[-1].time, 100, 101, 99, 180, 10)       # +80 % en una vela y cierre fuera del rango
+    assert safety.check_window(w)
+    w = _good_window()
+    w[-2] = Candle(w[-2].time, 100, 101, 99, float("nan"), 10)
+    assert "inválido" in safety.check_window(w)[0]
+    w = _good_window()
+    w[-1] = Candle(w[-2].time, 100, 101, 99, 100, 10)        # vela repetida
+    assert "fuera de orden" in safety.check_window(w)[0]
+
+
+def test_engine_skips_symbols_with_bad_data():
+    eng = Engine(Config())
+    good = synthetic(330, seed=1)
+    bad = list(synthetic(330, seed=2))
+    del bad[-3]
+    rep = eng.step({"A": good[-320:], "B": bad[-320:]})
+    assert "A" in rep.decisions and "B" not in rep.decisions and "B" in rep.data_issues
+
+
+def test_check_fresh():
+    w = _good_window(5, 300_000)
+    last_open_s = w[-1].time / 1000
+    assert safety.check_fresh(w, 300, now_s=last_open_s + 400) is None
+    assert "atrasados" in safety.check_fresh(w, 300, now_s=last_open_s + 3600)
+
+
+def test_daily_loss_limit_blocks_new_entries_until_next_utc_day():
+    pf, r = Portfolio(cash=1000), RiskManager(peak_equity=1000, max_daily_loss=0.03, max_drawdown=0.5)
+    day = 86_400_000
+    assert r.tick(1000, 10 * day) is None and r.can_open(pf) is None
+    assert r.tick(975, 10 * day + 1_800_000) is None            # -2,5 %: aún dentro del límite
+    assert r.tick(965, 10 * day + 3_600_000) == "DAILY"         # -3,5 %: bloquea
+    assert "pérdida diaria" in r.can_open(pf)
+    assert r.tick(960, 10 * day + 7_200_000) is None          # avisa una sola vez
+    assert r.tick(960, 11 * day) is None and r.can_open(pf) is None   # nuevo día: se levanta
+
+
+def test_decision_journal_writes_auditable_jsonl(tmp_path):
+    import json as _json
+    eng = Engine(Config())
+    w = synthetic(330, seed=1)[-320:]
+    rep = eng.step({"BTCUSDT": w})
+    j = safety.DecisionJournal(str(tmp_path / "diario"))
+    j.step(w[-1].time, rep, {"BTCUSDT": w[-1].close}, 100.0)
+    files = list((tmp_path / "diario").iterdir())
+    rows = [_json.loads(x) for x in files[0].read_text().splitlines()]
+    dec = next(r for r in rows if r["tipo"] == "decision")
+    assert dec["simbolo"] == "BTCUSDT" and "vetos" in dec and "equipos" in dec and "prob_verificada" in dec
+    assert rows[-1]["tipo"] == "cartera"
+
+
+def test_orders_are_idempotent_after_network_error():
+    fx = FakeExchange()
+    real_create = fx.create_order
+    calls = {"n": 0}
+    sent = {}
+
+    def flaky(m, typ, side, qty, price=None, params=None):
+        calls["n"] += 1
+        o = real_create(m, typ, side, qty, price, params)
+        o["clientOrderId"] = (params or {}).get("clientOrderId")
+        sent[o["clientOrderId"]] = o
+        if calls["n"] == 1:
+            raise TimeoutError("la respuesta se perdió")    # la orden SÍ llegó al exchange
+        return o
+
+    fx.create_order = flaky
+    fx.fetch_order = lambda oid, m, params=None: sent.get((params or {}).get("clientOrderId"))
+    ex = CcxtExecutor(testnet=True, client=fx, log=lambda m: None)
+    ex.step_time = 1_700_000_000_000
+    qty, _ = ex.buy("BTCUSDT", 0.001, 50_000)
+    assert calls["n"] == 1 and qty == pytest.approx(0.001)   # no se reenvió: se recuperó la existente
+    assert list(sent)[0] == "flbBTC1700000000"
+
+
+def test_reconcile_closes_positions_missing_on_exchange_and_reprotects():
+    fx = FakeExchange()
+    fx.balance = {"USDT": {"free": 100.0, "total": 100.0}, "BTC": {"free": 0.0, "total": 0.002},
+                  "ETH": {"free": 0.0, "total": 0.0}}
+    fx.fetch_open_orders = lambda m: [{"id": "old", "side": "sell", "clientOrderId": "flsBTC1"}] if m == "BTC/USDT" else []
+    fx.markets["ETH/USDT"] = {"limits": {"amount": {"min": 0.0001}, "cost": {"min": 5}}}
+    ex = CcxtExecutor(testnet=True, client=fx, log=lambda m: None)
+    positions = {"BTCUSDT": Position("BTCUSDT", 0.002, 50_000, 49_000, 52_000, 1000, 0, 50_000, ""),
+                 "ETHUSDT": Position("ETHUSDT", 0.05, 3_000, 2_900, 3_200, 100, 0, 3_000, "")}
+    gone = ex.reconcile(positions)
+    assert gone == ["ETHUSDT"]                                    # el stop de ETH se ejecutó con el bot apagado
+    assert "old" in fx.cancelled and fx.orders[-1][5]["stopLossPrice"] == 49_000.0   # stop de BTC repuesto

@@ -37,6 +37,7 @@ from notify import Notifier
 from optimize import Optimizer, load_champion, save_result
 from report import format_performance, performance
 from risk import ClosedTrade, Position
+from safety import DecisionJournal, check_fresh
 
 STATE_DIR = os.environ.get("FREELM_TRADING_DIR", os.path.join(os.path.expanduser("~"), ".cache", "freelm-trading"))
 PERIODS_PER_YEAR = {"1m": 525_600, "5m": 105_120, "15m": 35_040, "1h": 8_760, "4h": 2_190, "1d": 365}
@@ -487,12 +488,41 @@ def cmd_live(args: argparse.Namespace) -> int:
     sent_try = time.time()  # se acaba de descargar al crear el motor
     tag = "" if mode_is_paper(args) else "💶 REAL " if args.exchange == "real" else "🧪 TESTNET "
     mode = {"paper": "papel"}.get(args.exchange, args.exchange)
+    journal = DecisionJournal(p(args, "diario"))
+    reconciled = executor is None  # en papel no hay nada que conciliar
+    errors = 0
+    stale_warned = False
     print(f"Modo vivo ({eng.executor.name}): {', '.join(syms)} {args.interval}. Ctrl+C para salir.")
+    print(f"  Diario de decisiones: {journal.dir}")
     while True:
         try:
             data = fetch_universe(syms, args.interval, WINDOW + 1)
             data = {s: cs[:-1] for s, cs in data.items()}  # la última vela aún está abierta
             t = min(cs[-1].time for cs in data.values())
+            if errors >= 3:
+                tg.send(f"{tag}✅ Conexión recuperada tras {errors} intentos fallidos.")
+            errors = 0
+            stale = [f"{s}: {m}" for s, cs in data.items()
+                     if (m := check_fresh(cs, INTERVAL_SECONDS.get(args.interval, 3600)))]
+            if stale:  # el exchange devuelve datos viejos: no se decide con ellos
+                print(f"[aviso] {stale[0]} - no se opera en esta vuelta", file=sys.stderr)
+                journal.write(int(time.time() * 1000), {"tipo": "aviso", "datos_atrasados": stale})
+                if not stale_warned:
+                    tg.send(f"{tag}⚠️ Datos atrasados del exchange ({stale[0]}). El bot no opera hasta que se normalicen.")
+                    stale_warned = True
+                if args.once:
+                    return 1
+                sleep_to_next_close(args.interval, args.poll)
+                continue
+            stale_warned = False
+            if not reconciled:  # al arrancar: ¿la cartera guardada coincide con el exchange?
+                prices0 = {s: cs[-1].close for s, cs in data.items()}
+                for s in executor.reconcile(eng.pf.positions):
+                    tr = eng.pf.close(s, prices0[s], t, "conciliación: ya no estaba en el exchange (stop ejecutado)")
+                    eng.risk.on_closed(tr)
+                    journal.write(t, {"tipo": "conciliacion", "simbolo": s, "resultado": round(tr.pnl, 6)})
+                    tg.send(f"{tag}🔄 {s}: la posición ya no estaba en el exchange al arrancar; cerrada en el libro.")
+                reconciled = True
             if t > last_seen:
                 last_seen = t
                 rep = eng.step(data)
@@ -520,6 +550,11 @@ def cmd_live(args: argparse.Namespace) -> int:
                                       "closed": [asdict(c) for c in eng.pf.closed[-1000:]],
                                       "last_time": t, "last_optimize": last_opt, "last_summary": last_summary})
                 record_equity(track_path, eq, mode)
+                journal.step(t, rep, prices, eq)
+                if rep.event == "DAILY":
+                    tg.send(f"{tag}⛔ Límite de pérdida diaria alcanzado: sin nuevas entradas hasta mañana (UTC).")
+                for s, probs in rep.data_issues.items():
+                    print(f"  [datos dudosos] {s}: {probs[0]}", file=sys.stderr)
                 day = time.strftime("%Y-%m-%d", time.gmtime())
                 # el índice es diario y se publica a lo largo del día: reintentar (como mucho
                 # una vez por hora) mientras falte el dato de hoy
@@ -548,7 +583,12 @@ def cmd_live(args: argparse.Namespace) -> int:
         except KeyboardInterrupt:
             return 0
         except Exception as e:  # noqa: BLE001 - un fallo de red no debe matar el bucle
+            errors += 1
             print(f"[error] {type(e).__name__}: {e}", file=sys.stderr)
+            journal.write(int(time.time() * 1000), {"tipo": "error", "error": f"{type(e).__name__}: {e}"})
+            if errors == 3:
+                tg.send(f"{tag}⚠️ Sin conexión o error repetido (3 veces): {type(e).__name__}. El bot no opera "
+                        "mientras dure; las posiciones siguen protegidas por su stop en el exchange.")
             if args.once:
                 return 1
         try:

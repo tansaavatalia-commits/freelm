@@ -73,6 +73,31 @@ al vencer. Como el stop ya está puesto como orden en el exchange, el objetivo s
 vigila vela a vela y se vende **a mercado** (taker). Ese modo lleva su propia
 estadística (claves `LT|`), así que el 77 % se verifica con esos costes.
 
+## Seguridad operativa (fase 1)
+
+- **Integridad de datos.** Antes de decidir, cada ventana de velas se valida:
+  huecos, velas repetidas o fuera de orden, precios no válidos, máximo/mínimo
+  incoherentes, saltos de más del 35 % en una vela. Si algo falla, **ese símbolo no
+  se aprende ni se decide en esa vela** (`report.data_issues`).
+- **Datos atrasados (en vivo).** Si la última vela cerrada tiene más de 2
+  intervalos, no se opera y se avisa una vez por Telegram.
+- **Límite de pérdida diaria** (`max_daily_loss`, 3 %). Si la pérdida realizada
+  más la no realizada del día UTC supera el límite, no hay entradas nuevas hasta el día
+  siguiente. Es independiente del interruptor del 10 %.
+- **Diario de decisiones** (`<datos>/diario/decisiones-AAAAMMDD.jsonl`): una línea
+  por símbolo y vela, con el veredicto de cada equipo, los vetos y su motivo, la
+  probabilidad verificada, las aperturas y cierres, la cartera, los avisos y los
+  errores. Nunca guarda claves.
+- **Órdenes idempotentes.** Cada orden lleva un `clientOrderId` determinista
+  (tipo + moneda + vela). Si la red corta la respuesta, antes de reintentar se
+  busca la orden en el exchange: **nunca se envía dos veces**.
+- **Conciliación al arrancar** (testnet/real). Si una posición guardada ya no
+  está en la cuenta (por ejemplo, el stop se ejecutó con el bot apagado), se cierra
+  en el libro. Las que siguen reciben de nuevo su stop en el exchange y se borran
+  los stops viejos del bot.
+- **Alertas de conexión.** Tras 3 errores seguidos se avisa por Telegram, y
+  también cuando la conexión se recupera.
+
 ## Arquitectura: nodos enlazados
 
 `python bot.py graph` dibuja el grafo real en formato Mermaid. Cada vela, cada

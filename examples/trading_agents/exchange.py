@@ -52,6 +52,7 @@ class CcxtExecutor:
         self.log = log or (lambda m: print(m, file=sys.stderr))
         self.name = f"{exchange_id} ({'testnet' if testnet else 'DINERO REAL'})"
         self.stop_orders: Dict[str, str] = {}
+        self.step_time = 0  # marca de la vela en curso (la pone el motor): base de los ids de orden
         if client is not None:
             self.ex = client
         else:
@@ -67,6 +68,78 @@ class CcxtExecutor:
             if testnet:
                 self.ex.set_sandbox_mode(True)
         self.ex.load_markets()
+
+    # ------------------------------------------------------------ órdenes idempotentes
+    def _cid(self, kind: str, symbol: str) -> str:
+        """Id de cliente determinista por (tipo, moneda, vela): si una orden se reintenta tras
+        un corte de red, el exchange la reconoce y no se duplica. Prefijo 'fl' = del bot."""
+        base = to_market(symbol, self.quote).split("/")[0]
+        return f"fl{kind}{base}{int(self.step_time // 1000)}"[:36]
+
+    def _find_by_cid(self, m: str, cid: str):
+        try:
+            o = self.ex.fetch_order(None, m, {"clientOrderId": cid})
+            if o:
+                return o
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            for o in self.ex.fetch_orders(m, limit=50) or []:
+                if o.get("clientOrderId") == cid:
+                    return o
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    def _create(self, m: str, typ: str, side: str, qty: float, price: Optional[float], params: Optional[dict],
+                cid: str, retries: int = 3):
+        """create_order con id de cliente y reintentos. Antes de reintentar comprueba si la orden
+        ya llegó al exchange (respuesta perdida por la red): así nunca se envía dos veces."""
+        p = dict(params or {})
+        p["clientOrderId"] = cid
+        for attempt in range(retries):
+            try:
+                return self.ex.create_order(m, typ, side, qty, price, p)
+            except Exception as e:  # noqa: BLE001 - se clasifica abajo
+                existing = self._find_by_cid(m, cid)
+                if existing:
+                    self.log(f"[exchange] {m}: la orden {cid} ya existía ({type(e).__name__}); no se duplica")
+                    return existing
+                transient = any(k in type(e).__name__ for k in ("Network", "Timeout", "DDoS", "NotAvailable")) \
+                    or isinstance(e, (OSError, TimeoutError))
+                if not transient or attempt == retries - 1:
+                    raise
+                self.log(f"[exchange] {m}: fallo de red al enviar {cid} ({type(e).__name__}), reintento {attempt + 2}")
+                time.sleep(1 + attempt)
+        raise RuntimeError("inalcanzable")
+
+    # ------------------------------------------------------------ conciliación al arrancar
+    def reconcile(self, positions: Dict[str, Any]) -> List[str]:
+        """Compara la cartera guardada con el exchange. Devuelve los símbolos cuya posición
+        ya no existe en el exchange (p. ej. el stop se ejecutó con el bot apagado). Para las
+        que siguen, borra los stops antiguos del bot y vuelve a colocar uno con el stop actual."""
+        gone: List[str] = []
+        try:
+            bal = self.ex.fetch_balance()
+        except Exception as e:  # noqa: BLE001
+            self.log(f"[exchange] conciliación imposible ahora ({type(e).__name__}); se reintentará")
+            raise
+        for sym, pos in positions.items():
+            m = to_market(sym, self.quote)
+            base = m.split("/")[0]
+            total = float((bal.get(base) or {}).get("total") or 0.0)
+            if total < pos.qty * 0.5:
+                gone.append(sym)
+                self.log(f"[exchange] conciliación: {m} ya no está en la cuenta (¿stop ejecutado con el bot apagado?)")
+                continue
+            try:
+                for o in self.ex.fetch_open_orders(m) or []:
+                    if o.get("side") == "sell" and str(o.get("clientOrderId") or "").startswith("fl"):
+                        self.ex.cancel_order(o["id"], m)
+            except Exception as e:  # noqa: BLE001
+                self.log(f"[exchange] {m}: no se pudieron revisar órdenes abiertas ({type(e).__name__})")
+            self.protect(sym, min(pos.qty, total), pos.stop)
+        return gone
 
     # ------------------------------------------------------------ saldo
     def free_quote(self) -> float:
@@ -93,7 +166,7 @@ class CcxtExecutor:
         if qty <= 0 or not self._min_ok(m, qty, price):
             self.log(f"[exchange] {m}: orden por debajo del mínimo del exchange, se omite")
             return 0.0, price
-        o = self.ex.create_order(m, "market", "buy", qty)
+        o = self._create(m, "market", "buy", qty, None, None, self._cid("b", symbol))
         filled = float(o.get("filled") or qty)
         avg = float(o.get("average") or o.get("price") or price)
         fee_base = sum(float(f.get("cost") or 0) for f in (o.get("fees") or [])
@@ -109,7 +182,7 @@ class CcxtExecutor:
             q = float(self.ex.amount_to_precision(m, qty))
             sp = float(self.ex.price_to_precision(m, stop))
             lp = float(self.ex.price_to_precision(m, stop * 0.99))
-            o = self.ex.create_order(m, "limit", "sell", q, lp, {"stopLossPrice": sp})
+            o = self._create(m, "limit", "sell", q, lp, {"stopLossPrice": sp}, self._cid("s", symbol))
             self.stop_orders[symbol] = o["id"]
         except Exception as e:  # noqa: BLE001 - si el exchange no admite el stop, queda el stop local
             self.log(f"[exchange] aviso: no se pudo colocar el stop en {m} ({type(e).__name__}: {e}); "
@@ -135,7 +208,7 @@ class CcxtExecutor:
             if q <= 0 or not self._min_ok(m, q, px):
                 self.log(f"[exchange] {m}: orden límite por debajo del mínimo, se omite")
                 return False
-            o = self.ex.create_order(m, "limit", "buy", q, px)
+            o = self._create(m, "limit", "buy", q, px, None, self._cid("l", symbol))
             self.log(f"[exchange] LÍMITE COMPRA {m} {q} a {px} (id {o['id']})")
             return o["id"]
         except Exception as e:  # noqa: BLE001
@@ -168,7 +241,7 @@ class CcxtExecutor:
         if q <= 0 or not self._min_ok(m, q, price):
             self.log(f"[exchange] {m}: no queda saldo que vender (¿saltó el stop del exchange?)")
             return price
-        o = self.ex.create_order(m, "market", "sell", q)
+        o = self._create(m, "market", "sell", q, None, None, self._cid("v", symbol))
         avg = float(o.get("average") or o.get("price") or price)
         self.log(f"[exchange] VENTA {m} {q} a {avg}")
         return avg
