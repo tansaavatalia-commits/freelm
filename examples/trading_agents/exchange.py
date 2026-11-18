@@ -123,7 +123,44 @@ class CcxtExecutor:
             except Exception:  # noqa: BLE001 - puede que ya se haya ejecutado
                 pass
 
-    def sell(self, symbol: str, qty: float, price: float) -> float:
+    # ------------------------------------------------------------ órdenes límite (entrada maker)
+    simulated = False
+
+    def place_limit_buy(self, symbol: str, qty: float, price: float):
+        """Coloca una compra límite (GTC). Devuelve el id, o False si el exchange la rechaza."""
+        m = to_market(symbol, self.quote)
+        try:
+            q = float(self.ex.amount_to_precision(m, qty))
+            px = float(self.ex.price_to_precision(m, price))
+            if q <= 0 or not self._min_ok(m, q, px):
+                self.log(f"[exchange] {m}: orden límite por debajo del mínimo, se omite")
+                return False
+            o = self.ex.create_order(m, "limit", "buy", q, px)
+            self.log(f"[exchange] LÍMITE COMPRA {m} {q} a {px} (id {o['id']})")
+            return o["id"]
+        except Exception as e:  # noqa: BLE001
+            self.log(f"[exchange] {m}: orden límite rechazada ({type(e).__name__}: {e})")
+            return False
+
+    def limit_status(self, symbol: str, oid: str):
+        """(cantidad ejecutada neta de comisión en la moneda, precio medio, estado ccxt: open/closed/canceled)."""
+        m = to_market(symbol, self.quote)
+        try:
+            o = self.ex.fetch_order(oid, m)
+        except Exception as e:  # noqa: BLE001 - un fallo de red: se reintenta en la próxima vela
+            self.log(f"[exchange] {m}: no se pudo consultar la orden {oid} ({type(e).__name__})")
+            return 0.0, 0.0, "open"
+        filled = float(o.get("filled") or 0.0)
+        fee_base = sum(float(f.get("cost") or 0) for f in (o.get("fees") or []) if f.get("currency") == m.split("/")[0])
+        return max(0.0, filled - fee_base), float(o.get("average") or o.get("price") or 0.0), o.get("status") or "open"
+
+    def cancel_limit(self, symbol: str, oid: str) -> None:
+        try:
+            self.ex.cancel_order(oid, to_market(symbol, self.quote))
+        except Exception:  # noqa: BLE001 - puede que ya se haya ejecutado o cancelado
+            pass
+
+    def sell(self, symbol: str, qty: float, price: float, maker: bool = False) -> float:
         m = to_market(symbol, self.quote)
         self._cancel_stop(symbol)
         have = self.free_base(symbol)

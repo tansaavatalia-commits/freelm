@@ -46,6 +46,33 @@ real. Si ninguna señal cumple, el bot no opera, y es lo correcto.
 de cada vela. Necesita el servidor Oracle encendido; GitHub Actions sigue con
 velas de 1 hora.
 
+## Órdenes límite (`--entry-mode limit`) y comisión con BNB (`--bnb`)
+
+En velas de 5 minutos, el coste de ida y vuelta de las órdenes a mercado
+(~0,30 %: comisión 0,1 % + deslizamiento 0,05 % por lado) se come casi todo el
+movimiento. Con `--entry-mode limit`:
+
+- la compra se coloca como **orden límite** al cierre de la vela con señal (o
+  `limit_offset_atr` por debajo). Se considera ejecutada **solo si el precio
+  la atraviesa** en las `limit_wait` velas siguientes; si no, se cancela y la
+  ocasión se pierde (queda contada en `missed`);
+- el objetivo se cobra como venta límite (maker, sin deslizamiento). El stop y
+  el cierre por horizonte, a mercado (taker + deslizamiento);
+- la prueba en la sombra usa exactamente las mismas reglas y lleva su propia
+  estadística (claves `L|...`), así que la probabilidad del 77 % se verifica
+  para este modo por separado;
+- `--bnb` aplica la comisión con descuento (0,075 % por lado).
+
+En Binance spot, la cuenta estándar cobra **la misma comisión** a maker y a
+taker. Lo que se ahorra con órdenes límite es el deslizamiento y el spread, así
+que el coste baja ~1,5–2 veces, no más.
+
+**En testnet o dinero real** la compra límite se coloca de verdad en el exchange.
+En cada vela se consulta su estado (ejecutada, parcial o pendiente) y se cancela
+al vencer. Como el stop ya está puesto como orden en el exchange, el objetivo se
+vigila vela a vela y se vende **a mercado** (taker). Ese modo lleva su propia
+estadística (claves `LT|`), así que el 77 % se verifica con esos costes.
+
 ## Arquitectura: nodos enlazados
 
 `python bot.py graph` dibuja el grafo real en formato Mermaid. Cada vela, cada
@@ -156,6 +183,14 @@ ciego.
 
 `gate` solo da el visto bueno si hay **20 días en vivo**, **rendimiento
 positivo**, **caída ≤ 10 %** y **al menos 5 operaciones cerradas**.
+
+## Windows: asistente de instalación
+
+Descarga el ZIP del repositorio, descomprímelo y haz doble clic en
+`examples/trading_agents/windows/Instalar-Bot.bat`. El asistente instala
+Python si falta, el bot, las claves (opcionales) y el arranque automático en
+papel, y crea accesos directos para el panel y el informe. Guía completa:
+[`windows/LEEME.md`](windows/LEEME.md).
 
 ## Servidor gratuito
 

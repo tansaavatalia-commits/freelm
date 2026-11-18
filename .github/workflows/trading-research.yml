@@ -50,6 +50,10 @@ jobs:
         run: python "$BOT" backtest --source binance --interval 4h --limit 3000 --cash 100 --no-memory --default-config --dir r 2>&1 | tee bt-4h.txt
       - name: "2b. Backtest 5 min (tiempo real), ~52 días, filtro del 77 %"
         run: python "$BOT" backtest --source binance --interval 5m --limit 15000 --cash 100 --no-memory --default-config --dir r 2>&1 | tee bt-5m.txt
+      - name: "2c. Igual que 2b pero con órdenes LÍMITE y comisión BNB (0,075 %)"
+        run: python "$BOT" backtest --source binance --interval 5m --limit 15000 --cash 100 --no-memory --default-config --entry-mode limit --bnb --dir r 2>&1 | tee bt-5m-limit.txt
+      - name: "2d. Igual que 1 pero con órdenes LÍMITE y comisión BNB"
+        run: python "$BOT" backtest --source binance --limit "$LIMIT" --cash 100 --no-memory --default-config --entry-mode limit --bnb --dir r 2>&1 | tee bt-1h-limit.txt
       - name: "3. Ronda de optimización (1 h)"
         run: python "$BOT" optimize --source binance --limit "$LIMIT" --cash 100 --default-config --population 16 --generations 6 --dir r 2>&1 | tee opt.txt
       # --train 0.8 = mismo punto que el examen final del optimizador: así solo opera
@@ -61,7 +65,7 @@ jobs:
         run: |
           {
             echo "## Investigación con datos reales de Binance"
-            for f in bt-1h.txt bt-4h.txt bt-5m.txt opt.txt bt-champ.txt; do
+            for f in bt-1h.txt bt-1h-limit.txt bt-4h.txt bt-5m.txt bt-5m-limit.txt opt.txt bt-champ.txt; do
               [ -f "$f" ] || continue
               echo "### $f"
               echo '```'

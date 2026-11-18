@@ -24,13 +24,13 @@ import math
 import os
 import sys
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from types import SimpleNamespace
 from typing import Dict, List, Optional
 
 from agents import LLMAnalystAgent
 from engine import SHADOW_GAP, WINDOW, Config, Engine, metrics, run_backtest, stress_test, trade_stats
-from exchange import CcxtExecutor, check_gate, load_track, record_equity
+from exchange import CcxtExecutor, check_gate, load_track, record_equity, to_market
 from learning import REGIMES, AgentStats, Calibrator
 from market import DEFAULT_SYMBOLS, Candle, align, fetch_candles, fetch_fear_greed, fetch_funding, load_csv, synthetic
 from notify import Notifier
@@ -77,12 +77,26 @@ def build_llm(enabled: bool, model: str) -> Optional[LLMAnalystAgent]:
 
 def config_for(args: argparse.Namespace) -> Config:
     if args.config:
-        return Config.from_dict(load_json(args.config).get("config"))
-    if not args.default_config:
-        champ = load_champion(p(args, "champion.json"))
-        if champ:
-            return champ
-    return Config()
+        cfg = Config.from_dict(load_json(args.config).get("config"))
+    else:
+        champ = None if args.default_config else load_champion(p(args, "champion.json"))
+        cfg = champ or Config()
+    return apply_cost_flags(cfg, args)
+
+
+def apply_cost_flags(cfg: Config, args: argparse.Namespace) -> Config:
+    """--entry-mode limit|market y --bnb (comisión 0,075 % pagando con BNB) desde la línea de órdenes."""
+    kw: Dict[str, object] = {}
+    if getattr(args, "entry_mode", None):
+        kw["entry_mode"] = args.entry_mode
+    if getattr(args, "bnb", False):
+        kw["maker_fee"] = kw["taker_fee"] = 0.00075
+    cfg = replace(cfg, **kw) if kw else cfg
+    if getattr(args, "exchange", "papel") in ("testnet", "real") and cfg.entry_mode == "limit" and cfg.target_maker:
+        # en el exchange el stop ya está puesto como orden: el objetivo se vigila y se vende a mercado.
+        # La estadística de ese modo (claves LT|) cuenta el objetivo como taker.
+        cfg = replace(cfg, target_maker=False)
+    return cfg
 
 
 def state_file(args: argparse.Namespace) -> Optional[str]:
@@ -311,7 +325,8 @@ def cmd_optimize(args: argparse.Namespace) -> int:
     if not data:
         raise SystemExit("sin datos")
     champ_path, hist_path = p(args, "champion.json"), p(args, "optimize_history.jsonl")
-    champ = None if args.default_config else load_champion(champ_path)
+    saved = None if args.default_config else load_champion(champ_path)
+    champ = apply_cost_flags(saved or Config(), args)
     opt = Optimizer(data, PERIODS_PER_YEAR.get(args.interval, 8_760), cash=args.cash, seed=args.seed,
                     min_trades=args.min_trades, workers=args.workers, sentiment=load_sentiment(args),
                     funding=load_funding(args, list(data), _first_ms(data)))
@@ -319,7 +334,8 @@ def cmd_optimize(args: argparse.Namespace) -> int:
           "examen": opt.n - opt.test_from}
     print(f"Optimizando sobre {', '.join(data)} ({args.source}, {args.interval}): "
           + ", ".join(f"{k} {v} velas" for k, v in sp.items()))
-    print(f"Campeona de partida: {'la guardada' if champ else 'configuración por defecto'}")
+    print(f"Campeona de partida: {'la guardada' if saved else 'configuración por defecto'} "
+          f"(entrada {champ.entry_mode}, comisión {champ.taker_fee:.3%})")
     res = opt.run(champ, population=args.population, generations=args.generations)
     ct, ht = res["candidate_test"], res["champion_test"]
     cv = res["candidate_val"]
@@ -366,6 +382,57 @@ def _book_path(args: argparse.Namespace) -> str:
 
 def _track_path(args: argparse.Namespace) -> str:
     return p(args, f"historial-{args.exchange}.jsonl")
+
+
+def cmd_conexion(args: argparse.Namespace, client: object = None) -> int:
+    """Comprueba la conexión con el exchange: claves, saldo, mínimos de orden de cada moneda y,
+    con --orden-prueba (solo testnet), una compra límite muy por debajo del precio que nunca
+    se ejecuta y se cancela al momento. No compra ni vende nada."""
+    if args.exchange == "papel":
+        print("El modo papel no se conecta a ningún exchange: usa --exchange testnet (o real).")
+        return 2
+    if args.orden_prueba and args.exchange != "testnet":
+        print("La orden de prueba solo se permite en testnet.")
+        return 2
+    syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    try:
+        ex = CcxtExecutor(args.exchange_id, testnet=args.exchange == "testnet", max_capital=args.max_capital,
+                          client=client)
+        print(f"Conectado a {ex.name}.")
+        free = ex.free_quote()
+        print(f"  Saldo libre: {free:,.2f} {ex.quote} · capital que usaría el bot: {ex.starting_cash():,.2f} "
+              f"(tope {args.max_capital:,.2f})")
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001 - mensaje claro en vez de traza
+        print(f"  [X] No se pudo conectar: {type(e).__name__}: {e}")
+        print("      Revisa que las claves sean de la testnet (testnet.binance.vision) o de la cuenta real, según el modo.")
+        return 1
+    ok = True
+    for s in syms:
+        m = to_market(s, ex.quote)
+        mk = ex.ex.markets.get(m)
+        if not mk:
+            print(f"  [!] {m}: no existe en este exchange")
+            ok = False
+            continue
+        lim = mk.get("limits", {})
+        print(f"  [OK] {m}: mínimo {((lim.get('cost') or {}).get('min') or 0):g} {ex.quote} por orden")
+    if args.orden_prueba:
+        s = syms[0]
+        m = to_market(s, ex.quote)
+        price = float(ex.ex.fetch_ticker(m)["last"]) * 0.5  # a mitad de precio: no se ejecuta nunca
+        min_cost = ((ex.ex.markets[m].get("limits", {}).get("cost") or {}).get("min") or 5)
+        qty = (min_cost * 1.2) / price
+        oid = ex.place_limit_buy(s, qty, price)
+        if oid in (False, None):
+            print("  [X] El exchange rechazó la orden de prueba (¿permiso de trading activado en la clave?).")
+            return 1
+        filled, _, status = ex.limit_status(s, oid)
+        ex.cancel_limit(s, oid)
+        print(f"  [OK] Orden de prueba colocada y cancelada ({m} a {price:,.2f}, estado '{status}', ejecutado {filled:g}).")
+    print("Conexión correcta." if ok else "Conexión correcta, con avisos.")
+    return 0 if ok else 1
 
 
 def cmd_gate(args: argparse.Namespace) -> int:
@@ -621,6 +688,9 @@ def parser() -> argparse.ArgumentParser:
         sp.add_argument("--llm-model", default="chat:fast")
         sp.add_argument("--no-sentiment", action="store_true", help="no descargar el índice Fear & Greed")
         sp.add_argument("--no-funding", action="store_true", help="no descargar el funding rate de futuros")
+        sp.add_argument("--entry-mode", choices=["market", "limit"],
+                        help="tipo de orden de entrada (por defecto, el de la configuración: market)")
+        sp.add_argument("--bnb", action="store_true", help="comisiones con descuento BNB (0,075 %% por lado)")
 
     b = sub.add_parser("backtest", help="aprender y validar fuera de muestra")
     common(b)
@@ -667,6 +737,15 @@ def parser() -> argparse.ArgumentParser:
     rp.add_argument("--plain", action="store_true", help="texto sin formato (para Telegram)")
     rp.set_defaults(func=cmd_report)
 
+    cx = sub.add_parser("conexion", help="comprobar claves, saldo y órdenes con el exchange (testnet o real)")
+    common(cx, "binance")
+    cx.add_argument("--exchange", default="testnet", choices=["papel", "testnet", "real"])
+    cx.add_argument("--exchange-id", default="binance")
+    cx.add_argument("--max-capital", type=float, default=100.0)
+    cx.add_argument("--orden-prueba", action="store_true",
+                    help="(solo testnet) coloca y cancela una compra límite a mitad de precio")
+    cx.set_defaults(func=cmd_conexion)
+
     gt = sub.add_parser("gate", help="¿ha superado la prueba de 20 días?")
     common(gt, "binance")
     gt.set_defaults(func=cmd_gate)
@@ -678,7 +757,18 @@ def parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _utf8_console() -> None:
+    """En Windows, la consola o un fichero redirigido pueden usar cp1252: los acentos y
+    símbolos (≥, ✔, …) romperían el bot con UnicodeEncodeError. Se fuerza UTF-8."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+        except Exception:  # noqa: BLE001 - flujos sin reconfigure (tests, pipes antiguos)
+            pass
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    _utf8_console()
     args = parser().parse_args(argv)
     return args.func(args)
 

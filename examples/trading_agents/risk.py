@@ -35,6 +35,7 @@ class Position:
     p_win: float = 0.0      # probabilidad de acierto verificada al abrir
     expires: int = 0        # velas hasta el cierre por horizonte (modo estricto)
     strict: bool = False    # salidas idénticas a las de la sombra: sin stop dinámico ni cierre «a ojo»
+    entry_fee: Optional[float] = None  # comisión pagada al entrar (maker o taker)
 
 
 @dataclass
@@ -62,21 +63,26 @@ class Portfolio:
     cash: float = 10_000.0
     fee: float = 0.001
     positions: Dict[str, Position] = field(default_factory=dict)
+    pending: Dict[str, dict] = field(default_factory=dict)  # órdenes límite de entrada sin ejecutar
     closed: List[ClosedTrade] = field(default_factory=list)
 
     def equity(self, prices: Dict[str, float]) -> float:
         return self.cash + sum(p.qty * prices.get(s, p.entry) for s, p in self.positions.items())
 
-    def open(self, pos: Position) -> None:
+    def open(self, pos: Position, fee: Optional[float] = None) -> None:
+        f = self.fee if fee is None else fee
         cost = pos.qty * pos.entry
-        self.cash -= cost * (1 + self.fee)
+        self.cash -= cost * (1 + f)
+        pos.entry_fee = f
         self.positions[pos.symbol] = pos
 
-    def close(self, symbol: str, price: float, time: int, why: str) -> ClosedTrade:
+    def close(self, symbol: str, price: float, time: int, why: str, fee: Optional[float] = None) -> ClosedTrade:
         p = self.positions.pop(symbol)
-        proceeds = p.qty * price * (1 - self.fee)
+        f = self.fee if fee is None else fee
+        proceeds = p.qty * price * (1 - f)
         self.cash += proceeds
-        pnl = proceeds - p.qty * p.entry * (1 + self.fee)
+        ef = self.fee if p.entry_fee is None else p.entry_fee
+        pnl = proceeds - p.qty * p.entry * (1 + ef)
         t = ClosedTrade(symbol, p.opened, time, p.entry, price, p.qty, pnl, pnl / (p.qty * p.risk_per_unit), why,
                         p.risk_frac, p.p_win)
         self.closed.append(t)
@@ -107,7 +113,7 @@ class RiskManager:
             return "interruptor activado"
         if self.pause_left > 0:
             return f"pausa tras {self.max_losing_streak} pérdidas ({self.pause_left} velas)"
-        if len(pf.positions) >= self.max_positions:
+        if len(pf.positions) + len(pf.pending) >= self.max_positions:
             return "máximo de posiciones"
         return None
 

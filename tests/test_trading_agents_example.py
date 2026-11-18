@@ -701,3 +701,162 @@ def test_sleep_to_next_close_aligns_to_candle(monkeypatch):
     assert (1_000_000_010.0 + slept[0]) % 300 == pytest.approx(1.5)
     bot.sleep_to_next_close("5m", 7)
     assert slept[-1] == 7
+
+
+# ---------------------------------------------------------------- órdenes límite (maker)
+
+def test_limit_shadow_fills_only_when_price_trades_through():
+    cal = Calibrator(min_samples=1, horizon=10, sample_gap=1, entry_cost=0.0, target_cost=0.0, stop_cost=0.0,
+                     limit_offset=0.5, limit_wait=2)
+    cal.record("X", "k", 100.0, 98.5, atr=2.0, profiles=(1.0,))       # límite a 99, stop 97.5, objetivo 101
+    cal.update("X", 101.0, 99.0, 100.0)    # toca 99 pero no lo atraviesa: no ejecuta
+    assert cal.open["X"][0].wait == 1 and not cal.results
+    cal.update("X", 99.5, 98.9, 99.2)      # atraviesa: ejecutada a 99 (sin objetivo en la vela de entrada)
+    assert cal.open["X"][0].wait == 0 and cal.open["X"][0].entry == 99.0
+    cal.update("X", 101.5, 99.0, 101.0)    # objetivo 101
+    k = "k#t1"
+    assert cal.results[k][0] == 1 and cal.results[k][3] == 1
+    cal.record("X", "k", 100.0, 98.5, atr=2.0, profiles=(1.0,))
+    cal.update("X", 102, 100, 101)
+    cal.update("X", 103, 101, 102)          # nunca bajó a 99: se cancela y cuenta como perdida
+    assert cal.missed["k"] == 1 and not cal.open["X"]
+
+
+def test_maker_costs_are_cheaper_than_taker_in_the_shadow():
+    def r_for(entry_cost, target_cost):
+        cal = Calibrator(min_samples=1, horizon=10, sample_gap=1, entry_cost=entry_cost, target_cost=target_cost,
+                         stop_cost=0.0015)
+        cal.record("X", "k", 100.0, 98.5, atr=1.0, profiles=(1.0,))
+        cal.update("X", 101.5, 99.5, 101.0)
+        return cal.results["k#t1"][1]
+    assert r_for(0.00075, 0.00075) > r_for(0.0015, 0.0015)
+
+
+def test_engine_limit_order_lifecycle():
+    eng = Engine(Config(entry_mode="limit", limit_offset_atr=0.5, limit_wait=2, max_positions=4,
+                        max_exposure=1.0, risk_per_trade=0.02, max_heat=1.0), cash=1000)
+    rep = engine_mod.StepReport()
+    d = engine_mod.Decision("A", .8, .9, "tendencia", "L|k", exit_target=1.0, p_win=0.8)
+    eng.portfolio_graph.run({"prices": {"A": 100}, "time": 0, "report": rep,
+                             "candidates": [(0.8, "A", d, 2.0, {"features": None, "window": []})]})
+    assert not eng.pf.positions and eng.pf.pending["A"]["limit"] == pytest.approx(99.0)
+    assert eng.risk.can_open(eng.pf) is None and eng.pf.cash == 1000  # pendiente: aún no gasta caja
+    node = next(n for n in eng.symbol_graph.nodes if n.name == "órdenes_límite")
+    node.fn({"symbol": "A", "candle": Candle(1, 100, 100.5, 98.9, 99.5, 1), "report": rep})
+    p = eng.pf.positions["A"]
+    assert p.entry == 99.0 and p.entry_fee == eng.cfg.maker_fee and p.strict and not eng.pf.pending
+    assert p.target == pytest.approx(101.0) and p.stop == pytest.approx(96.0)
+
+
+def test_real_exchange_limit_mode_uses_taker_target_and_own_stats():
+    args = bot.parser().parse_args(["live", "--exchange", "testnet", "--entry-mode", "limit", "--default-config"])
+    cfg = bot.config_for(args)
+    assert cfg.entry_mode == "limit" and not cfg.target_maker
+    eng = Engine(cfg)
+    assert eng.cal.target_cost == pytest.approx(cfg.taker_fee + engine_mod.SLIPPAGE)
+
+
+def test_ccxt_limit_order_cycle():
+    fx = FakeExchange()
+    fx.fetch_order = lambda oid, m: {"id": oid, "filled": 0.002, "average": 49_900.0, "status": "closed", "fees": []}
+    ex = CcxtExecutor(testnet=True, client=fx, log=lambda m: None)
+    oid = ex.place_limit_buy("BTCUSDT", 0.002, 49_900.0)
+    assert fx.orders[-1][1:5] == ("limit", "buy", 0.002, 49_900.0) and oid
+    assert ex.limit_status("BTCUSDT", oid) == (0.002, 49_900.0, "closed")
+    assert ex.place_limit_buy("BTCUSDT", 0.00001, 49_900.0) is False   # bajo el mínimo
+    ex.cancel_limit("BTCUSDT", oid)
+    assert fx.cancelled[-1] == oid
+
+
+def test_engine_real_limit_order_waits_for_exchange_status():
+    calls = []
+
+    class Ex:
+        simulated = False
+        name, real_money = "fake", True
+
+        def place_limit_buy(self, s, q, p):
+            return "42"
+
+        def limit_status(self, s, oid):
+            calls.append(oid)
+            return (0.0, 0.0, "open") if len(calls) == 1 else (5.0, 99.0, "closed")
+
+        def cancel_limit(self, s, oid):
+            calls.append("cancel")
+
+        def protect(self, *a):
+            pass
+
+    eng = Engine(Config(entry_mode="limit", target_maker=False, limit_wait=3, max_exposure=1.0,
+                        risk_per_trade=0.02, max_heat=1.0), cash=1000, executor=Ex())
+    rep = engine_mod.StepReport()
+    d = engine_mod.Decision("A", .8, .9, "tendencia", "LT|k", exit_target=1.0, p_win=0.8)
+    eng.portfolio_graph.run({"prices": {"A": 100}, "time": 0, "report": rep,
+                             "candidates": [(0.8, "A", d, 2.0, {"features": None, "window": []})]})
+    node = next(n for n in eng.symbol_graph.nodes if n.name == "órdenes_límite")
+    node.fn({"symbol": "A", "candle": Candle(1, 100, 100, 90, 95, 1), "report": rep})  # vela baja: da igual, manda el exchange
+    assert "A" in eng.pf.pending
+    node.fn({"symbol": "A", "candle": Candle(2, 100, 100, 99, 99, 1), "report": rep})
+    assert eng.pf.positions["A"].entry == 99.0 and eng.pf.positions["A"].qty == 5.0 and calls == ["42", "42"]
+
+
+def test_cost_flags():
+    args = bot.parser().parse_args(["backtest", "--entry-mode", "limit", "--bnb", "--default-config"])
+    cfg = bot.config_for(args)
+    assert cfg.entry_mode == "limit" and cfg.maker_fee == cfg.taker_fee == 0.00075
+
+
+# ---------------------------------------------------------------- asistente de Windows
+
+def test_windows_assistant_scripts_are_well_formed():
+    import re
+    from pathlib import Path
+    win = Path(__file__).resolve().parent.parent / "examples" / "trading_agents" / "windows"
+    for name in ("asistente.ps1", "iniciar-bot.ps1"):
+        raw = (win / name).read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf"), f"{name}: sin BOM, PowerShell 5.1 rompería los acentos"
+        assert raw.count(b"\r\n") == raw.count(b"\n"), f"{name}: saltos de línea no CRLF"
+        code = re.sub(r"<#.*?#>", "", raw.decode("utf-8-sig"), flags=re.S)
+        code = re.sub(r"#[^\n]*", "", re.sub(r'"(?:`.|[^"`])*"|\'[^\']*\'', '""', code))
+        for a, b in ("{}", "()", "[]"):
+            assert code.count(a) == code.count(b), f"{name}: {a}{b} desbalanceados"
+    assert (win / "Instalar-Bot.bat").read_bytes().isascii()
+
+
+def test_windows_assistant_only_uses_existing_bot_commands():
+    """Cada orden que lanza el asistente debe ser válida para bot.py (si cambian las opciones,
+    este test avisa antes de que se rompa en el PC del usuario)."""
+    p = bot.parser()
+    for argv in (
+        ["live", "--interval", "5m", "--exchange", "papel", "--auto-optimize", "--optimize-limit", "8000", "--llm"],
+        ["live", "--interval", "5m", "--exchange", "real", "--auto-optimize", "--optimize-limit", "8000", "--llm",
+         "--confirm-real-money", "--max-capital", "100"],
+        ["live", "--interval", "5m", "--exchange", "papel", "--llm"],
+        ["optimize", "--source", "binance", "--limit", "5000", "--population", "12", "--generations", "5"],
+        ["optimize", "--source", "binance", "--limit", "5000"],
+        ["report", "--plain"],
+        ["report", "--plain", "--exchange", "testnet"],
+        ["gate"],
+        ["conexion", "--exchange", "testnet", "--orden-prueba"],
+        ["live", "--interval", "5m", "--exchange", "testnet", "--entry-mode", "limit", "--llm"],
+        ["live", "--interval", "5m", "--exchange", "testnet", "--auto-optimize", "--optimize-limit", "8000", "--llm",
+         "--entry-mode", "limit"],
+    ):
+        p.parse_args(argv)  # SystemExit si alguna opción no existe
+
+
+def test_conexion_command_with_test_order(capsys):
+    fx = FakeExchange()
+    fx.fetch_ticker = lambda m: {"last": 50_000.0}
+    fx.fetch_order = lambda oid, m: {"id": oid, "filled": 0.0, "status": "open", "fees": []}
+    args = bot.parser().parse_args(["conexion", "--exchange", "testnet", "--symbols", "BTCUSDT,FOOUSDT",
+                                    "--orden-prueba"])
+    rc = bot.cmd_conexion(args, client=fx)
+    out = capsys.readouterr().out
+    assert "Saldo libre: 500.00" in out and "BTC/USDT: mínimo 5" in out and "FOO/USDT: no existe" in out
+    assert "Orden de prueba colocada y cancelada" in out and fx.cancelled  # nunca queda una orden abierta
+    assert fx.orders[-1][1:3] == ("limit", "buy") and fx.orders[-1][4] == pytest.approx(25_000.0)
+    assert rc == 1  # FOO no existe -> aviso
+    real = bot.parser().parse_args(["conexion", "--exchange", "real", "--orden-prueba"])
+    assert bot.cmd_conexion(real, client=fx) == 2  # nunca orden de prueba con dinero real
