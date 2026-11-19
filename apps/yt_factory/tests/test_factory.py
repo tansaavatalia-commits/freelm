@@ -495,3 +495,40 @@ def test_qc_blocks_black_silent_and_wrong_format(tmp_path, monkeypatch):
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=1080x1920:d=5",
                     "-f", "lavfi", "-i", "sine=f=220:d=5", "-shortest", str(good)], check=True)
     assert qc.inspect(good, "short", 5.0)["ok"]
+
+
+def test_deterministic_grounding_checks():
+    from yt_factory.factcheck import numbers_not_in_notes, quote_in_notes
+    notes = "In 2011, 98% of people reported earworms. Lyrics caused 73.7% of cases. Population 1,234,567 in 1990."
+    spoken = "Il 98% delle persone, il 73,7% dei casi, in 3 secondi, nel 2015 il campo salì del 40%, 1.234.567 nel 1990"
+    assert numbers_not_in_notes(spoken, notes) == ["2015", "40%"]   # cifre inventate; "3 secondi" è un'espressione
+    assert quote_in_notes("Lyrics caused 73.7% of cases", notes)
+    assert not quote_in_notes("workers saw a tall glowing figure at the pumps", notes)
+
+
+def test_story_without_quotes_in_sources_is_rejected(tmp_path, monkeypatch):
+    monkeypatch.delenv("YTF_OFFLINE", raising=False)
+    s = _settings(tmp_path)
+
+    class Brain(OfflineBrain):
+        async def ask_json(self, system, user, *, schema, max_tokens=0, model=None, temperature=0.0):
+            if '"quote"' in schema:
+                return {"angle": "a", "twist": "t", "payoff": "p", "facts": [
+                    {"fact": f"f{i}", "quote": "a glowing figure measured by a 2015 electromagnetic test"} for i in range(4)]}
+            return await super().ask_json(system, user, schema=schema)
+
+    f = pipeline.Factory(s, brain=Brain())
+
+    async def notes(*a, **k):
+        return "### Elizabeth, New Jersey\\nElizabeth is a city in Union County, New Jersey. " * 20
+
+    monkeypatch.setattr(pipeline.factcheck, "research_notes", notes)
+
+    async def go():
+        import httpx
+        async with httpx.AsyncClient() as f.http:
+            return await f.produce(s.channel("mysteries"), {"topic": "NJ glowing figure"}, "short", "12:30", "2030-01-01", {})
+
+    assert asyncio.run(go()) is None
+    assert "fonti" in f.db.videos("mysteries")[0]["error"]
+    f.db.close()

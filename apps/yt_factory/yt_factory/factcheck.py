@@ -129,3 +129,55 @@ async def gather_sources(http: httpx.AsyncClient, claims: List[Dict[str, Any]]) 
         return {"claim": c.get("claim", ""), "sources": src or "(no source found)"}
 
     return list(await asyncio.gather(*(one(c) for c in claims[:6])))
+
+
+# --------------------------------------------------------------------------- controlli deterministici anti-invenzione
+def _norm(t: str) -> str:
+    t = t.lower().replace("’", "'").replace("“", '"').replace("”", '"')
+    return re.sub(r"\s+", " ", re.sub(r"[^\w%' ]+", " ", t)).strip()
+
+
+def quote_in_notes(quote: str, notes: str, window: int = 5) -> bool:
+    """La citazione esiste davvero nelle fonti? Almeno metà delle sue finestre di 5 parole devono comparire alla lettera
+    (tollera piccole parafrasi, non frasi inventate)."""
+    q, n = _norm(quote).split(), _norm(notes)
+    if len(q) < window:
+        return bool(q) and " ".join(q) in n
+    wins = [" ".join(q[i:i + window]) for i in range(len(q) - window + 1)]
+    return sum(w in n for w in wins) / len(wins) >= 0.5
+
+
+_NUM = re.compile(r"(?<![\w.])(\d{1,3}(?:[.,\s]\d{3})+|\d+(?:[.,]\d+)?)\s*(%|percent|per cento)?", re.I)
+
+
+def _canon(num: str) -> List[str]:
+    """Forme equivalenti di un numero: 1,000 / 1.000 / 1000 ; 73,7 / 73.7."""
+    raw = num.strip()
+    out = {raw, raw.replace(" ", "")}
+    if re.fullmatch(r"\d{1,3}(?:[.,\s]\d{3})+", raw):
+        out.add(re.sub(r"[.,\s]", "", raw))
+    if re.fullmatch(r"\d+[.,]\d+", raw):
+        out |= {raw.replace(",", "."), raw.replace(".", ",")}
+    return list(out)
+
+
+def numbers_not_in_notes(spoken: str, notes: str) -> List[str]:
+    """Numeri detti nel video che non compaiono nelle fonti (i modelli inventano soprattutto cifre e date).
+    Si ignorano i numeri piccoli usati come espressioni ("3 secondi", "2 cose"), salvo le percentuali."""
+    plain = notes + "\n" + re.sub(r"(?<=\d)[ ,.\u00a0](?=\d{3}\b)", "", notes)  # 1,234,567 -> anche 1234567
+    missing = []
+    for m in _NUM.finditer(spoken):
+        num, pct = m.group(1), m.group(2)
+        try:
+            value = float(re.sub(r"[.,\s](?=\d{3}\b)", "", num).replace(",", "."))
+        except ValueError:
+            continue
+        if value <= 10 and not pct:
+            continue
+        if not any(re.search(rf"(?<![\d]){re.escape(c)}(?![\d])", plain) for c in _canon(num)):
+            missing.append(num + ("%" if pct else ""))
+    return list(dict.fromkeys(missing))
+
+
+def source_titles(notes: str) -> List[str]:
+    return re.findall(r"^### (.+)$", notes, flags=re.M)

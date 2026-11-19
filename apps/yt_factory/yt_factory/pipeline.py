@@ -320,7 +320,8 @@ class Factory:
                                                   f"{notes or '(none)'}")
 
     # ================================================================== quality
-    async def fact_check(self, ch: Channel, script: Dict[str, Any], tag: str, notes: str = "") -> List[Dict[str, Any]]:
+    async def fact_check(self, ch: Channel, script: Dict[str, Any], tag: str, notes: str = "") -> Optional[List[Dict[str, Any]]]:
+        """None = la verifica non è riuscita a girare: per chi chiama vale come "non verificato", mai come "ok"."""
         spoken = " ".join(str(s.get("text", "")) for s in script.get("scenes", []))
         try:
             claims = (await A.FACT_EXTRACT.run(self.brain, ch, f"Script:\n{spoken}")).get("claims", [])
@@ -332,8 +333,8 @@ class Factory:
             verdict = await A.FACT_JUDGE.run(self.brain, ch, f"Claims:\n{A.dumps(sourced)}\n\n"
                                                              f"Encyclopedia source notes:\n{notes[:7000] or '(none)'}")
         except Exception as e:
-            _log(ch.id, "quality", f"{tag} fact-check non disponibile: {e}")
-            return []
+            _log(ch.id, "quality", f"{tag} fact-check non riuscito ({e}): lo script non può essere approvato")
+            return None
         results = [r for r in verdict.get("results", []) if isinstance(r, dict)]
         bad = [r for r in results if r.get("verdict") == "false"]
         unv = [r for r in results if r.get("verdict") == "unverified"]
@@ -363,6 +364,14 @@ class Factory:
             try:
                 story = await A.STORY_MINER.run(self.brain, ch, f"Concept: {A.dumps(_public(concept))}\n\nSOURCE NOTES:\n{notes}")
                 facts = [f for f in story.get("facts", []) if isinstance(f, dict) and f.get("fact")]
+                verified = [f for f in facts if factcheck.quote_in_notes(str(f.get("quote", "")), notes)]
+                _log(ch.id, "research", f"{tag} citazioni verificate nelle fonti: {len(verified)}/{len(facts)}")
+                if len(verified) < 3:  # la "storia" non è nelle fonti: è inventata
+                    self.db.update_video(vid, status="rejected", error="storia non supportata dalle fonti")
+                    _log(ch.id, "research", f"{tag} SCARTATO: le fonti non sostengono questa storia")
+                    return None
+                story = {**story, "facts": verified}
+                facts = verified
                 if len(facts) >= 3:
                     concept = {**concept, "_story": story, "angle": story.get("angle", concept.get("angle")),
                                "twist": story.get("twist", concept.get("twist")),
@@ -384,9 +393,19 @@ class Factory:
             if len(script["scenes"]) < 3:
                 fixes = "The script must have at least 6 beats with spoken text."
                 continue
-            facts = await self.fact_check(ch, script, tag, _notes(concept))
+            checked = await self.fact_check(ch, script, tag, _notes(concept))
+            facts = checked or []
             # con le fonti davanti, "non verificabile" significa quasi sempre "inventato"
             wrong = [f for f in facts if f.get("verdict") == "false" or (_notes(concept) and f.get("verdict") == "unverified")]
+            if checked is None:
+                wrong.append({"claim": "fact-check not executed", "verdict": "false", "fix": "keep only facts from the notes"})
+            if concept.get("_notes"):  # controllo deterministico: ogni cifra detta deve stare nelle fonti
+                spoken = " ".join(str(x["text"]) for x in script["scenes"])
+                for n in factcheck.numbers_not_in_notes(spoken, str(concept["_notes"])):
+                    wrong.append({"claim": f"the number '{n}'", "verdict": "false",
+                                  "fix": f"'{n}' is not in the sources: remove it or use an exact number from the notes"})
+                if any(w["claim"].startswith("the number") for w in wrong):
+                    _log(ch.id, "quality", f"{tag} cifre senza fonte: {', '.join(w['claim'][11:] for w in wrong if w['claim'].startswith('the number'))}")
             if not review or wrong:
                 review = await self.edit(ch, script, fmt, facts, _notes(concept))
             score = _score(review.get("score"))
@@ -507,7 +526,10 @@ class Factory:
         description = self.description(ch, seo, fmt, credits)
         meta = {"title": title, "titles": seo.get("titles", []), "description": description,
                 "tags": seo.get("tags", []), "pinned_comment": seo.get("pinned_comment", ""), "format": fmt,
-                "slot": slot, "hook": hook, "concept": _public(concept), "qc": report}
+                "slot": slot, "hook": hook, "concept": _public(concept), "qc": report,
+                "script_text": [str(x.get("text", "")) for x in script.get("scenes", [])],
+                "sources": factcheck.source_titles(str(concept.get("_notes") or "")),
+                "verified_facts": [f.get("fact") for f in (concept.get("_story") or {}).get("facts", [])]}
         (out_dir / f"{stem}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         self.db.update_video(vid, status="rendered" if report["ok"] else "failed",
                              error=None if report["ok"] else "controllo qualità: " + "; ".join(
@@ -539,8 +561,10 @@ class Factory:
         async def one(i: int, scene: Dict[str, Any]) -> Dict[str, Any]:
             spec = shots.get(i, {})
             prompt = str(spec.get("image_prompt") or scene.get("text", ""))[:400]
+            pq = str(spec.get("photo_query") or "")
+            named = any(w in _norm(str(scene.get("text", ""))) for w in _norm(pq).split() if len(w) > 3)
             photo, img, stock = await asyncio.gather(
-                visuals.real_photo(self.http, str(spec.get("photo_query") or ""), fmt, cache, pick=i),
+                visuals.real_photo(self.http, pq if named else "", fmt, cache, pick=i),
                 visuals.ai_image(self.http, prompt, ch.visual_style, fmt, vid * 100 + i, cache)
                 if self.s.ai_images else _none(),
                 visuals.pexels_clip(self.http, str(spec.get("stock_query") or ""), fmt, cache / "stock", pick=vid + i),
@@ -553,6 +577,13 @@ class Factory:
                     "photo": bool(photo), "credit": photo["credit"] if photo else ""}
 
         assets = list(await asyncio.gather(*(one(i, s) for i, s in enumerate(scenes))))
+        seen: set = set()
+        for a in assets:  # la stessa foto in più scene stanca: dalla seconda volta si usa l'immagine AI della scena
+            if a.get("photo"):
+                if a["image"] in seen:
+                    a.update(image=a.get("image2"), image2=None, photo=False, credit="")
+                else:
+                    seen.add(a["image"])
         return fill_gaps(assets)
 
     def description(self, ch: Channel, seo: Dict[str, Any], fmt: str, credits: Optional[List[str]] = None) -> str:
