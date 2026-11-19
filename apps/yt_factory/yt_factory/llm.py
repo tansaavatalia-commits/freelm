@@ -61,7 +61,14 @@ class Brain:
             for p in providers:
                 if getattr(p, "keyless", False):
                     p.priority = 10
-        self.llm = AsyncFreeLLM(providers, timeout=240.0, wait=True, max_wait=90.0)
+        self.usage: Dict[str, int] = {}  # quale provider/modello ha risposto: diagnosi della qualità
+
+        def on_event(e: Any) -> None:
+            if getattr(e, "kind", None) == "success":
+                k = f"{getattr(e, 'provider', '?')}/{getattr(e, 'model', '?')}"
+                self.usage[k] = self.usage.get(k, 0) + 1
+
+        self.llm = AsyncFreeLLM(providers, timeout=240.0, wait=True, max_wait=90.0, on_event=on_event)
         self.log(f"provider LLM: {', '.join(p.name for p in providers)}")
         self.sem = asyncio.Semaphore(concurrency)  # non saturare i tier gratuiti
         self.calls = 0

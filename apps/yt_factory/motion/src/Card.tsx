@@ -102,7 +102,7 @@ export const Card: React.FC<CardProps> = (props) => {
   const appear = (i: number) => spring({ frame: frame - 6 - i * 8, fps, config: { damping: 16 } });
 
   const titleEl = props.title ? (
-    <div style={{ fontSize: 46 * u, fontWeight: 800, letterSpacing: 4 * u, textTransform: "uppercase",
+    <div style={{ fontSize: 56 * u, fontWeight: 800, letterSpacing: 4 * u, textTransform: "uppercase",
                   color: accent, marginBottom: 40 * u, opacity: enter }}>{props.title}</div>
   ) : null;
 
@@ -129,7 +129,7 @@ export const Card: React.FC<CardProps> = (props) => {
       const grow = spring({ frame: frame - 8 - i * 10, fps, config: { damping: 18 } });
       return (
         <div style={{ marginBottom: 60 * u, opacity: appear(i) }} key={i}>
-          <div style={{ display: "flex", justifyContent: "space-between", color: "white", fontSize: 50 * u,
+          <div style={{ display: "flex", justifyContent: "space-between", color: "white", fontSize: 62 * u,
                         fontWeight: 700, marginBottom: 16 * u }}>
             <span>{pair.label}</span>
             <span style={{ color: i === 1 ? accent : "white", fontWeight: 900 }}>
@@ -152,17 +152,17 @@ export const Card: React.FC<CardProps> = (props) => {
     );
   } else if (props.kind === "list" && props.items?.length) {
     body = (
-      <div style={{ width: 880 * u * (long ? 0.6 : 1) }}>
+      <div style={{ width: 940 * u * (long ? 0.6 : 1) }}>
         {titleEl}
         {props.items.slice(0, 4).map((it, i) => {
           const a = appear(i);
           return (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 28 * u, marginBottom: 44 * u,
                                   opacity: a, transform: `translateX(${(1 - a) * -80 * u}px)` }}>
-              <div style={{ minWidth: 84 * u, height: 84 * u, borderRadius: 42 * u, background: accent,
-                            color: props.palette[0], fontSize: 46 * u, fontWeight: 900, display: "flex",
+              <div style={{ minWidth: 104 * u, height: 104 * u, borderRadius: 52 * u, background: accent,
+                            color: props.palette[0], fontSize: 58 * u, fontWeight: 900, display: "flex",
                             alignItems: "center", justifyContent: "center" }}>{i + 1}</div>
-              <div style={{ color: "white", fontSize: 54 * u, fontWeight: 700, lineHeight: 1.15 }}>{it}</div>
+              <div style={{ color: "white", fontSize: 70 * u, fontWeight: 800, lineHeight: 1.12 }}>{it}</div>
             </div>
           );
         })}
@@ -183,8 +183,8 @@ export const Card: React.FC<CardProps> = (props) => {
                                   transform: `translateY(${(1 - a) * 30 * u}px)` }}>
               <div style={{ position: "absolute", left: -62 * u, top: 18 * u, width: 36 * u, height: 36 * u,
                             borderRadius: 18 * u, background: accent, boxShadow: `0 0 ${24 * u}px ${accent}` }} />
-              <div style={{ color: accent, fontSize: 72 * u, fontWeight: 900 }}>{p.year}</div>
-              <div style={{ color: "white", fontSize: 46 * u, fontWeight: 600, lineHeight: 1.2 }}>{p.label}</div>
+              <div style={{ color: accent, fontSize: 92 * u, fontWeight: 900 }}>{p.year}</div>
+              <div style={{ color: "white", fontSize: 60 * u, fontWeight: 700, lineHeight: 1.15 }}>{p.label}</div>
             </div>
           );
         })}

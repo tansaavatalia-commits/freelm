@@ -126,7 +126,7 @@ def plan_shots(times: Sequence[Tuple[float, float]], assets: Sequence[Dict[str, 
 
 # --------------------------------------------------------------------------- sottotitoli ASS
 def build_ass(words: Sequence[Word], scenes: Sequence[Dict[str, Any]], times: Sequence[Tuple[float, float]],
-              fmt: str, palette: Sequence[str], out: Path) -> None:
+              fmt: str, palette: Sequence[str], out: Path, skip_top: Sequence[int] = ()) -> None:
     w, h = SIZES[fmt]
     accent = _ass_color(palette[-1])
     accent_inline = _ass_inline(palette[-1])
@@ -143,7 +143,9 @@ def build_ass(words: Sequence[Word], scenes: Sequence[Dict[str, Any]], times: Se
         f"Style: Top,{FONT_NAME},{int(big * 0.72)},{accent},&H00FFFFFF,&H00000000,&HA0000000,-1,0,0,0,100,100,0,0,3,18,0,8,80,80,{int(h * 0.11)},1",
         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
-    for s, (a, b) in zip(scenes, times):
+    for i, (s, (a, b)) in enumerate(zip(scenes, times)):
+        if i in skip_top:  # sulle scene con grafica animata il testo in alto sarebbe un doppione
+            continue
         txt = _esc(str(s.get("on_screen", "")).upper())
         if txt:
             lines.append(f"Dialogue: 1,{_ts(a)},{_ts(b)},Top,,0,0,0,,"
@@ -245,7 +247,7 @@ async def render(*, scenes: List[Dict[str, Any]], words: List[Word], audio: Path
     await _run("ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat), "-c", "copy", str(joined))
 
     ass = workdir / "captions.ass"
-    build_ass(words, scenes, times, fmt, palette, ass)
+    build_ass(words, scenes, times, fmt, palette, ass, skip_top=list(card_paths))
     ass_arg = str(ass.resolve()).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
     whoosh = workdir / "whoosh.wav"
     await _run("ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",

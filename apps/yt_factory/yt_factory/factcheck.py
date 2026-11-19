@@ -188,4 +188,8 @@ def notes_on_topic(notes: str, query: str) -> bool:
     (una ricerca su un'idea inventata restituisce comunque *qualche* voce: va riconosciuta e scartata)."""
     titles = " ".join(source_titles(notes)).lower()
     words = [w for w in _norm(query).split() if len(w) > 3 and w not in _STOP]
-    return any(w in titles or w.rstrip("s") in titles for w in words)
+    if not words:
+        return True
+    hits = sum(1 for w in words if w in titles or w.rstrip("s") in titles)
+    # metà delle parole chiave: "calcio stanca il corpo" -> "Mondiali 1970, Lucio Dalla" non basta più
+    return hits >= max(1, (len(words) + 1) // 2)

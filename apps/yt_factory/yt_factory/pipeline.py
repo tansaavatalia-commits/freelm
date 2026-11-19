@@ -67,6 +67,9 @@ class Factory:
             results = await asyncio.gather(*(self._channel_day(ch, per_channel, force_long) for ch in channels))
             await notify.daily_report(self.http, list(results), log=lambda m: _log("*", "notify", m))
         _log("*", "studio", f"fatto: {sum(len(r.produced) for r in results)} video, chiamate LLM {self.brain.calls}")
+        usage = getattr(self.brain, "usage", {})
+        if usage:
+            _log("*", "studio", "risposte per modello: " + ", ".join(f"{k} {v}" for k, v in sorted(usage.items(), key=lambda x: -x[1])))
         return list(results)
 
     async def close(self) -> None:
@@ -251,7 +254,7 @@ class Factory:
                 v = await A.PANEL.run(self.brain, ch, f"Concept: {concept.get('topic')}\nHooks:\n{listing}", model=model)
             except Exception:
                 return None
-            scores = [_num(x) for x in v.get("scores", [])]
+            scores = [_score(x) for x in v.get("scores", [])]  # alcuni giurati votano in centesimi
             return {"scores": scores, "why": str(v.get("why", ""))} if len(scores) == len(hooks) else None
 
         votes = [v for v in await asyncio.gather(*(juror(m) for m in self.s.panel_models)) if v]
@@ -377,7 +380,9 @@ class Factory:
                 story = {**story, "facts": verified}
                 facts = verified
                 if len(facts) >= 3:
-                    concept = {**concept, "_story": story, "angle": story.get("angle", concept.get("angle")),
+                    # se le fonti raccontano un'altra storia, titolo e packaging devono seguire quella, non l'idea iniziale
+                    concept = {**concept, "_story": story, "topic": str(story.get("angle") or concept["topic"])[:160],
+                               "original_topic": concept["topic"], "angle": story.get("angle", concept.get("angle")),
                                "twist": story.get("twist", concept.get("twist")),
                                "payoff": story.get("payoff", concept.get("payoff"))}
                     _log(ch.id, "research", f"{tag} storia: {story.get('angle', '')}  | colpo di scena: {story.get('twist', '')}")
