@@ -201,6 +201,8 @@ class Factory:
         out = await A.CONCEPTS.run(self.brain, ch, task)
         items = out.get("concepts") or out.get("ideas") or out.get("items") or []
         concepts = [c for c in items if isinstance(c, dict) and c.get("topic")]
+        for c in concepts:  # alcuni modelli gratuiti mettono ogni parola tra apici: 'The' 'Secret' 'City'
+            c["topic"] = re.sub(r"'([^'\s]+)'", r"\1", str(c["topic"])).strip(" '\"")
         fresh: List[Dict[str, Any]] = []
         for c in sorted(concepts, key=lambda c: -_num(c.get("viral_score"))):
             if not any(_similar(c["topic"], t) for t in recent + [f["topic"] for f in fresh]):
