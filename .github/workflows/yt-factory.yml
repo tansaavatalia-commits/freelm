@@ -82,6 +82,13 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Dipendenze
         run: pip install -e ../.. -r requirements.txt
+      - name: Controllo GitHub Models (diagnosi)
+        continue-on-error: true
+        run: |
+          curl -sS -m 60 -o /tmp/ghm.json -w "HTTP %{http_code}\n" https://models.github.ai/inference/chat/completions \
+            -H "Authorization: Bearer $GITHUB_MODELS_TOKEN" -H "Content-Type: application/json" \
+            -d '{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Reply with OK"}],"max_tokens":5}'
+          head -c 400 /tmp/ghm.json; echo
       - name: Ripristina memoria della fabbrica (storico video, apprendimenti, quota)
         if: github.event_name != 'push'          # le prove su branch partono sempre da zero
         uses: actions/cache/restore@v4

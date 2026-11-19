@@ -67,10 +67,18 @@ class Brain:
                     p.priority = 10
         self.usage: Dict[str, int] = {}  # quale provider/modello ha risposto: diagnosi della qualità
 
+        self.errors: Dict[str, int] = {}
+
         def on_event(e: Any) -> None:
-            if getattr(e, "kind", None) == "success":
+            kind = getattr(e, "kind", None)
+            if kind == "success":
                 k = f"{getattr(e, 'provider', '?')}/{getattr(e, 'model', '?')}"
                 self.usage[k] = self.usage.get(k, 0) + 1
+            elif kind == "error":  # perché un provider non risponde: il primo errore di ogni tipo finisce nel log
+                k = f"{getattr(e, 'provider', '?')} {getattr(e, 'status', '')}: {str(getattr(e, 'error', ''))[:160]}"
+                if k not in self.errors:
+                    self.log(f"errore provider {k}")
+                self.errors[k] = self.errors.get(k, 0) + 1
 
         self.llm = AsyncFreeLLM(providers, timeout=240.0, wait=True, max_wait=90.0, on_event=on_event)
         self.log(f"provider LLM: {', '.join(p.name for p in providers)}")
