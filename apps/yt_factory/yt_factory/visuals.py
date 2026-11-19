@@ -1,9 +1,11 @@
 """Reparto art: procura un'immagine/clip per ogni scena.
 
 Ordine di preferenza per ogni inquadratura:
-1. clip video stock Pexels (gratis con PEXELS_API_KEY), alternate alle immagini AI per varietà;
-2. immagine AI originale generata dal prompt dell'Art Director (Pollinations, gratis, senza chiave);
-3. grafica astratta generata localmente (non fallisce mai).
+1. FOTO REALE del soggetto citato (luogo, reperto, documento) con licenza libera CC0 / pubblico dominio / CC BY,
+   da Openverse (Wikimedia Commons, Flickr...): lo spettatore vede la cosa vera; i crediti CC BY finiscono in descrizione;
+2. clip video stock Pexels (gratis con PEXELS_API_KEY), alternate alle immagini per varietà;
+3. immagine AI originale dal prompt dell'Art Director (Pollinations, gratis, senza chiave);
+4. grafica astratta generata localmente (non fallisce mai).
 """
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ import os
 import random
 import urllib.parse
 from pathlib import Path
-from typing import Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 import httpx
 from PIL import Image, ImageDraw, ImageFilter
@@ -83,6 +85,46 @@ async def ai_image(http: httpx.AsyncClient, prompt: str, style: str, fmt: str, s
                 img.save(out, quality=93)
                 return out
             await asyncio.sleep(4 * (attempt + 1))
+    return None
+
+
+OPENVERSE = "https://api.openverse.org/v1/images/"
+# niente CC BY-SA/NC/ND: un video monetizzato non può rispettarle
+SAFE_LICENSES = "cc0,pdm,by"
+
+
+async def real_photo(http: httpx.AsyncClient, query: str, fmt: str, cache: Path, pick: int = 0) -> Optional[Dict[str, str]]:
+    """Foto reale con licenza libera. Restituisce {"path", "credit"} (credit vuoto per CC0/pubblico dominio)."""
+    if not query or os.environ.get("YTF_OFFLINE"):
+        return None
+    cache.mkdir(parents=True, exist_ok=True)
+    r = await http.get(OPENVERSE, params={"q": query, "license": SAFE_LICENSES, "page_size": 8, "mature": "false"},
+                       headers={"User-Agent": "yt-factory/0.3"})
+    if r.status_code != 200:
+        return None
+    w, h = SIZES[fmt]
+    good = [x for x in r.json().get("results", [])
+            if (x.get("width") or 0) >= 1000 and (x.get("height") or 0) >= 650
+            and (x.get("width") or 1) / (x.get("height") or 1) < 4]  # niente banner panoramici
+    for item in good[pick % max(len(good), 1):] + good[: pick % max(len(good), 1)]:
+        out = cache / f"photo_{hashlib.sha1(item['url'].encode()).hexdigest()[:16]}.jpg"
+        if not out.exists():
+            try:
+                img_r = await http.get(item["url"], headers={"User-Agent": "yt-factory/0.3"}, timeout=60)
+                if img_r.status_code != 200 or not img_r.headers.get("content-type", "").startswith("image"):
+                    continue
+                img = Image.open(io.BytesIO(img_r.content)).convert("RGB")
+            except (httpx.HTTPError, OSError):
+                continue
+            scale = max(w * 1.15 / img.width, h * 1.15 / img.height)
+            if scale > 1:  # foto piccola: ingrandisci (meglio un po' morbida che la grafica astratta)
+                img = img.resize((int(img.width * scale) + 1, int(img.height * scale) + 1), Image.LANCZOS)
+            img.save(out, quality=93)
+        lic = str(item.get("license", "")).lower()
+        credit = "" if lic in ("cc0", "pdm") else (
+            f"\"{item.get('title', 'photo')}\" by {item.get('creator') or 'unknown'}, CC BY "
+            f"{item.get('license_version', '')} ({item.get('foreign_landing_url') or item['url']})")
+        return {"path": str(out), "credit": credit}
     return None
 
 

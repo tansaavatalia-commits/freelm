@@ -21,6 +21,7 @@ upload_quota_cost = 1600                 # unità quota YouTube per upload (stim
 daily_quota = 10000                      # quota giornaliera del progetto Google Cloud
 ai_images = true                         # immagini AI per scena (Pollinations, gratis, senza chiave)
 shot_seconds = 2.8                       # durata massima di un'inquadratura: tagli frequenti = più ritenzione
+writer_models = ["chat", "large"]        # due sceneggiatori in parallelo con modelli diversi: vince la bozza migliore
 
 # ---------------------------------------------------------------------------
 [[channel]]
@@ -36,7 +37,10 @@ visual_style = "vivid cinematic photography, high contrast, shallow depth of fie
 keywords = ["curiosità", "lo sapevi", "fatti incredibili", "psicologia", "scienza"]
 category_id = "27"                       # Education
 palette = ["#0b1020", "#1e3a8a", "#facc15"]  # sfondo, sfondo 2, accento
-seed_channel_ids = []                    # ID di canali da studiare via RSS (UC...)
+voice_rate = "+10%"
+ambient = "none"                         # sottofondo sintetico se non c'è musica: none | drone | pulse
+# canali di riferimento da studiare (feed pubblici, senza chiave): @handle o ID UC...
+seed_channels = ["@Geopop", "@NovaLectio", "@BarbascuraX", "@curiuss"]
 affiliate_links = []                     # es. ["Libro consigliato: https://amzn.to/..."]
 
 [[channel]]
@@ -52,7 +56,9 @@ visual_style = "clean modern finance editorial, dramatic lighting, close-ups of 
 keywords = ["money tips", "how to save money", "personal finance", "money psychology", "side hustle"]
 category_id = "27"                       # Education (finance = RPM tra i più alti di YouTube)
 palette = ["#04130c", "#14532d", "#4ade80"]
-seed_channel_ids = []
+voice_rate = "+10%"
+ambient = "pulse"
+seed_channels = ["@GrahamStephan", "@NateOBrien", "@CharlieChang", "@TheMoneyGuyShow", "@marktilbury"]
 affiliate_links = []
 
 [[channel]]
@@ -68,5 +74,7 @@ visual_style = "dark cinematic documentary, moody fog, film grain, dramatic chia
 keywords = ["unsolved mysteries", "creepy places", "mysteries of the world", "unexplained", "ancient mysteries"]
 category_id = "24"                       # Entertainment
 palette = ["#0c0a09", "#3b0764", "#c084fc"]
-seed_channel_ids = []
+voice_rate = "+4%"
+ambient = "drone"
+seed_channels = ["@MrBallen", "@Nexpo", "@LEMMiNO", "@TheWhyFiles", "@Thoughty2", "@BedtimeStories"]
 affiliate_links = []

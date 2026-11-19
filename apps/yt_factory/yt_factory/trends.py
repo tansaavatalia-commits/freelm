@@ -3,7 +3,7 @@
 Fonti, tutte gratuite:
 - YouTube Data API (YT_API_KEY): video più popolari della regione + ricerca per parole chiave della nicchia
   negli ultimi 7 giorni ordinata per visualizzazioni; calcola le views/ora (velocità = segnale virale).
-- RSS dei canali concorrenti (`seed_channel_ids`, senza chiave): ultimi video con visualizzazioni.
+- feed RSS pubblici dei canali di riferimento (`seed_channels`, @handle o ID, senza chiave): ultimi video + views.
 - Google Trends RSS (senza chiave): ricerche in crescita oggi nel paese.
 """
 from __future__ import annotations
@@ -57,8 +57,33 @@ async def channel_rss(http: httpx.AsyncClient, channel_id: str) -> List[Dict[str
         published = e.findtext("a:published", default="", namespaces=NS)
         out.append({"id": e.findtext("yt:videoId", default="", namespaces=NS) or None,
                     "title": e.findtext("a:title", default="", namespaces=NS), "views": views,
-                    "published": published, "views_per_hour": _velocity(views, published), "source": "rss"})
+                    "published": published, "views_per_hour": _velocity(views, published),
+                    "source": e.findtext("a:author/a:name", default="rss", namespaces=NS),
+                    "summary": (e.findtext(".//m:description", default="", namespaces=NS) or "")[:180]})
     return out
+
+
+_HANDLE_CACHE: Dict[str, str] = {}
+
+
+async def resolve_channel(http: httpx.AsyncClient, ref: str) -> str:
+    """@handle -> ID canale (UC...), letto una volta dalla pagina pubblica del canale e tenuto in cache."""
+    ref = ref.strip()
+    if ref.startswith("UC"):
+        return ref
+    if ref in _HANDLE_CACHE:
+        return _HANDLE_CACHE[ref]
+    handle = ref if ref.startswith("@") else f"@{ref}"
+    r = await http.get(f"https://www.youtube.com/{handle}", headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en"})
+    m = re.search(r'"externalId":"(UC[\w-]{22})"', r.text) or re.search(r'channel_id=(UC[\w-]{22})', r.text)
+    if not m:
+        raise ValueError(f"canale {handle} non trovato")
+    _HANDLE_CACHE[ref] = m.group(1)
+    return m.group(1)
+
+
+async def seed_rss(http: httpx.AsyncClient, ref: str) -> List[Dict[str, Any]]:
+    return await channel_rss(http, await resolve_channel(http, ref))
 
 
 async def yt_most_popular(http: httpx.AsyncClient, key: str, region: str, category: str) -> List[Dict[str, Any]]:
@@ -101,7 +126,7 @@ async def collect(ch: Channel, http: httpx.AsyncClient, log=lambda *a: None) -> 
         return {"videos": [], "searches": [], "live_youtube": False, "collected_at": ""}
     key = os.environ.get("YT_API_KEY", "")
     jobs: List[Any] = [google_trends(http, ch.region)]
-    jobs += [channel_rss(http, cid) for cid in ch.seed_channel_ids]
+    jobs += [seed_rss(http, ref) for ref in ch.seed_channels]
     if key:
         jobs.append(yt_most_popular(http, key, ch.region, ch.category_id))
         jobs += [yt_search(http, key, kw, ch.region, ch.language) for kw in ch.keywords[:2]]
@@ -120,7 +145,7 @@ async def collect(ch: Channel, http: httpx.AsyncClient, log=lambda *a: None) -> 
             seen.add(k)
             uniq.append(v)
     return {"videos": uniq[:40], "searches": searches[:20],
-            "live_youtube": bool(key or ch.seed_channel_ids), "collected_at": datetime.now(timezone.utc).isoformat()}
+            "live_youtube": bool(key or ch.seed_channels), "collected_at": datetime.now(timezone.utc).isoformat()}
 
 
 # --------------------------------------------------------------------------- segnali del pubblico

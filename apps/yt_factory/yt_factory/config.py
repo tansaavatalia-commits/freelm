@@ -25,7 +25,9 @@ class Channel:
     visual_style: str = "cinematic photography, dramatic lighting"
     category_id: str = "22"
     palette: List[str] = field(default_factory=lambda: ["#111827", "#1f2937", "#f59e0b"])
-    seed_channel_ids: List[str] = field(default_factory=list)
+    seed_channels: List[str] = field(default_factory=list)
+    voice_rate: str = "+8%"
+    ambient: str = "none"
     affiliate_links: List[str] = field(default_factory=list)
 
     def env(self, base: str) -> str:
@@ -46,6 +48,7 @@ class Settings:
     panel_models: List[str] = field(default_factory=lambda: ["chat", "large", "fast"])
     ai_images: bool = True
     shot_seconds: float = 2.8
+    writer_models: List[str] = field(default_factory=lambda: ["chat", "large"])
     max_parallel_videos: int = 3
     max_parallel_renders: int = 2
     min_quality_score: int = 7

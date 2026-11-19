@@ -234,3 +234,55 @@ def test_english_channels_configured(tmp_path):
     langs = {c.id: c.language for c in s.channels}
     assert list(langs.values()).count("en") == 2 and langs["fatti"] == "it"
     assert all(c.voice.startswith(c.language) for c in s.channels)
+
+
+def test_clean_scenes_strips_labels_and_forces_hook():
+    scenes = [{"text": "Off the coast of Japan, something sleeps.", "on_screen": "X"},
+              {"text": "Kimura says it was carved. DISPUTED.", "on_screen": ""},
+              {"text": "[dramatic pause] NASA confirmed it in 1998.", "on_screen": ""},
+              {"text": "MAINSTREAM VIEW.", "on_screen": ""}, "junk"]
+    out = pipeline.clean_scenes(scenes, hook="It was carved by hand. Or was it?")
+    spoken = " ".join(s["text"] for s in out)
+    assert out[0]["text"] == "It was carved by hand. Or was it?"          # l'hook vincitore apre sempre il video
+    assert "DISPUTED" not in spoken and "MAINSTREAM" not in spoken and "pause" not in spoken
+    assert "NASA confirmed it in 1998." in spoken                          # le sigle dentro una frase restano
+    assert len(out) == 4
+
+
+def test_real_photo_skips_banners_and_credits_cc_by(tmp_path, monkeypatch):
+    import io
+
+    import httpx
+    from PIL import Image
+
+    from yt_factory import visuals
+
+    monkeypatch.delenv("YTF_OFFLINE", raising=False)
+    buf = io.BytesIO()
+    Image.new("RGB", (1600, 1200), (10, 10, 200)).save(buf, "JPEG")
+
+    def handler(req):
+        if req.url.host == "api.openverse.org":
+            assert "by" in req.url.params["license"] and "sa" not in req.url.params["license"]
+            return httpx.Response(200, json={"results": [
+                {"url": "https://img/banner.jpg", "width": 3000, "height": 400, "license": "cc0"},
+                {"url": "https://img/ok.jpg", "width": 1600, "height": 1200, "license": "by", "license_version": "4.0",
+                 "title": "Terraces", "creator": "Ann", "foreign_landing_url": "https://commons/x"}]})
+        return httpx.Response(200, content=buf.getvalue(), headers={"content-type": "image/jpeg"})
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            return await visuals.real_photo(http, "yonaguni terraces", "short", tmp_path)
+
+    got = asyncio.run(go())
+    assert got and "Ann" in got["credit"] and "CC BY 4.0" in got["credit"]
+    w, h = Image.open(got["path"]).size
+    assert h >= 1920 * 1.15 - 1
+
+
+def test_description_lists_photo_credits(tmp_path):
+    s = _settings(tmp_path)
+    f = pipeline.Factory(s, brain=OfflineBrain())
+    d = f.description(s.channel("mysteries"), {"description": "x", "hashtags": []}, "short", ["\"T\" by Ann, CC BY 4.0"])
+    assert "Photos: \"T\" by Ann, CC BY 4.0" in d
+    f.db.close()

@@ -82,12 +82,15 @@ AUDIENCE = Agent(
 # ----------------------------------------------------------------------------------------- creative desk
 CONCEPTS = Agent(
     "the Concept Developer", "creative desk",
-    "You turn viral blueprints and audience gaps into ORIGINAL video concepts that beat the reference: a more "
-    "surprising fact, a fresher angle, a clearer payoff, higher stakes. Each concept states which demand it serves "
-    "and what makes it better. Never repeat a topic the channel already covered.",
-    '{"concepts": [{"topic": "precise topic", "inspired_by": "demand/blueprint it serves", '
-    '"upgrade": "why ours is better than what exists", "angle": "...", "payoff": "the satisfying reveal", '
-    '"viral_score": 8}]}',
+    "You turn viral blueprints and audience gaps into ORIGINAL video concepts that beat the reference. The best "
+    "Shorts are ONE specific, little-known story or fact with a built-in twist — not a broad topic. Bad: 'The "
+    "Yonaguni monument' (saturated, no twist). Good: 'The lighthouse whose logbook was faked 12 years later' (specific, "
+    "surprising, has a reveal). Every concept must have: a concrete protagonist/object, stakes, a twist you can state "
+    "in one sentence, and a satisfying payoff that is TRUE. Avoid topics the niche has done to death unless your twist "
+    "is genuinely new. Never repeat a topic the channel already covered.",
+    '{"concepts": [{"topic": "specific story, not a broad subject", "inspired_by": "demand/blueprint it serves", '
+    '"upgrade": "why ours beats what exists", "twist": "the one-sentence surprise", "payoff": "the true reveal", '
+    '"saturation": "low|medium|high", "viral_score": 8}]}',
     temperature=0.9,
 )
 
@@ -110,12 +113,21 @@ PANEL = Agent(
 
 SCRIPTWRITER = Agent(
     "the Scriptwriter", "creative desk",
-    "You write the SPOKEN voice-over and split it into scenes. Rules: the first line is the given hook, verbatim. "
-    "Open a curiosity loop in the first 5 seconds and close it only near the end. Short sentences, one idea each. "
-    "A pattern interrupt (new fact, twist, number, question) every 2-3 sentences. No greetings, no 'in this video'. "
-    "Deliver the payoff, then end with a line that loops back to the hook or asks a comment-bait question.",
-    '{"title_idea": "working title", "scenes": [{"text": "spoken line(s) for this scene", '
-    '"on_screen": "max 4 words of on-screen text"}], "cta": "very short closing call to action"}',
+    "You write voice-over scripts for Shorts that people watch to the end, like the best storytellers on YouTube. "
+    "Follow this beat sheet, 85-115 spoken words in total (30-45 seconds):\n"
+    "1. HOOK - the given hook, verbatim, as the very first words.\n"
+    "2. STAKES - one line: why this matters or what is strange about it.\n"
+    "3. ESCALATION - three beats, each MORE surprising than the last, each with one concrete detail (a number, a name, "
+    "a date, a sensory image). Show, don't list.\n"
+    "4. TWIST - the detail that flips what the viewer assumed.\n"
+    "5. PAYOFF - the real answer or best explanation, stated with confidence. Never end on a vague 'we may never know'.\n"
+    "6. LOOP - a last line that connects back to the first line, or a sharp question.\n"
+    "Craft rules: write for the ear (rhythm, contrast, short sentences, 'you'); attribute uncertain claims inside the story "
+    "('Kimura swears it was carved') instead of tacking on disclaimers; never write labels, stage directions or words "
+    "in capitals meant for the screen into the spoken text; no greetings, no 'in this video'. "
+    "on_screen is optional: use it only for a key number, name or the twist (max 3 words), otherwise an empty string.",
+    '{"title_idea": "working title", "scenes": [{"text": "spoken line(s) for this beat", "on_screen": ""}], '
+    '"cta": ""}',
     max_tokens=9000,
 )
 
@@ -146,21 +158,27 @@ FACT_JUDGE = Agent(
 
 EDITOR = Agent(
     "the Retention Editor & Compliance lead", "quality desk",
-    "You are strict. Score the script on hook strength, pacing (no dead sentence), originality versus what already "
-    "exists, payoff, factual safety and monetization compliance. Any fact-check problem must be fixed before "
-    "approval. Give concrete line-level fixes when the score is below 8.",
-    '{"score": 0, "hook_strength": 0, "pacing": 0, "originality": 0, "factual_risk": "low|medium|high", '
-    '"policy_issues": ["..."], "verdict": "approve|rewrite|reject", "fixes": ["concrete fix"]}',
+    "You judge like a viewer first and a lawyer second. Score 0-10 on: would a stranger watch this to the END? Is the "
+    "first line a scroll-stopper? Is every sentence concrete and surprising, with an escalation, a twist and a true, "
+    "satisfying payoff? Is it under 120 words? Then check facts and policy. For factual uncertainty, ask for "
+    "ATTRIBUTION woven into the story ('researchers at X found...'), never for stacked disclaimers that kill the "
+    "rhythm. Flag spoken labels or stage directions as errors. Give at most 4 fixes, each a concrete rewritten line. "
+    "Use 'reject' only for policy violations or a topic with no real story.",
+    '{"score": 0, "watch_to_end": 0, "hook_strength": 0, "originality": 0, "factual_risk": "low|medium|high", '
+    '"policy_issues": ["..."], "verdict": "approve|rewrite|reject", "fixes": ["concrete rewritten line"]}',
     temperature=0.3,
 )
 
 # ----------------------------------------------------------------------------------------- art & packaging
 ART_DIRECTOR = Agent(
     "the Art Director", "art desk",
-    "For each scene, design the visual: an English image-generation prompt (subject, composition, lighting, "
-    "camera; no text, no logos, no real celebrities, no gore) that matches the channel's visual style, and a 2-4 "
-    "word English stock-footage search query. Keep a consistent look across scenes.",
-    '{"shots": [{"scene": 0, "image_prompt": "...", "stock_query": "..."}]}',
+    "For each scene choose the visual that makes the viewer SEE what the voice says. If the scene names a real place, "
+    "object, artifact, building, animal or historical document, give a short English 'photo_query' to find a real "
+    "freely-licensed photo of exactly that (e.g. 'Yonaguni monument terraces'); otherwise leave it empty. Always "
+    "also give an 'image_prompt' for an original AI image (subject, composition, lighting, camera; no text, no logos, "
+    "no real celebrities, no gore) in the channel's visual style, and a 2-4 word English 'stock_query'. Vary the "
+    "framing between scenes (wide, close-up, detail, aerial) so consecutive shots never look the same.",
+    '{"shots": [{"scene": 0, "photo_query": "", "image_prompt": "...", "stock_query": "..."}]}',
     max_tokens=6000, temperature=0.7,
 )
 
@@ -196,7 +214,9 @@ GROWTH = Agent(
 def fmt_trends(report: Dict[str, Any]) -> str:
     lines: List[str] = []
     for v in report.get("videos", [])[:25]:
-        lines.append(f"- [{v.get('views', 0):,} views, {v.get('views_per_hour', 0):,.0f}/h] {v.get('title')}")
+        who = f" ({v['source']})" if v.get("source") and v["source"] not in ("rss", "mostPopular") else ""
+        about = ""  # le descrizioni RSS sono quasi sempre sponsor: rumore per l'analisi
+        lines.append(f"- [{v.get('views', 0):,} views, {v.get('views_per_hour', 0):,.0f}/h]{who} {v.get('title')}{about}")
     for t in report.get("searches", [])[:15]:
         lines.append(f"- rising Google search today: {t.get('title')} ({t.get('traffic', '?')})")
     return "\n".join(lines) or "(no live data available)"

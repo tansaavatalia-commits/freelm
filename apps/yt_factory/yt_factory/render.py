@@ -25,6 +25,13 @@ from .visuals import SIZES, _rgb, generated_background
 FPS = 30
 FONT_NAME = "DejaVu Sans"  # presente su Ubuntu/GitHub Actions; usata da libass via fontconfig
 MOTIONS = ("zoom_in", "pan_right", "zoom_out", "pan_up", "pan_left")
+# sottofondi generati con ffmpeg (nessun brano protetto): drone cupo per i misteri, pulsazione morbida per la finanza
+AMBIENT = {
+    "drone": "aevalsrc='0.05*sin(2*PI*55*t)*(0.8+0.2*sin(2*PI*0.1*t))+0.035*sin(2*PI*82.41*t)"
+             "+0.02*sin(2*PI*110.5*t)*(0.5+0.5*sin(2*PI*0.07*t))':s=44100,lowpass=f=900,aecho=0.8:0.7:400:0.3",
+    "pulse": "aevalsrc='0.06*sin(2*PI*65.4*t)*exp(-6*mod(t,0.5))+0.025*sin(2*PI*196*t)*(0.5+0.5*sin(2*PI*0.25*t))'"
+             ":s=44100,lowpass=f=1500",
+}
 
 
 # --------------------------------------------------------------------------- utilità
@@ -99,11 +106,14 @@ def plan_shots(times: Sequence[Tuple[float, float]], assets: Sequence[Dict[str, 
         n = max(1, math.ceil((b - a) / shot_seconds - 0.15))
         step = (b - a) / n
         asset = assets[i] if i < len(assets) else {}
+        # immagine principale (foto reale o AI) sui tagli pari; sui dispari clip stock o seconda immagine
+        alts = [x for x in (asset.get("stock"), asset.get("image2")) if x is not None]
         for k in range(n):
-            use_stock = asset.get("stock") is not None and (k % 2 == 1 or asset.get("image") is None)
+            alt = alts[(k // 2) % len(alts)] if alts and (k % 2 == 1 or asset.get("image") is None) else None
+            path = alt if alt is not None else asset.get("image")
+            is_video = alt is not None and alt == asset.get("stock")
             shots.append({"scene": i, "start": a + k * step, "end": a + (k + 1) * step,
-                          "kind": "video" if use_stock else "image",
-                          "path": asset.get("stock") if use_stock else asset.get("image"),
+                          "kind": "video" if is_video else "image", "path": path,
                           "motion": MOTIONS[m % len(MOTIONS)]})
             m += 1
     return shots
@@ -115,9 +125,9 @@ def build_ass(words: Sequence[Word], scenes: Sequence[Dict[str, Any]], times: Se
     w, h = SIZES[fmt]
     accent = _ass_color(palette[-1])
     accent_inline = _ass_inline(palette[-1])
-    big = 96 if fmt == "short" else 64
+    big = 84 if fmt == "short" else 60
     group = 3 if fmt == "short" else 6
-    cap_y = int(h * 0.66) if fmt == "short" else int(h * 0.86)
+    cap_y = int(h * 0.74) if fmt == "short" else int(h * 0.86)  # sotto il centro: il soggetto resta visibile
     lines = [
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {w}", f"PlayResY: {h}", "WrapStyle: 0", "",
         "[V4+ Styles]",
@@ -190,7 +200,7 @@ async def shot_clip(shot: Dict[str, Any], fmt: str, palette: Sequence[str], work
 
 async def render(*, scenes: List[Dict[str, Any]], words: List[Word], audio: Path, out: Path, fmt: str,
                  palette: Sequence[str], workdir: Path, assets: Sequence[Dict[str, Optional[Path]]],
-                 shot_seconds: float = 2.8, music_dir: Optional[Path] = None) -> Path:
+                 shot_seconds: float = 2.8, music_dir: Optional[Path] = None, ambient: str = "none") -> Path:
     workdir.mkdir(parents=True, exist_ok=True)
     w, h = SIZES[fmt]
     total = duration(audio) + 0.35
@@ -230,6 +240,11 @@ async def render(*, scenes: List[Dict[str, Any]], words: List[Word], audio: Path
     if music:
         cmd += ["-stream_loop", "-1", "-i", str(random.choice(music))]
         a_graph.append("[3:a]aresample=44100,aformat=channel_layouts=stereo,volume=0.08[music]")
+        mix.append("[music]")
+    elif ambient in AMBIENT:  # sottofondo sintetico, zero copyright
+        cmd += ["-f", "lavfi", "-t", f"{total:.3f}", "-i", AMBIENT[ambient]]
+        a_graph.append("[3:a]aresample=44100,aformat=channel_layouts=stereo,"
+                       f"afade=t=in:d=1.5,afade=t=out:st={max(total - 1.5, 0):.2f}:d=1.5,volume=0.5[music]")
         mix.append("[music]")
     a_graph.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:dropout_transition=0:normalize=0[aout]")
     bar_h = 14 if fmt == "short" else 8
