@@ -141,3 +141,32 @@ describe("VERSION", () => {
     expect(VERSION).toBe(pkg.version);
   });
 });
+
+it("rate-limit reset headers give the exact wait", async () => {
+  const { classify, parseReset, rateLimitReset, RateLimited } = await import("../src/errors.js");
+  expect(parseReset("1m26.4s")).toBeCloseTo(86.4);
+  expect(parseReset("350ms")).toBeCloseTo(0.35);
+  expect(parseReset("2h")).toBe(7200);
+  expect(parseReset("7.5")).toBe(7.5);
+  expect(parseReset("1700000060", 1700000000)).toBe(60); // unix seconds
+  expect(parseReset("1700000060000", 1700000000)).toBe(60); // unix milliseconds (OpenRouter)
+  expect([parseReset("soon"), parseReset(""), parseReset(null)]).toEqual([null, null, null]);
+
+  const groq = {
+    "x-ratelimit-remaining-requests": "0", "x-ratelimit-reset-requests": "2m0s",
+    "x-ratelimit-remaining-tokens": "5000", "x-ratelimit-reset-tokens": "9h",
+  };
+  expect(rateLimitReset(groq)).toBe(120); // only the spent window counts
+  expect(rateLimitReset({ "X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700003600000" }, 1700000000)).toBe(3600);
+  expect(rateLimitReset({ "x-ratelimit-remaining": "0", "x-ratelimit-reset": "999d" })).toBeNull();
+  expect(rateLimitReset({ "x-ratelimit-remaining-requests": "3", "x-ratelimit-reset-requests": "1m" })).toBeNull();
+  expect(rateLimitReset({ "x-ratelimit-remaining": "0", "x-ratelimit-reset": "400000" })).toBe(86400); // capped
+  expect(rateLimitReset(null)).toBeNull();
+
+  const e = classify(429, groq, "rate limited", "groq");
+  expect(e).toBeInstanceOf(RateLimited);
+  expect(e.retryAfter).toBe(120);
+  // Retry-After still wins, and a daily-quota body without any header keeps the hour
+  expect(classify(429, { ...groq, "retry-after": "7" }, "x", "groq").retryAfter).toBe(7);
+  expect(classify(429, {}, "free-models-per-day limit", "openrouter").retryAfter).toBe(3600);
+});

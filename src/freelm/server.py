@@ -7,7 +7,11 @@ n8n, LangChain's ``ChatOpenAI``, the OpenAI SDKs, ...)::
     OPENAI_BASE_URL=http://127.0.0.1:4000/v1 OPENAI_API_KEY=freelm your-tool
 
 Endpoints: ``POST /v1/chat/completions`` (JSON or SSE with ``stream: true``),
-``GET /v1/models`` (virtual aliases + discovered models), ``GET /health``.
+``POST /v1/messages`` (+ ``/count_tokens``; the Anthropic Messages API, for
+Claude Code and the Anthropic SDKs), ``POST /v1/responses`` (the OpenAI
+Responses API, for Codex CLI), ``GET /v1/models`` (virtual aliases + discovered
+models), ``GET /health``. The last two protocols are translated to chat
+completions in ``protocols.py``, so they share the same failover.
 
 stdlib only: ``ThreadingHTTPServer`` parses HTTP; every request is handed to
 one ``AsyncFreeLLM`` living on a private event-loop thread, so key state stays
@@ -33,6 +37,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from ._version import __version__
 from .client import AsyncFreeLLM
 from .errors import BadRequest, ConfigError, FreeLLMError, NoProvidersAvailable, ProviderError
+from .protocols import COUNT_TOKENS_PATHS, PROTOCOLS, AnthropicMessages, has_images
 from .registry import _VIRTUAL, is_virtual
 from .types_compat import _ChunkStamper, wrap_completion
 
@@ -43,6 +48,7 @@ DRAIN_LIMIT = 4 * MAX_BODY
 _CHAT_PATHS = ("/v1/chat/completions", "/chat/completions")
 _MODEL_PATHS = ("/v1/models", "/models")
 _HEALTH_PATHS = ("/health", "/v1/health", "/healthz")
+ENDPOINTS = ["/v1/chat/completions", "/v1/messages", "/v1/responses", "/v1/models", "/health"]
 _LOOPBACK = ("127.0.0.1", "localhost", "::1")
 _DEFAULT_CORS_HEADERS = "Authorization, Content-Type, X-Api-Key"
 _DONE = object()
@@ -170,6 +176,28 @@ class FreeLLMServer(ThreadingHTTPServer):
             self.log(f"note: no free provider lists model {requested!r}; trying it, then {self.fallback_model!r}")
         return [requested, self.fallback_model]
 
+    def agent_chain(self, requested: Any, messages: List[Dict[str, Any]], params: Dict[str, Any]) -> Any:
+        """Model chain for the translated protocols. Agents name models no free
+        tier has ("claude-sonnet-4-5", "gpt-5-codex"): those are never sent
+        upstream — the request goes to models that can serve it (vision for
+        images, tool calling for tools, a fast one for a small-model id),
+        then ``fallback_model``."""
+        if not self.fallback_model:
+            return self.model_chain(requested)
+        if isinstance(requested, str) and requested.strip() and (
+                is_virtual(requested) or any(p.knows_model(requested) for p in self.llm.providers)):
+            return requested
+        name = requested.lower() if isinstance(requested, str) else ""
+        if has_images(messages):
+            first = "vision"
+        elif params.get("tools"):
+            first = "tools"
+        elif any(s in name for s in ("haiku", "mini", "nano", "flash")):
+            first = "fast"
+        else:
+            return self.fallback_model
+        return [first, self.fallback_model] if first != self.fallback_model else first
+
     def server_close(self) -> None:
         if self._closed:
             return
@@ -294,7 +322,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(200, self._models())
         elif path in ("/", "/v1"):
             self._send_json(200, {"name": "freelm", "version": __version__,
-                                  "endpoints": ["/v1/chat/completions", "/v1/models", "/health"]})
+                                  "endpoints": ENDPOINTS})
         else:
             self._send_json(404, _error_body(f"no route for GET {path}", "invalid_request_error", "not_found"))
 
@@ -310,26 +338,45 @@ class _Handler(BaseHTTPRequestHandler):
         path = self._path()
         if not self._guard(body_pending=True):
             return
-        if path not in _CHAT_PATHS:
+        proto = PROTOCOLS.get(path)
+        counting = path in COUNT_TOKENS_PATHS
+        if path not in _CHAT_PATHS and proto is None and not counting:
             self._no_route()
             return
+
+        def fail(status: int, message: str, *, close: bool = False) -> None:
+            if proto is not None or counting:
+                status, err = (proto or AnthropicMessages).error(status, message)
+            else:
+                err = _error_body(message, "invalid_request_error")
+            self._send_json(status, err, close=close)
+
         if "application/json" not in (self.headers.get("Content-Type") or "").lower():
             # also what keeps arbitrary web pages out: a cross-origin JSON POST
             # needs a CORS preflight, which is refused unless --cors
-            self._send_json(415, _error_body("Content-Type must be application/json", "invalid_request_error"),
-                            close=True)
+            fail(415, "Content-Type must be application/json", close=True)
             return
         try:
             body = json.loads(self._read_body())
-            if not isinstance(body, dict) or not isinstance(body.get("messages"), list):
+            if not isinstance(body, dict):
+                raise ValueError("body must be a JSON object")
+            if counting:
+                self._send_json(200, AnthropicMessages.count_tokens(body))
+                return
+            if proto is not None:
+                messages, params = proto.to_chat(body)
+            elif not isinstance(body.get("messages"), list):
                 raise ValueError("body must be an object with a 'messages' list")
         except _BodyError as e:
-            self._send_json(e.status, _error_body(str(e), "invalid_request_error"), close=not e.drained)
+            fail(e.status, str(e), close=not e.drained)
             return
         except ValueError as e:
-            self._send_json(400, _error_body(f"invalid JSON body: {e}", "invalid_request_error"))
+            fail(400, f"invalid JSON body: {e}")
             return
-        self._chat(body)
+        if proto is not None:
+            self._translated(proto, body, messages, params)
+        else:
+            self._chat(body)
 
     # -- handlers -------------------------------------------------------------
     def _models(self) -> Dict[str, Any]:
@@ -376,8 +423,31 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json(status, err)
             self._log(status, None, t0, first)
             return
-        chunked = self.request_version == "HTTP/1.1"
         stamp = _ChunkStamper()
+        write, end = self._open_sse()
+        served = None
+        try:
+            item = first
+            while item is not _DONE:
+                if isinstance(item, BaseException):
+                    _, err = _status_for(item)
+                    write(b"data: " + json.dumps(err).encode() + b"\n\n")
+                    break
+                served = served or item.get("model")
+                write(b"data: " + json.dumps(stamp(item).model_dump()).encode() + b"\n\n")
+                item = q.get()
+            write(b"data: [DONE]\n\n")
+            end()
+            self._log(200, f"stream/{served}", t0)
+        except OSError:
+            self.close_connection = True  # the client went away (any OS's flavour of it)
+        finally:
+            if not fut.done():
+                fut.cancel()  # stop pulling tokens upstream
+
+    def _open_sse(self) -> Tuple[Callable[[bytes], None], Callable[[], None]]:
+        """Send the SSE response head; returns (write, end)."""
+        chunked = self.request_version == "HTTP/1.1"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -393,24 +463,63 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(f"{len(data):x}\r\n".encode() + data + b"\r\n" if chunked else data)
             self.wfile.flush()
 
-        served = None
-        try:
-            item = first
-            while item is not _DONE:
-                if isinstance(item, BaseException):
-                    _, err = _status_for(item)
-                    write(b"data: " + json.dumps(err).encode() + b"\n\n")
-                    break
-                served = served or item.get("model")
-                write(b"data: " + json.dumps(stamp(item).model_dump()).encode() + b"\n\n")
-                item = q.get()
-            write(b"data: [DONE]\n\n")
+        def end() -> None:
             if chunked:
                 self.wfile.write(b"0\r\n\r\n")  # terminating chunk
                 self.wfile.flush()
-            self._log(200, f"stream/{served}", t0)
+
+        return write, end
+
+    def _translated(self, proto: Any, body: Dict[str, Any], messages: List[Dict[str, Any]],
+                    params: Dict[str, Any]) -> None:
+        """Serve an Anthropic Messages / OpenAI Responses request through chat()."""
+        t0 = time.monotonic()
+        llm = self.server.llm
+        model = self.server.agent_chain(body.get("model"), messages, params)
+
+        def fail(e: BaseException) -> None:
+            status, err = _status_for(e)
+            status, out = proto.error(status, err["error"]["message"])
+            self._send_json(status, out)
+            self._log(status, None, t0, e)
+
+        if not body.get("stream"):
+            try:
+                resp = self.server.bridge.run(llm.chat(messages, model=model, **params))
+            except Exception as e:  # noqa: BLE001 - mapped to an HTTP error
+                fail(e)
+                return
+            out = proto.from_completion(wrap_completion(resp).model_dump(), body)
+            self._send_json(200, out, {"X-FreeLLM-Provider": resp.provider or "", "X-FreeLLM-Model": resp.model or ""})
+            self._log(200, f"{resp.provider}/{resp.model}", t0)
+            return
+
+        q, fut = self.server.bridge.stream(lambda: llm.astream_chunks(messages, model=model, **params))
+        first = q.get()  # failover settles before we commit to a 200
+        if isinstance(first, BaseException):
+            fail(first)
+            return
+        enc = proto.stream(body)
+        write, end = self._open_sse()
+
+        def emit(events: List[Tuple[str, Dict[str, Any]]]) -> None:
+            if events:
+                write(b"".join(f"event: {name}\ndata: {json.dumps(data)}\n\n".encode() for name, data in events))
+
+        try:
+            item = first
+            while item is not _DONE and not isinstance(item, BaseException):
+                emit(enc.feed(item))
+                item = q.get()
+            if isinstance(item, BaseException):
+                status, err = _status_for(item)
+                emit(enc.error(status, err["error"]["message"]))
+            else:
+                emit(enc.finish())
+            end()
+            self._log(200, f"stream/{enc.d.model}", t0)
         except OSError:
-            self.close_connection = True  # the client went away (any OS's flavour of it)
+            self.close_connection = True  # the client went away
         finally:
             if not fut.done():
                 fut.cancel()  # stop pulling tokens upstream
@@ -420,6 +529,24 @@ class _Handler(BaseHTTPRequestHandler):
             ms = (time.monotonic() - t0) * 1000.0
             what = served or (type(err).__name__ if err else "-")
             self.server.log(f"{self.command} {self._path()} {status} {what} {ms:.0f}ms")
+
+
+def agent_env(port: int, api_key: str, env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """``env`` (default: this process's) with the Anthropic and OpenAI SDK
+    variables pointed at a freelm server on ``port`` — what ``freelm run``
+    gives the tool it launches. A real ``ANTHROPIC_API_KEY`` is blanked so the
+    tool cannot fall back to a paid account."""
+    import os
+
+    out = dict(os.environ if env is None else env)
+    root = f"http://127.0.0.1:{port}"
+    out.update({
+        "ANTHROPIC_BASE_URL": root, "ANTHROPIC_AUTH_TOKEN": api_key, "ANTHROPIC_API_KEY": "",
+        "OPENAI_BASE_URL": f"{root}/v1", "OPENAI_API_BASE": f"{root}/v1", "OPENAI_API_KEY": api_key,
+    })
+    for var in ("NO_PROXY", "no_proxy"):  # a configured proxy must not swallow the loopback calls
+        out[var] = ",".join(x for x in (out.get(var), "127.0.0.1,localhost") if x)
+    return out
 
 
 def make_server(

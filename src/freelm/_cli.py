@@ -59,7 +59,7 @@ def _build_parser() -> argparse.ArgumentParser:
     d.add_argument("--json", action="store_true", help="machine-readable output")
     d.add_argument("--timeout", type=float, default=30.0, help="seconds per key (default: 30)")
 
-    s = sub.add_parser("serve", help="run a local OpenAI-compatible endpoint (/v1/chat/completions, /v1/models)")
+    s = sub.add_parser("serve", help="run a local endpoint speaking the OpenAI (chat + responses) and Anthropic APIs")
     s.add_argument("--host", default=os.getenv("FREELM_HOST", "127.0.0.1"), help="bind address (default: 127.0.0.1)")
     s.add_argument("--port", type=int, default=int(os.getenv("FREELM_PORT") or "4000"), help="port (default: 4000)")
     s.add_argument("--api-key", default=os.getenv("FREELM_SERVER_KEY"),
@@ -69,6 +69,10 @@ def _build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-fallback", action="store_true",
                    help="don't serve unknown model ids (e.g. a tool's default 'gpt-4o') with 'auto'")
     s.add_argument("--quiet", action="store_true", help="no per-request log lines")
+    r = sub.add_parser("run", help="run a tool (claude, aider, your script...) on free models: starts a private "
+                                   "endpoint and points the tool's Anthropic/OpenAI variables at it")
+    r.add_argument("--strategy", default="smart", choices=STRATEGIES, help="provider ranking strategy")
+    r.add_argument("cmd", nargs=argparse.REMAINDER, help="the command to run, e.g. `freelm run claude`")
     return p
 
 
@@ -269,12 +273,50 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_run(args: argparse.Namespace) -> int:
+    import secrets
+    import subprocess
+    import threading
+
+    from .client import AsyncFreeLLM
+    from .config import providers_from_env
+    from .server import agent_env, make_server
+
+    cmd = args.cmd[1:] if args.cmd[:1] == ["--"] else args.cmd
+    if not cmd:
+        print("usage error: freelm run <command> [args...]   e.g. freelm run claude", file=sys.stderr)
+        return 2
+    provs = providers_from_env(_keyless())
+    token = secrets.token_hex(16)  # only the launched tool can use this endpoint
+    srv = make_server(AsyncFreeLLM(provs, strategy=args.strategy), port=0, api_key=token)
+    threading.Thread(target=srv.serve_forever, name="freelm-run", daemon=True).start()
+    port = srv.server_address[1]
+    print(f"freelm: {cmd[0]} -> http://127.0.0.1:{port} ({', '.join(p.name for p in provs)})", file=sys.stderr)
+    try:
+        proc = subprocess.Popen(cmd, env=agent_env(port, token))
+    except OSError as e:
+        print(f"error: cannot run {cmd[0]!r}: {e}", file=sys.stderr)
+        code = 127
+    else:
+        while True:
+            try:
+                code = proc.wait()
+                break
+            except KeyboardInterrupt:  # Ctrl+C goes to the tool too: wait for it to exit
+                continue
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    return code
+
+
 _COMMANDS = {
     "chat": _cmd_chat,
     "models": _cmd_models,
     "health": _cmd_health,
     "doctor": _cmd_doctor,
     "serve": _cmd_serve,
+    "run": _cmd_run,
 }
 
 

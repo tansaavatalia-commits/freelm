@@ -1,3 +1,5 @@
+import pytest
+
 from freelm._breaker import CircuitBreaker
 from freelm._keys import new_key_state
 from freelm._ratelimit import TokenBucket
@@ -150,3 +152,29 @@ def test_apply_success_zero_latency_keeps_ewma():
     assert k.ewma_latency == 100.0      # must not decay toward 0
     apply_success(cand, 200.0)
     assert k.ewma_latency == 100.0 * 0.7 + 200.0 * 0.3
+
+
+def test_rate_limit_reset_headers_give_the_exact_wait():
+    from freelm.errors import RateLimited, classify, parse_reset, rate_limit_reset
+
+    assert parse_reset("1m26.4s") == pytest.approx(86.4)
+    assert parse_reset("350ms") == pytest.approx(0.35)
+    assert parse_reset("2h") == 7200 and parse_reset("7.5") == 7.5
+    assert parse_reset("1700000060", now=1700000000) == 60          # unix seconds
+    assert parse_reset("1700000060000", now=1700000000) == 60       # unix milliseconds (OpenRouter)
+    assert parse_reset("soon") is None and parse_reset("") is None and parse_reset(None) is None
+
+    groq = {"x-ratelimit-remaining-requests": "0", "x-ratelimit-reset-requests": "2m0s",
+            "x-ratelimit-remaining-tokens": "5000", "x-ratelimit-reset-tokens": "9h"}
+    assert rate_limit_reset(groq) == 120                              # only the spent window counts
+    assert rate_limit_reset({"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700003600000"}, now=1700000000) == 3600
+    assert rate_limit_reset({"x-ratelimit-remaining": "0", "x-ratelimit-reset": "999d"}) is None
+    assert rate_limit_reset({"x-ratelimit-remaining-requests": "3", "x-ratelimit-reset-requests": "1m"}) is None
+    assert rate_limit_reset({"x-ratelimit-remaining": "0", "x-ratelimit-reset": "400000"}) == 86400  # capped
+    assert rate_limit_reset(None) is None
+
+    e = classify(429, groq, "rate limited", "groq")
+    assert isinstance(e, RateLimited) and e.retry_after == 120
+    # Retry-After still wins, and a daily-quota body without any header keeps the hour
+    assert classify(429, {**groq, "retry-after": "7"}, "x", "groq").retry_after == 7
+    assert classify(429, {}, "free-models-per-day limit", "openrouter").retry_after == 3600

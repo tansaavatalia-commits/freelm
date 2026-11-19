@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 
@@ -165,6 +166,50 @@ def parse_retry_after(value: Optional[str]) -> Optional[float]:
         return None
 
 
+_DURATION_RE = re.compile(r"^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?$")
+MAX_RESET_WAIT = 86400.0
+
+
+def parse_reset(value: Optional[str], now: Optional[float] = None) -> Optional[float]:
+    """Seconds until a rate-limit window resets, from an ``x-ratelimit-reset*``
+    header: a duration (``"1m26.4s"``, ``"350ms"`` — Groq, Cerebras), seconds,
+    or a unix timestamp in seconds or milliseconds (OpenRouter)."""
+    v = (value or "").strip().lower()
+    if not v:
+        return None
+    try:
+        n = float(v)
+    except ValueError:
+        m = _DURATION_RE.match(v)
+        if not m:
+            return None
+        h, mi, sec, ms = (float(g) if g else 0.0 for g in m.groups())
+        return h * 3600 + mi * 60 + sec + ms / 1000
+    if n != n or n < 0:
+        return None
+    if n > 1e9:  # an absolute time: ms after 1e11, else seconds
+        return max(0.0, (n / 1000 if n > 1e11 else n) - (time.time() if now is None else now))
+    return n
+
+
+def rate_limit_reset(headers: Optional[Dict[str, str]], now: Optional[float] = None) -> Optional[float]:
+    """How long a 429 asks us to wait, from ``x-ratelimit-*`` headers, when it
+    sent no ``Retry-After``: the reset of every window that is at zero
+    (requests, tokens, or the single window OpenRouter reports)."""
+    h = {k.lower(): v for k, v in (headers or {}).items()}
+    waits = []
+    for kind in ("-requests", "-tokens", ""):
+        left = (h.get(f"x-ratelimit-remaining{kind}") or "").strip()
+        try:
+            spent = left != "" and float(left) <= 0
+        except ValueError:
+            spent = False
+        wait = parse_reset(h.get(f"x-ratelimit-reset{kind}"), now) if spent else None
+        if wait is not None:
+            waits.append(wait)
+    return min(max(waits), MAX_RESET_WAIT) if waits else None
+
+
 # Retryable statuses besides the whole 5xx range (Cloudflare 52x, 501, ...).
 _TRANSIENT_STATUS = {408, 409, 425}
 # 404 Not Found / 410 Gone: the model id is unknown or retired on this provider
@@ -243,6 +288,8 @@ def classify(status: int, headers: Optional[Dict[str, str]], body: str, provider
     if status == 429:
         if any(h in low for h in _MONTHLY_HINTS):
             return QuotaExhausted(provider, status, msg)
+        if retry_after is None:
+            retry_after = rate_limit_reset(headers)  # the exact reset beats a guess
         if retry_after is None and any(h in low for h in _DAILY_HINTS):
             retry_after = DAILY_QUOTA_RETRY
         elif any(h in low for h in _DAILY_QUOTA_IDS):
