@@ -286,6 +286,44 @@ configuración, la prueba se reinicia sola y lo avisa, para no mezclar resultado
 - Con 100 €, muchas posiciones de la media serían menores que el mínimo de
   orden de Binance (≈ 5–6 €). En papel no importa; en real habría que agruparlas.
 
+### Tarjeta de aciertos de las señales (`senales`)
+
+Para entender **qué funciona y cuánto acierta**, cada señal se mide por
+separado, **se opere o no**. Si la cartera está en liquidez semanas enteras, la
+prueba en papel no dice nada; esta tarjeta sí.
+
+- Para cada día y cada moneda, cada una de las 10 variantes dice «largo» (la
+  compraría) o «fuera». A 1, 7 y 30 días se mira qué hizo la moneda.
+- **Acierto**: % de señales «largo» tras las que la moneda subió, con su
+  intervalo de Wilson del 95 %. Las muestras efectivas son n/h, porque los
+  retornos a h días se solapan.
+- **Tasa base**: % de veces que una moneda sube sin señal. Acertar el 52 % no
+  vale nada si las monedas suben el 52 % de los días de todas formas.
+- **Ventaja**: retorno medio tras «largo» menos retorno medio tras «fuera», con
+  su intervalo del 95 %.
+
+`python bot.py senales` calcula la tarjeta con la historia completa (las reglas
+son fijas, no hay nada ajustado). `--record` guarda las señales del día en
+`senales.jsonl`, y días después se puntúan con precios que nadie había visto:
+esa es la prueba fuera de muestra de verdad. `momentum-paper.yml` lo hace cada
+día y lo muestra en el resumen.
+
+**Resultado con la historia (2019–2026, 8 monedas):**
+
+| | Acierto a 7 días | Tasa base | Ventaja a 7 días (IC 95 %) |
+|---|---|---|---|
+| Mejores variantes (tsmom·50, xsmom·14, xsmom·28) | 51–52 % | 50 % | +2,3 % a +2,8 % (≈ +1,1 % a +4,0 %) ✔ |
+| Conjunto | 49 % | 50 % | +1,2 % (+0,2 %, +2,2 %) ✔ |
+| A 30 días | 49–54 % | 50 % | +1 % a +5,5 %, pero el intervalo incluye 0 |
+
+**Conclusión:** las señales **no aciertan la dirección más que el azar**
+(~50 %), y ninguna supera la tasa base con confianza. Su ventaja real y
+significativa está en **cuánto** suben: tras «largo» las monedas rinden de
+media más que tras «fuera», sobre todo porque «fuera» evita los peores tramos
+bajistas. Por eso esta familia nunca puede cumplir una regla de «acierto ≥ 77 %».
+Para los 105 agentes técnicos de `live`, la medida equivalente es su IC en vivo:
+`python bot.py status --all-agents`.
+
 ## Mejora automática (`optimize`)
 
 Un optimizador evolutivo cruza y muta configuraciones: umbrales, riesgo, stops,

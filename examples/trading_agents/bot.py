@@ -7,6 +7,7 @@
     python bot.py validate                      # walk-forward, Deflated Sharpe, PBO, sensibilidad
     python bot.py classic                       # lo mismo con momentum clásico (velas diarias)
     python bot.py momentum                      # momentum combinado en papel, 20 días (1 vez al día)
+    python bot.py senales                       # cuánto acierta cada señal (historia + en vivo)
     python bot.py live                          # tiempo real, en papel (por defecto)
     python bot.py live --exchange testnet       # órdenes en el testnet del exchange
     python bot.py gate                          # ¿listo para dinero real? (20 días)
@@ -626,6 +627,56 @@ def cmd_momentum(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_senales(args: argparse.Namespace) -> int:
+    """Tarjeta de aciertos: cuánto acierta cada señal de momentum, se opere o no."""
+    import momentum_paper as mp_
+    import signals as sg
+    import strategies as stg
+    fam = mp_.family_for(args.target_vol, None, args.risk_model)
+    path = p(args, "senales.jsonl")
+    if not args.live_only:
+        raw = load_raw(args)
+        if args.source == "binance":
+            now_ms = int(time.time() * 1000)
+            raw = {s: mp_.closed_daily(cs, now_ms) for s, cs in raw.items()}
+        if not raw:
+            raise SystemExit("sin datos")
+        panel = stg.Panel(raw)
+        start = max(c.warmup for c in fam.values())
+        if panel.n - start < 40:
+            raise SystemExit(f"pocas velas ({panel.n}); usa --limit mayor")
+        if args.record:
+            t = panel.n - 1
+            sig = sg.today_signals(panel, fam, t)
+            prices = {s: panel.close[s][t] for s in panel.syms if panel.close[s][t] == panel.close[s][t]}
+            new = sg.record(path, panel.times[t], sig, prices)
+            longs = sorted(set().union(*sig.values()))
+            print(f"Señales del {mp_.utc(panel.times[t])} " + ("registradas" if new else "ya estaban registradas")
+                  + ": " + (", ".join(f"{s} ({sum(s in v for v in sig.values())}/10)" for s in longs)
+                            or "ninguna moneda en «largo»"))
+        if not args.no_history:
+            first = time.strftime("%Y-%m-%d", time.gmtime(panel.times[start] / 1000))
+            print(f"\nTarjeta de aciertos con la HISTORIA ({first} -> {mp_.utc(panel.times[-1])}, "
+                  f"{len(panel.syms)} monedas; reglas fijas, nada ajustado a estos datos):")
+            card = sg.score_history(panel, fam, start)
+            print("\n".join(sg.format_card(card)))
+            c7 = card["conjunto"][7]
+            print(f"\n  En una frase: las señales aciertan la DIRECCIÓN un {c7['hit']:.0%} de las veces a 7 días "
+                  f"(la moneda sube sola un {c7['base']:.0%}). Su ventaja no es acertar más, sino que tras "
+                  f"«largo» la moneda rinde {c7['edge']:+.2%} más a 7 días que tras «fuera».")
+    rows = sg.load(path)
+    if rows:
+        live = sg.score_records(rows)
+        scored = max((r["n"] for k in live.values() for r in k.values()), default=0)
+        print(f"\nTarjeta de aciertos EN VIVO (señales registradas día a día, nunca vistas): {len(rows)} días "
+              f"registrados, {scored} señales ya puntuables")
+        print("\n".join(sg.format_card(live)) if scored else
+              "  todavía no ha pasado ni un día desde la primera señal registrada")
+    elif args.live_only:
+        print("Sin señales registradas todavía (usa --record una vez al día).")
+    return 0
+
+
 def cmd_bench(args: argparse.Namespace) -> int:
     args.limit = max(args.limit, WINDOW + args.steps + 10)
     data = load_universe(args)
@@ -1054,6 +1105,16 @@ def parser() -> argparse.ArgumentParser:
     mo.add_argument("--report", action="store_true", help="solo mostrar cómo va")
     mo.add_argument("--continue-after", action="store_true", help="seguir en papel después de los 20 días")
     mo.set_defaults(func=cmd_momentum)
+
+    se = sub.add_parser("senales", help="tarjeta de aciertos de cada señal (historia y registro en vivo)")
+    common(se, source_default="binance", limit=3000)
+    se.set_defaults(interval="1d")
+    se.add_argument("--target-vol", type=float, default=0.05)
+    se.add_argument("--risk-model", choices=["cov", "corr1"], default="cov")
+    se.add_argument("--record", action="store_true", help="registrar las señales del último día cerrado")
+    se.add_argument("--no-history", action="store_true", help="no calcular la tarjeta con la historia")
+    se.add_argument("--live-only", action="store_true", help="solo la tarjeta en vivo (sin descargar nada)")
+    se.set_defaults(func=cmd_senales)
 
     be = sub.add_parser("bench", help="medir señales por segundo")
     common(be)

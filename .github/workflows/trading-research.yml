@@ -80,12 +80,14 @@ jobs:
           python "$BOT" classic --source binance --limit 3000 --dir r > classic.txt 2>&1 || rc=$?
           cat classic.txt
           [ "$rc" -eq 0 ] || [ "$rc" -eq 3 ]
+      - name: "8. Tarjeta de aciertos de las señales (historia completa, velas diarias)"
+        run: python "$BOT" senales --source binance --limit 3000 --dir r 2>&1 | tee senales.txt
       - name: Resumen
         if: always()
         run: |
           {
             echo "## Investigación con datos reales de Binance"
-            for f in bt-1h.txt bt-1h-limit.txt bt-4h.txt bt-5m.txt bt-5m-limit.txt opt.txt bt-champ.txt val-4h.txt val-1h.txt classic.txt; do
+            for f in bt-1h.txt bt-1h-limit.txt bt-4h.txt bt-5m.txt bt-5m-limit.txt opt.txt bt-champ.txt val-4h.txt val-1h.txt classic.txt senales.txt; do
               [ -f "$f" ] || continue
               echo "### $f"
               echo '```'
