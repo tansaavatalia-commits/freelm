@@ -12,12 +12,15 @@ long_video_slot = "17:00"
 # "public"   = pubblica subito;  "private" = resta privato (revisione manuale in YouTube Studio)
 privacy_mode = "schedule"
 llm_model = "chat"                       # alias freelm: chat | large | fast | auto
+panel_models = ["chat", "large", "fast"] # giuria del pubblico: modelli diversi = giudizi indipendenti
 max_parallel_videos = 3                  # video in produzione contemporaneamente (per canale)
 max_parallel_renders = 2                 # render ffmpeg simultanei (tutto il sistema)
 min_quality_score = 7                    # 0-10: sotto questa soglia lo script viene riscritto
 max_rewrites = 2
 upload_quota_cost = 1600                 # unità quota YouTube per upload (stima prudente)
 daily_quota = 10000                      # quota giornaliera del progetto Google Cloud
+ai_images = true                         # immagini AI per scena (Pollinations, gratis, senza chiave)
+shot_seconds = 2.8                       # durata massima di un'inquadratura: tagli frequenti = più ritenzione
 
 # ---------------------------------------------------------------------------
 [[channel]]
@@ -29,37 +32,40 @@ voice = "it-IT-DiegoNeural"
 niche = "curiosità incredibili ma vere: scienza, corpo umano, storia, psicologia, animali"
 audience = "italiani 16-40 anni che scorrono gli Shorts e amano dire 'non lo sapevo!'"
 style = "ritmo veloce, tono stupito ma credibile, un fatto verificabile per video, chiusura che invita a commentare"
+visual_style = "vivid cinematic photography, high contrast, shallow depth of field, editorial science magazine look"
 keywords = ["curiosità", "lo sapevi", "fatti incredibili", "psicologia", "scienza"]
 category_id = "27"                       # Education
 palette = ["#0b1020", "#1e3a8a", "#facc15"]  # sfondo, sfondo 2, accento
-seed_channel_ids = []                    # ID di canali concorrenti da monitorare via RSS (UC...)
+seed_channel_ids = []                    # ID di canali da studiare via RSS (UC...)
 affiliate_links = []                     # es. ["Libro consigliato: https://amzn.to/..."]
 
 [[channel]]
-id = "soldi"
-name = "Soldi Smart"
-language = "it"
-region = "IT"
-voice = "it-IT-IsabellaNeural"
-niche = "risparmio, finanza personale pratica, trucchi per spendere meno, lavoro e strumenti AI per guadagnare"
-audience = "italiani 20-45 anni che vogliono risparmiare e capire i soldi senza gergo"
-style = "pratico, numeri concreti, zero promesse di ricchezza, mai consigli di investimento personalizzati"
-keywords = ["risparmiare soldi", "finanza personale", "come risparmiare", "trucchi soldi", "lavoro online"]
-category_id = "22"                       # People & Blogs (RPM alto per la nicchia finanza)
-palette = ["#052e16", "#14532d", "#4ade80"]
+id = "money"
+name = "Money Decoded"
+language = "en"
+region = "US"
+voice = "en-US-AndrewNeural"
+niche = "personal finance made simple: saving hacks, money psychology, hidden fees, side income, how the rich think about money"
+audience = "US/UK adults 20-40 who want to stop living paycheck to paycheck, skeptical of get-rich-quick content"
+style = "sharp, numbers-driven, myth-busting, zero hype, never personalized investment advice, always practical takeaway"
+visual_style = "clean modern finance editorial, dramatic lighting, close-ups of cash, receipts, city skylines, minimal"
+keywords = ["money tips", "how to save money", "personal finance", "money psychology", "side hustle"]
+category_id = "27"                       # Education (finance = RPM tra i più alti di YouTube)
+palette = ["#04130c", "#14532d", "#4ade80"]
 seed_channel_ids = []
 affiliate_links = []
 
 [[channel]]
-id = "misteri"
-name = "Misteri del Mondo"
-language = "it"
-region = "IT"
-voice = "it-IT-GiuseppeMultilingualNeural"
-niche = "misteri irrisolti, luoghi incredibili, enigmi storici, fenomeni inspiegabili"
-audience = "italiani 16-45 anni appassionati di misteri e storie che fanno venire i brividi"
-style = "narrativo, suspense, frasi corte, finale con domanda aperta; niente cronaca nera recente né vittime reali"
-keywords = ["misteri irrisolti", "luoghi misteriosi", "storie vere", "enigmi", "inspiegabile"]
+id = "mysteries"
+name = "Unsolved Files"
+language = "en"
+region = "US"
+voice = "en-US-ChristopherNeural"
+niche = "unsolved mysteries, strange places, historical enigmas, unexplained phenomena, lost civilizations"
+audience = "English speakers 16-45 who love mysteries, documentaries and stories that give chills"
+style = "documentary narrator, suspense, short punchy sentences, open loop until the reveal, ends with a question; no recent real crime victims"
+visual_style = "dark cinematic documentary, moody fog, film grain, dramatic chiaroscuro lighting, mysterious atmosphere"
+keywords = ["unsolved mysteries", "creepy places", "mysteries of the world", "unexplained", "ancient mysteries"]
 category_id = "24"                       # Entertainment
 palette = ["#0c0a09", "#3b0764", "#c084fc"]
 seed_channel_ids = []

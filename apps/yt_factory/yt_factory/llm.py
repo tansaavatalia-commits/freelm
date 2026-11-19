@@ -52,7 +52,8 @@ class Brain:
         self.log = log or (lambda *a: None)
         self.calls = 0
 
-    async def ask(self, system: str, user: str, *, max_tokens: int = 6000, temperature: float = 0.8) -> str:
+    async def ask(self, system: str, user: str, *, max_tokens: int = 6000, temperature: float = 0.8,
+                  model: Optional[str] = None) -> str:
         """I modelli gratuiti "reasoning" spendono token a pensare: se la risposta esce vuota o troncata,
         si riprova con un budget doppio."""
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -60,7 +61,7 @@ class Brain:
         async with self.sem:
             for attempt in range(3):
                 self.calls += 1
-                r = await self.llm.chat(msgs, model=self.model, max_tokens=budget, temperature=temperature)
+                r = await self.llm.chat(msgs, model=model or self.model, max_tokens=budget, temperature=temperature)
                 choice = r.choices[0]
                 out = (choice.message.content or "").strip()
                 if out and choice.finish_reason != "length":
@@ -71,12 +72,13 @@ class Brain:
             return out
         raise RuntimeError("nessuna risposta dai provider gratuiti")
 
-    async def ask_json(self, system: str, user: str, *, schema: str, max_tokens: int = 6000) -> Dict[str, Any]:
+    async def ask_json(self, system: str, user: str, *, schema: str, max_tokens: int = 6000,
+                       model: Optional[str] = None, temperature: float = 0.8) -> Dict[str, Any]:
         """Chiede JSON; se non è valido, rimanda l'errore al modello e riprova."""
-        sys_prompt = f"{system}\n\nRispondi SOLO con JSON valido (nessun testo fuori dal JSON) con questa forma:\n{schema}"
+        sys_prompt = f"{system}\n\nAnswer ONLY with valid JSON (no text outside the JSON) shaped like this:\n{schema}"
         prompt, last_err = user, None
         for _ in range(3):
-            raw = await self.ask(sys_prompt, prompt, max_tokens=max_tokens)
+            raw = await self.ask(sys_prompt, prompt, max_tokens=max_tokens, model=model, temperature=temperature)
             try:
                 data = extract_json(raw)
                 if isinstance(data, dict):
@@ -84,7 +86,7 @@ class Brain:
                 return {"items": data}
             except (ValueError, json.JSONDecodeError) as e:
                 last_err = e
-                prompt = f"{user}\n\nLa tua risposta precedente non era JSON valido ({e}). Rispondi solo con il JSON, più breve."
+                prompt = f"{user}\n\nYour previous answer was not valid JSON ({e}). Reply with the JSON only, shorter."
         raise RuntimeError(f"JSON non valido dopo 3 tentativi: {last_err}")
 
     async def aclose(self) -> None:

@@ -9,6 +9,7 @@ Fonti, tutte gratuite:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import xml.etree.ElementTree as ET
@@ -54,7 +55,8 @@ async def channel_rss(http: httpx.AsyncClient, channel_id: str) -> List[Dict[str
         stats = e.find(".//m:statistics", NS)
         views = int(stats.get("views", 0)) if stats is not None else 0
         published = e.findtext("a:published", default="", namespaces=NS)
-        out.append({"title": e.findtext("a:title", default="", namespaces=NS), "views": views,
+        out.append({"id": e.findtext("yt:videoId", default="", namespaces=NS) or None,
+                    "title": e.findtext("a:title", default="", namespaces=NS), "views": views,
                     "published": published, "views_per_hour": _velocity(views, published), "source": "rss"})
     return out
 
@@ -90,11 +92,13 @@ async def yt_search(http: httpx.AsyncClient, key: str, query: str, region: str, 
 def _video_item(i: Dict[str, Any], source: str) -> Dict[str, Any]:
     views = int(i.get("statistics", {}).get("viewCount", 0))
     published = i.get("snippet", {}).get("publishedAt", "")
-    return {"title": i["snippet"]["title"], "views": views, "published": published,
-            "views_per_hour": _velocity(views, published), "source": source}
+    return {"id": i.get("id") if isinstance(i.get("id"), str) else None, "title": i["snippet"]["title"],
+            "views": views, "published": published, "views_per_hour": _velocity(views, published), "source": source}
 
 
 async def collect(ch: Channel, http: httpx.AsyncClient, log=lambda *a: None) -> Dict[str, Any]:
+    if os.environ.get("YTF_OFFLINE"):
+        return {"videos": [], "searches": [], "live_youtube": False, "collected_at": ""}
     key = os.environ.get("YT_API_KEY", "")
     jobs: List[Any] = [google_trends(http, ch.region)]
     jobs += [channel_rss(http, cid) for cid in ch.seed_channel_ids]
@@ -117,6 +121,51 @@ async def collect(ch: Channel, http: httpx.AsyncClient, log=lambda *a: None) -> 
             uniq.append(v)
     return {"videos": uniq[:40], "searches": searches[:20],
             "live_youtube": bool(key or ch.seed_channel_ids), "collected_at": datetime.now(timezone.utc).isoformat()}
+
+
+# --------------------------------------------------------------------------- segnali del pubblico
+PREFIXES = {"en": ["why", "how", "what if"], "it": ["perché", "come", "cosa succede se"]}
+
+
+async def youtube_suggest(http: httpx.AsyncClient, query: str, lang: str) -> List[str]:
+    """Autocompletamento di ricerca YouTube (senza chiave): cosa la gente cerca davvero."""
+    r = await http.get("https://suggestqueries.google.com/complete/search",
+                       params={"client": "firefox", "ds": "yt", "hl": lang, "q": query})
+    r.raise_for_status()
+    data = json.loads(r.content.decode(r.encoding or "utf-8", errors="replace"))
+    return [s for s in data[1] if isinstance(s, str)]
+
+
+async def top_comments(http: httpx.AsyncClient, key: str, video_id: str) -> List[str]:
+    r = await http.get(f"{YT}/commentThreads", params={"part": "snippet", "videoId": video_id, "order": "relevance",
+                                                         "maxResults": 20, "textFormat": "plainText", "key": key})
+    r.raise_for_status()
+    out = []
+    for it in r.json().get("items", []):
+        c = it["snippet"]["topLevelComment"]["snippet"]
+        if c.get("likeCount", 0) >= 3:
+            out.append(c["textDisplay"][:220].replace("\n", " "))
+    return out
+
+
+async def audience(ch: Channel, http: httpx.AsyncClient, videos: List[Dict[str, Any]], log=lambda *a: None) -> Dict[str, Any]:
+    if os.environ.get("YTF_OFFLINE"):
+        return {"suggestions": [], "comments": []}
+    queries = list(ch.keywords[:4])
+    queries += [f"{p} {kw}" for kw in ch.keywords[:2] for p in PREFIXES.get(ch.language, PREFIXES["en"])]
+    key = os.environ.get("YT_API_KEY", "")
+    jobs: List[Any] = [youtube_suggest(http, q, ch.language) for q in queries]
+    top_ids = [v["id"] for v in videos if v.get("id")][:3] if key else []
+    jobs += [top_comments(http, key, vid) for vid in top_ids]
+    res = await asyncio.gather(*jobs, return_exceptions=True)
+    sugg: List[str] = []
+    comments: List[str] = []
+    for i, r in enumerate(res):
+        if isinstance(r, Exception):
+            log(f"segnale pubblico {i} non disponibile: {_short(r)}")
+            continue
+        (sugg if i < len(queries) else comments).extend(r)
+    return {"suggestions": list(dict.fromkeys(sugg))[:60], "comments": comments[:45]}
 
 
 def _short(e: Exception) -> str:

@@ -63,7 +63,7 @@ async def _async(args, s) -> int:
         if args.offline:
             from .offline import OfflineBrain
 
-            os.environ["YTF_OFFLINE_TTS"] = "1"
+            os.environ.update(YTF_OFFLINE_TTS="1", YTF_OFFLINE="1", YTF_NO_AI_IMAGES="1")
             brain = OfflineBrain()
         f = Factory(s, dry_run=not args.publish, brain=brain)
         try:

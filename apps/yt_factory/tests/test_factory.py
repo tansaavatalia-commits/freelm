@@ -95,6 +95,8 @@ def test_description_and_publish_time(tmp_path):
 @pytest.mark.skipif(not shutil.which("ffmpeg"), reason="serve ffmpeg")
 def test_offline_day_end_to_end(tmp_path, monkeypatch):
     monkeypatch.setenv("YTF_OFFLINE_TTS", "1")
+    monkeypatch.setenv("YTF_OFFLINE", "1")
+    monkeypatch.setenv("YTF_NO_AI_IMAGES", "1")
     s = _settings(tmp_path)
 
     async def no_trends(ch, http, log=None):
@@ -166,3 +168,69 @@ def test_upload_request_shape(tmp_path, monkeypatch):
     assert st["privacyStatus"] == "private" and st["publishAt"] == "2030-01-01T10:00:00Z"
     assert st["containsSyntheticMedia"] is True and st["selfDeclaredMadeForKids"] is False
     assert seen["meta"]["snippet"]["tags"] == ["a", "b"] and seen["bytes"] == 1000
+
+
+def test_plan_shots_alternate_and_cover_timeline(tmp_path):
+    img, clip = tmp_path / "i.jpg", tmp_path / "c.mp4"
+    times = [(0.0, 7.5), (7.5, 9.5)]
+    shots = render.plan_shots(times, [{"image": img, "stock": clip}, {"image": None, "stock": None}], 2.8)
+    assert shots[0]["start"] == 0 and shots[-1]["end"] == 9.5
+    assert all(s["end"] - s["start"] <= 3.1 for s in shots)
+    first = [s for s in shots if s["scene"] == 0]
+    assert [s["kind"] for s in first] == ["image", "video", "image"]       # alterna AI e stock
+    assert len({s["motion"] for s in shots}) == len(shots)                 # movimento diverso a ogni taglio
+    assert shots[-1]["path"] is None                                       # fallback: grafica generata
+
+
+def test_ai_image_crops_watermark_and_caches(tmp_path, monkeypatch):
+    import io
+
+    import httpx
+    from PIL import Image
+
+    from yt_factory import visuals
+
+    monkeypatch.delenv("YTF_NO_AI_IMAGES", raising=False)
+    calls = []
+
+    def handler(req):
+        calls.append(str(req.url))
+        buf = io.BytesIO()
+        Image.new("RGB", (768, 1472), (200, 10, 10)).save(buf, "JPEG")
+        return httpx.Response(200, content=buf.getvalue(), headers={"content-type": "image/jpeg"})
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            a = await visuals.ai_image(http, "foggy castle", "dark cinematic", "short", 7, tmp_path)
+            b = await visuals.ai_image(http, "foggy castle", "dark cinematic", "short", 7, tmp_path)
+            return a, b
+
+    a, b = asyncio.run(go())
+    assert a == b and len(calls) == 1                       # cache: una sola richiesta
+    w, h = Image.open(a).size
+    assert w >= 1080 * 1.15 - 1 and h >= 1920 * 1.15 - 1    # pronto per il movimento di camera
+    assert "foggy%20castle" in calls[0] and "seed=7" in calls[0]
+
+
+def test_hook_panel_picks_highest_average(tmp_path):
+    s = _settings(tmp_path)
+
+    class Brain(OfflineBrain):
+        async def ask_json(self, system, user, *, schema, max_tokens=0, model=None, temperature=0.0):
+            if '"hooks"' in schema:
+                return {"hooks": ["debole", "forte", "medio"]}
+            if '"scores"' in schema:
+                return {"scores": {"chat": [2, 9, 6], "large": [3, 8, 9], "fast": [1, 9, 5]}[model]}
+            return await super().ask_json(system, user, schema=schema)
+
+    f = pipeline.Factory(s, brain=Brain())
+    hook = asyncio.run(f.best_hook(s.channel("mysteries"), {"topic": "t"}, "#1"))
+    assert hook == "forte"
+    f.db.close()
+
+
+def test_english_channels_configured(tmp_path):
+    s = _settings(tmp_path)
+    langs = {c.id: c.language for c in s.channels}
+    assert list(langs.values()).count("en") == 2 and langs["fatti"] == "it"
+    assert all(c.voice.startswith(c.language) for c in s.channels)

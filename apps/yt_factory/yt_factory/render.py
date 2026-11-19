@@ -1,14 +1,15 @@
-"""Team produzione: sfondi, sottotitoli animati, montaggio ffmpeg, miniature.
+"""Reparto montaggio: inquadrature dinamiche, sottotitoli animati, barra di avanzamento, effetti sonori, ffmpeg.
 
-Video verticali 1080x1920 (Shorts) o orizzontali 1920x1080 (video lunghi):
-- sfondo per scena: clip stock gratuite Pexels (se PEXELS_API_KEY) altrimenti grafica generata con effetto Ken Burns;
-- sottotitoli "parola evidenziata" sincronizzati con la voce (stile Shorts virali), testo a schermo per scena;
-- musica di sottofondo opzionale da assets/music/*.mp3 (solo brani royalty-free, es. YouTube Audio Library).
+Tecniche di ritenzione dei canali Shorts migliori:
+- un taglio ogni ~2.8 s (`shot_seconds`), alternando immagini AI in movimento (zoom in/out, panoramiche) e clip stock;
+- sottotitoli a gruppi corti, parola attiva colorata con effetto "pop";
+- testo a schermo per scena in alto, barra di avanzamento in basso;
+- "whoosh" sintetico (nessun copyright) a ogni cambio di scena, musica royalty-free opzionale sotto la voce.
 """
 from __future__ import annotations
 
 import asyncio
-import hashlib
+import math
 import os
 import random
 import shutil
@@ -16,22 +17,17 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import httpx
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 from .tts import Word
+from .visuals import SIZES, _rgb, generated_background
 
-SIZES = {"short": (1080, 1920), "long": (1920, 1080)}
 FPS = 30
 FONT_NAME = "DejaVu Sans"  # presente su Ubuntu/GitHub Actions; usata da libass via fontconfig
+MOTIONS = ("zoom_in", "pan_right", "zoom_out", "pan_up", "pan_left")
 
 
 # --------------------------------------------------------------------------- utilità
-def _rgb(hex_color: str) -> Tuple[int, int, int]:
-    h = hex_color.lstrip("#")
-    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-
-
 def _ass_color(hex_color: str) -> str:
     r, g, b = _rgb(hex_color)
     return f"&H00{b:02X}{g:02X}{r:02X}"
@@ -79,7 +75,7 @@ def duration(path: Path) -> float:
     return float(out.strip())
 
 
-# --------------------------------------------------------------------------- tempi delle scene
+# --------------------------------------------------------------------------- tempi
 def scene_times(scenes: Sequence[Dict[str, Any]], words: Sequence[Word], total: float) -> List[Tuple[float, float]]:
     """Divide la timeline fra le scene in proporzione ai caratteri, agganciandosi ai confini delle parole."""
     lengths = [max(len(s.get("text", "")), 1) for s in scenes]
@@ -94,31 +90,49 @@ def scene_times(scenes: Sequence[Dict[str, Any]], words: Sequence[Word], total: 
     return [(bounds[i], bounds[i + 1]) for i in range(len(scenes))]
 
 
+def plan_shots(times: Sequence[Tuple[float, float]], assets: Sequence[Dict[str, Optional[Path]]],
+               shot_seconds: float) -> List[Dict[str, Any]]:
+    """Spezza ogni scena in inquadrature brevi alternando immagine AI (movimenti diversi) e clip stock."""
+    shots: List[Dict[str, Any]] = []
+    m = 0
+    for i, (a, b) in enumerate(times):
+        n = max(1, math.ceil((b - a) / shot_seconds - 0.15))
+        step = (b - a) / n
+        asset = assets[i] if i < len(assets) else {}
+        for k in range(n):
+            use_stock = asset.get("stock") is not None and (k % 2 == 1 or asset.get("image") is None)
+            shots.append({"scene": i, "start": a + k * step, "end": a + (k + 1) * step,
+                          "kind": "video" if use_stock else "image",
+                          "path": asset.get("stock") if use_stock else asset.get("image"),
+                          "motion": MOTIONS[m % len(MOTIONS)]})
+            m += 1
+    return shots
+
+
 # --------------------------------------------------------------------------- sottotitoli ASS
 def build_ass(words: Sequence[Word], scenes: Sequence[Dict[str, Any]], times: Sequence[Tuple[float, float]],
               fmt: str, palette: Sequence[str], out: Path) -> None:
     w, h = SIZES[fmt]
     accent = _ass_color(palette[-1])
     accent_inline = _ass_inline(palette[-1])
-    big = 92 if fmt == "short" else 64
+    big = 96 if fmt == "short" else 64
     group = 3 if fmt == "short" else 6
-    cap_y = int(h * 0.68) if fmt == "short" else int(h * 0.86)
+    cap_y = int(h * 0.66) if fmt == "short" else int(h * 0.86)
     lines = [
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {w}", f"PlayResY: {h}", "WrapStyle: 0", "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
         "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, "
         "MarginR, MarginV, Encoding",
-        f"Style: Cap,{FONT_NAME},{big},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,3,5,60,60,0,1",
-        f"Style: Top,{FONT_NAME},{int(big * 0.75)},{accent},&H00FFFFFF,&H00000000,&HA0000000,-1,0,0,0,100,100,0,0,3,18,0,8,80,80,{int(h * 0.12)},1",
+        f"Style: Cap,{FONT_NAME},{big},&H00FFFFFF,&H00FFFFFF,&H00000000,&H78000000,-1,0,0,0,100,100,0,0,1,8,4,5,60,60,0,1",
+        f"Style: Top,{FONT_NAME},{int(big * 0.72)},{accent},&H00FFFFFF,&H00000000,&HA0000000,-1,0,0,0,100,100,0,0,3,18,0,8,80,80,{int(h * 0.11)},1",
         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
-    # testo a schermo per scena (in alto)
     for s, (a, b) in zip(scenes, times):
         txt = _esc(str(s.get("on_screen", "")).upper())
         if txt:
-            lines.append(f"Dialogue: 1,{_ts(a)},{_ts(b)},Top,,0,0,0,,{{\\fad(150,150)}}{txt}")
-    # sottotitoli a gruppi, parola attiva colorata e leggermente ingrandita
+            lines.append(f"Dialogue: 1,{_ts(a)},{_ts(b)},Top,,0,0,0,,"
+                         f"{{\\fad(120,120)\\fscx70\\fscy70\\t(0,140,\\fscx100\\fscy100)}}{txt}")
     groups: List[List[Word]] = []
     for i, wd in enumerate(words):  # nuovo gruppo se pieno, a fine frase o dopo una pausa della voce
         prev = words[i - 1] if i else None
@@ -128,100 +142,67 @@ def build_ass(words: Sequence[Word], scenes: Sequence[Dict[str, Any]], times: Se
     for gi, grp in enumerate(groups):
         nxt = groups[gi + 1][0].start if gi + 1 < len(groups) else grp[-1].end + 0.4
         for wi, cur in enumerate(grp):
-            start = cur.start
             end = grp[wi + 1].start if wi + 1 < len(grp) else nxt
+            pop = "\\fscx80\\fscy80\\t(0,90,\\fscx100\\fscy100)" if wi == 0 else ""
             parts = []
             for wj, ww in enumerate(grp):
                 t = _esc(ww.text.upper())
-                parts.append(f"{{\\c{accent_inline}\\fscx110\\fscy110}}{t}{{\\c&H00FFFFFF&\\fscx100\\fscy100}}" if wj == wi else t)
-            lines.append(f"Dialogue: 2,{_ts(start)},{_ts(end)},Cap,,0,0,0,,{{\\pos({w // 2},{cap_y})}}" + " ".join(parts))
+                parts.append(f"{{\\c{accent_inline}\\fscx115\\fscy115}}{t}{{\\c&HFFFFFF&\\fscx100\\fscy100}}"
+                             if wj == wi else t)
+            lines.append(f"Dialogue: 2,{_ts(cur.start)},{_ts(end)},Cap,,0,0,0,,"
+                         f"{{\\pos({w // 2},{cap_y}){pop}}}" + " ".join(parts))
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-# --------------------------------------------------------------------------- sfondi
-def generated_background(fmt: str, palette: Sequence[str], seed: str, out: Path) -> Path:
-    """Grafica astratta (gradiente + forme sfocate) leggermente più grande del video per il Ken Burns."""
+# --------------------------------------------------------------------------- inquadrature
+def _image_filter(motion: str, d: float, fmt: str) -> str:
     w, h = SIZES[fmt]
-    W, H = int(w * 1.15), int(h * 1.15)
-    rnd = random.Random(seed)
-    c1, c2, acc = (_rgb(c) for c in (palette[0], palette[1 % len(palette)], palette[-1]))
-    img = Image.new("RGB", (W, H), c1)
-    d = ImageDraw.Draw(img)
-    for y in range(H):  # gradiente verticale
-        k = y / H
-        d.line([(0, y), (W, y)], fill=tuple(int(c1[i] * (1 - k) + c2[i] * k) for i in range(3)))
-    blobs = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    bd = ImageDraw.Draw(blobs)
-    for _ in range(6):
-        r = rnd.randint(W // 8, W // 3)
-        x, y = rnd.randint(0, W), rnd.randint(0, H)
-        col = acc if rnd.random() < 0.4 else c2
-        bd.ellipse([x - r, y - r, x + r, y + r], fill=(*col, rnd.randint(40, 110)))
-    blobs = blobs.filter(ImageFilter.GaussianBlur(W // 12))
-    img = Image.alpha_composite(img.convert("RGBA"), blobs).convert("RGB")
-    img.save(out, quality=92)
-    return out
+    n = max(int(d * FPS), 1)
+    if motion in ("zoom_in", "zoom_out"):
+        z = f"1+0.16*on/{n}" if motion == "zoom_in" else f"1.16-0.16*on/{n}"
+        return (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
+                f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={w}x{h}:fps={FPS},format=yuv420p")
+    x, y = {"pan_right": ("(iw-ow)*t/{d}", "(ih-oh)/2"), "pan_left": ("(iw-ow)*(1-t/{d})", "(ih-oh)/2"),
+            "pan_up": ("(iw-ow)/2", "(ih-oh)*(1-t/{d})")}[motion]
+    dd = f"{d:.3f}"
+    return (f"scale={int(w * 1.15)}:{int(h * 1.15)}:force_original_aspect_ratio=increase,"
+            f"crop={w}:{h}:x='{x.format(d=dd)}':y='{y.format(d=dd)}',fps={FPS},format=yuv420p")
 
 
-async def pexels_clip(http: httpx.AsyncClient, query: str, fmt: str, cache: Path) -> Optional[Path]:
-    key = os.environ.get("PEXELS_API_KEY")
-    if not key or not query:
-        return None
-    cache.mkdir(parents=True, exist_ok=True)
-    tag = hashlib.sha1(f"{fmt}:{query}".encode()).hexdigest()[:12]
-    hits = sorted(cache.glob(f"{tag}_*.mp4"))
-    if hits:
-        return random.choice(hits)
-    orient = "portrait" if fmt == "short" else "landscape"
-    r = await http.get("https://api.pexels.com/videos/search", headers={"Authorization": key},
-                       params={"query": query, "orientation": orient, "size": "medium", "per_page": 6})
-    if r.status_code != 200:
-        return None
-    target = SIZES[fmt][1]
-    paths: List[Path] = []
-    for i, v in enumerate(r.json().get("videos", [])[:3]):
-        files = [f for f in v.get("video_files", []) if f.get("file_type") == "video/mp4" and f.get("height")]
-        if not files:
-            continue
-        best = min(files, key=lambda f: abs(f["height"] - target))
-        p = cache / f"{tag}_{i}.mp4"
-        async with http.stream("GET", best["link"]) as resp:
-            if resp.status_code != 200:
-                continue
-            with open(p, "wb") as fh:
-                async for chunk in resp.aiter_bytes():
-                    fh.write(chunk)
-        paths.append(p)
-    return random.choice(paths) if paths else None
+async def shot_clip(shot: Dict[str, Any], fmt: str, palette: Sequence[str], workdir: Path, idx: int) -> Path:
+    w, h = SIZES[fmt]
+    d = shot["end"] - shot["start"]
+    clip = workdir / f"shot_{idx:03d}.mp4"
+    enc = ["-t", f"{d:.3f}", "-r", str(FPS), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+           "-pix_fmt", "yuv420p", str(clip)]
+    if shot["kind"] == "video" and shot["path"]:
+        vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={FPS},"
+              "eq=brightness=-0.08:saturation=1.12,format=yuv420p")
+        await _run("ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", str(shot["path"]), "-vf", vf, *enc)
+        return clip
+    img = shot["path"] or generated_background(fmt, palette, f"{workdir.name}-{shot['scene']}",
+                                               workdir / f"bg_{shot['scene']:02d}.jpg")
+    vf = _image_filter(shot["motion"], d, fmt) + ",eq=contrast=1.05:saturation=1.08"
+    loop = [] if shot["motion"].startswith("zoom") else ["-loop", "1"]
+    await _run("ffmpeg", "-y", "-loglevel", "error", *loop, "-i", str(img), "-vf", vf, *enc)
+    return clip
 
 
-# --------------------------------------------------------------------------- montaggio
 async def render(*, scenes: List[Dict[str, Any]], words: List[Word], audio: Path, out: Path, fmt: str,
-                 palette: Sequence[str], workdir: Path, http: httpx.AsyncClient, stock_cache: Path,
-                 music_dir: Optional[Path] = None) -> Path:
+                 palette: Sequence[str], workdir: Path, assets: Sequence[Dict[str, Optional[Path]]],
+                 shot_seconds: float = 2.8, music_dir: Optional[Path] = None) -> Path:
     workdir.mkdir(parents=True, exist_ok=True)
     w, h = SIZES[fmt]
-    total = duration(audio) + 0.3
+    total = duration(audio) + 0.35
     times = scene_times(scenes, words, total)
-    clips: List[Path] = []
-    for i, (scene, (a, b)) in enumerate(zip(scenes, times)):
-        d = b - a
-        clip = workdir / f"scene_{i:02d}.mp4"
-        stock = await pexels_clip(http, str(scene.get("visual", "")), fmt, stock_cache)
-        common = ["-r", str(FPS), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"]
-        if stock:
-            vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={FPS},"
-                  "eq=brightness=-0.10:saturation=1.1,format=yuv420p")
-            await _run("ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", str(stock),
-                       "-t", f"{d:.3f}", "-vf", vf, *common, str(clip))
-        else:
-            img = generated_background(fmt, palette, f"{out.stem}-{i}", workdir / f"bg_{i:02d}.jpg")
-            direction = "(iw-ow)*t/{d}" if i % 2 == 0 else "(iw-ow)*(1-t/{d})"
-            vf = (f"crop={w}:{h}:x='{direction.format(d=f'{d:.3f}')}':y='(ih-oh)*t/{d:.3f}',fps={FPS},format=yuv420p")
-            await _run("ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", str(img),
-                       "-t", f"{d:.3f}", "-vf", vf, *common, str(clip))
-        clips.append(clip)
+    shots = plan_shots(times, assets, shot_seconds if fmt == "short" else shot_seconds * 2)
+    sem = asyncio.Semaphore(3)
 
+    async def one(i: int, s: Dict[str, Any]) -> Path:
+        async with sem:
+            return await shot_clip(s, fmt, palette, workdir, i)
+
+    clips = await asyncio.gather(*(one(i, s) for i, s in enumerate(shots)))
     concat = workdir / "concat.txt"
     concat.write_text("".join(f"file '{c.resolve()}'\n" for c in clips))
     joined = workdir / "joined.mp4"
@@ -230,33 +211,58 @@ async def render(*, scenes: List[Dict[str, Any]], words: List[Word], audio: Path
     ass = workdir / "captions.ass"
     build_ass(words, scenes, times, fmt, palette, ass)
     ass_arg = str(ass.resolve()).replace("\\", "/").replace(":", "\\:").replace("'", "\\'")
+    whoosh = workdir / "whoosh.wav"
+    await _run("ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+               "anoisesrc=d=0.45:c=pink:a=0.6,highpass=f=500,lowpass=f=7000,"
+               "afade=t=in:d=0.15,afade=t=out:st=0.15:d=0.3", "-ar", "44100", "-ac", "2", str(whoosh))
 
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(joined), "-i", str(audio), "-i", str(whoosh)]
+    cuts = [a for a, _ in times[1:]]
+    a_graph = ["[1:a]aresample=44100,aformat=channel_layouts=stereo,volume=1.0[voice]"]
+    mix = ["[voice]"]
+    if cuts:
+        a_graph.append(f"[2:a]asplit={len(cuts)}" + "".join(f"[w{i}]" for i in range(len(cuts))))
+        for i, t in enumerate(cuts):
+            ms = max(int((t - 0.2) * 1000), 0)
+            a_graph.append(f"[w{i}]adelay={ms}|{ms},volume=0.22[wd{i}]")
+            mix.append(f"[wd{i}]")
     music = sorted(music_dir.glob("*.mp3")) if music_dir and music_dir.exists() else []
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(joined), "-i", str(audio)]
     if music:
         cmd += ["-stream_loop", "-1", "-i", str(random.choice(music))]
-        audio_filter = "[1:a]volume=1.0[v];[2:a]volume=0.08[m];[v][m]amix=inputs=2:duration=first:dropout_transition=0[aout]"
-    else:
-        audio_filter = "[1:a]anull[aout]"
-    cmd += ["-filter_complex", f"[0:v]subtitles='{ass_arg}'[vout];{audio_filter}",
-            "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.3f}",
-            "-c:v", "libx264", "-preset", "medium", "-crf", "21", "-pix_fmt", "yuv420p", "-r", str(FPS),
-            "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-movflags", "+faststart", str(out)]
+        a_graph.append("[3:a]aresample=44100,aformat=channel_layouts=stereo,volume=0.08[music]")
+        mix.append("[music]")
+    a_graph.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:dropout_transition=0:normalize=0[aout]")
+    bar_h = 14 if fmt == "short" else 8
+    v_graph = (f"[0:v]subtitles='{ass_arg}'[sub];color=c={palette[-1]}:s={w}x{bar_h}:r={FPS}[bar];"
+               f"[sub][bar]overlay=x='-w+w*t/{total:.3f}':y=H-h:shortest=1[vout]")
+    cmd += ["-filter_complex", v_graph + ";" + ";".join(a_graph), "-map", "[vout]", "-map", "[aout]",
+            "-t", f"{total:.3f}", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
+            "-r", str(FPS), "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-movflags", "+faststart", str(out)]
     await _run(*cmd)
     if not os.environ.get("YTF_KEEP_WORK"):
         shutil.rmtree(workdir, ignore_errors=True)
     return out
 
 
-def thumbnail(text: str, palette: Sequence[str], out: Path, seed: str = "") -> Path:
-    """Miniatura 1280x720: sfondo del canale + testo enorme con contorno (usata per i video lunghi)."""
-    tmp = out.with_suffix(".bg.jpg")
-    bg = Image.open(generated_background("long", palette, seed or text, tmp)).resize((1280, 720))
-    tmp.unlink(missing_ok=True)
+# --------------------------------------------------------------------------- miniatura
+def thumbnail(text: str, palette: Sequence[str], out: Path, seed: str = "", background: Optional[Path] = None) -> Path:
+    """Miniatura 1280x720: immagine della scena più forte (o sfondo del canale) + testo enorme con contorno."""
+    if background and background.exists():
+        bg = Image.open(background).convert("RGB")
+        scale = max(1280 / bg.width, 720 / bg.height)
+        bg = bg.resize((int(bg.width * scale) + 1, int(bg.height * scale) + 1))
+        left, top = (bg.width - 1280) // 2, (bg.height - 720) // 2
+        bg = bg.crop((left, top, left + 1280, top + 720))
+        shade = Image.new("RGBA", bg.size, (0, 0, 0, 90))
+        bg = Image.alpha_composite(bg.convert("RGBA"), shade).convert("RGB")
+    else:
+        tmp = out.with_suffix(".bg.jpg")
+        bg = Image.open(generated_background("long", palette, seed or text, tmp)).resize((1280, 720))
+        tmp.unlink(missing_ok=True)
     d = ImageDraw.Draw(bg)
     words = (text or "").upper().split()
     lines, cur = [], ""
-    for wd in words:  # a capo ogni ~12 caratteri
+    for wd in words:
         if len(cur) + len(wd) > 12 and cur:
             lines.append(cur)
             cur = wd

@@ -44,12 +44,13 @@ jobs:
       # dati e media
       YT_API_KEY: ${{ secrets.YT_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      POLLINATIONS_TOKEN: ${{ secrets.POLLINATIONS_TOKEN }}
       # pubblicazione
       YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
       YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
       YT_REFRESH_TOKEN_FATTI: ${{ secrets.YT_REFRESH_TOKEN_FATTI }}
-      YT_REFRESH_TOKEN_SOLDI: ${{ secrets.YT_REFRESH_TOKEN_SOLDI }}
-      YT_REFRESH_TOKEN_MISTERI: ${{ secrets.YT_REFRESH_TOKEN_MISTERI }}
+      YT_REFRESH_TOKEN_MONEY: ${{ secrets.YT_REFRESH_TOKEN_MONEY }}
+      YT_REFRESH_TOKEN_MYSTERIES: ${{ secrets.YT_REFRESH_TOKEN_MYSTERIES }}
       YTF_DATA_DIR: ${{ github.workspace }}/apps/yt_factory/data
     steps:
       - uses: actions/checkout@v4
