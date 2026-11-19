@@ -1237,3 +1237,43 @@ def test_momentum_paper_restarts_when_config_changes(tmp_path):
     assert again["days"] == 3 and "restarted" not in again
     new = mpp.load(p, 100.0, mpp.family_for())
     assert new["days"] == 0 and "restarted" in new and new["config"] == mpp.signature(mpp.family_for())
+
+
+import signals as sgn  # noqa: E402
+
+
+def test_wilson_interval():
+    lo, hi = sgn.wilson(50, 100)
+    assert lo < 0.5 < hi and hi - lo < 0.21
+    assert sgn.wilson(0, 0) == (0.0, 1.0)
+
+
+def test_signal_card_finds_edge_on_trending_coin_and_not_on_noise():
+    up = [100 * 1.004 ** i * (1 + 0.01 * ((-1) ** i)) for i in range(500)]
+    noise = _rw(9, 500, drift=-0.001)
+    pan = stg.Panel({"UP": _daily(up), "NOISE": _daily(noise)})
+    fam = {"t": stg.StratConfig("tsmom", 50, max_positions=1, target_vol=10.0)}
+    card = sgn.score_history(pan, fam, 60, horizons=(1, 7))
+    r = card["t"][7]
+    assert r["n"] > 100 and r["edge"] > 0 and r["hit"] > r["base"]
+    assert "conjunto" in card and len(sgn.format_card(card)) == 4
+
+
+def test_live_signal_records_are_scored_only_with_later_prices(tmp_path):
+    p = str(tmp_path / "s.jsonl")
+    day = 86_400_000
+    assert sgn.record(p, 0, {"v": ["A"]}, {"A": 100.0, "B": 100.0})
+    assert not sgn.record(p, 0, {"v": ["A"]}, {"A": 100.0, "B": 100.0})  # una vez por día
+    assert sgn.score_records(sgn.load(p))["v"][1]["n"] == 0  # aún no hay precio a 1 día
+    sgn.record(p, day, {"v": []}, {"A": 110.0, "B": 90.0})
+    card = sgn.score_records(sgn.load(p), horizons=(1,))
+    assert card["v"][1]["n"] == 1 and card["v"][1]["hit"] == 1.0 and card["v"][1]["base"] == 0.5
+    assert card["v"][1]["edge"] == pytest.approx(0.2)
+
+
+def test_senales_command_offline(tmp_path, capsys):
+    rc = bot.main(["senales", "--source", "synthetic", "--symbols", "A,B", "--limit", "500", "--record",
+                   "--dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert rc == 0 and "Tarjeta de aciertos con la HISTORIA" in out and "registradas" in out
+    assert bot.main(["senales", "--live-only", "--dir", str(tmp_path)]) == 0

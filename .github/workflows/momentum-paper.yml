@@ -2,6 +2,7 @@
 # NUNCA opera con dinero real ni se conecta a ninguna cuenta.
 #
 #   cada día a las 00:17 UTC -> procesa la vela diaria recién cerrada (bot.py momentum)
+#                               y registra las señales del día (bot.py senales --record)
 #   siempre                  -> informe en el resumen de la ejecución y, si está
 #                               configurado, un aviso por Telegram
 #
@@ -44,6 +45,9 @@ jobs:
         run: examples/trading_agents/deploy/gh_state.sh load state
       - name: Procesar el día (papel)
         run: python "$BOT" momentum --dir state
+      # cada señal se registra y se puntúa días después, se opere o no (tarjeta de aciertos)
+      - name: Registrar las señales del día
+        run: python "$BOT" senales --record --no-history --limit 260 --dir state
       - name: Informe
         if: always()
         run: |
@@ -51,6 +55,7 @@ jobs:
             echo '## Momentum combinado en papel'
             echo '```'
             python "$BOT" momentum --dir state --report || true
+            python "$BOT" senales --live-only --dir state || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Guardar memoria
