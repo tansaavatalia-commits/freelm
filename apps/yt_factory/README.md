@@ -97,6 +97,8 @@ I video finiscono in `data/videos/<canale>/<data>/` (`.mp4`, più `.json` con ti
 | `YT_API_KEY` | trend YouTube live (video più visti, views/ora) + commenti del pubblico | Google Cloud, vedi passo 3 |
 | `POLLINATIONS_TOKEN` (facoltativo) | immagini AI più veloci e senza filigrana | https://auth.pollinations.ai |
 
+**Su GitHub Actions i modelli migliori sono già inclusi:** lo studio usa **GitHub Models** (GPT-4.1, DeepSeek V3, Llama 3.3 70B) con il token automatico del repository, senza chiavi da creare. Se nei Secrets ci sono già `GEMINI_API_KEY`, `GROQ_API_KEY` o `OPENROUTER_API_KEY` (per esempio per altri bot del repository), li usa anche quelli. Con `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` ogni giorno ricevi su Telegram il riepilogo e i video, da guardare e approvare dal telefono.
+
 Senza chiavi LLM il sistema usa gli endpoint pubblici senza chiave: limiti bassi e i prompt possono essere registrati. Per lavorare con costanza servono **almeno 2 chiavi**. `freelm doctor` mostra quali funzionano.
 
 ### 3. Progetto Google Cloud (pubblicazione e trend)

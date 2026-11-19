@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from . import agents as A
-from . import factcheck, render, trends, tts, visuals
+from . import factcheck, notify, render, trends, tts, visuals
 from .config import APP_DIR, Channel, Settings
 from .db import DB
 from .llm import Brain
@@ -65,6 +65,7 @@ class Factory:
                     force_long: bool = False) -> List[RunResult]:
         async with httpx.AsyncClient(timeout=60, follow_redirects=True) as self.http:
             results = await asyncio.gather(*(self._channel_day(ch, per_channel, force_long) for ch in channels))
+            await notify.daily_report(self.http, list(results), log=lambda m: _log("*", "notify", m))
         _log("*", "studio", f"fatto: {sum(len(r.produced) for r in results)} video, chiamate LLM {self.brain.calls}")
         return list(results)
 

@@ -7,7 +7,10 @@ import re
 from typing import Any, Dict, Optional
 
 from freelm import AsyncFreeLLM
+from freelm.config import providers_from_env
 from freelm.errors import NoProvidersAvailable
+
+from .ghmodels import github_models_providers
 
 
 def extract_json(text: str) -> Any:
@@ -48,11 +51,14 @@ class Brain:
 
     def __init__(self, model: str = "chat", concurrency: int = 4, log: Optional[Any] = None):
         self.model = model
+        self.log = log or (lambda *a: None)
         # timeout lungo: i modelli "reasoning" gratuiti possono pensare più di un minuto;
         # wait=True: se tutti i provider sono in raffreddamento, freelm aspetta invece di fallire
-        self.llm = AsyncFreeLLM.from_env(keyless="auto", timeout=240.0, wait=True, max_wait=90.0)
+        # + GitHub Models (gratis dentro GitHub Actions col token del repository)
+        providers = providers_from_env("auto") + github_models_providers()
+        self.llm = AsyncFreeLLM(providers, timeout=240.0, wait=True, max_wait=90.0)
+        self.log(f"provider LLM: {', '.join(p.name for p in providers)}")
         self.sem = asyncio.Semaphore(concurrency)  # non saturare i tier gratuiti
-        self.log = log or (lambda *a: None)
         self.calls = 0
 
     async def ask(self, system: str, user: str, *, max_tokens: int = 6000, temperature: float = 0.8,

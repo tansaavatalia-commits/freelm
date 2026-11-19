@@ -432,3 +432,45 @@ def test_real_photo_rejects_off_topic_titles(tmp_path, monkeypatch):
             return await visuals.real_photo(http, "Woolpit Suffolk village", "short", tmp_path)
 
     assert asyncio.run(go()) is None
+
+
+def test_github_models_provider_caps_output_and_scopes_limits(monkeypatch):
+    from yt_factory.ghmodels import GitHubModels, github_models_providers
+
+    monkeypatch.delenv("GITHUB_MODELS_TOKEN", raising=False)
+    assert github_models_providers() == []
+    monkeypatch.setenv("GITHUB_MODELS_TOKEN", "ghs_x")
+    (p,) = github_models_providers()
+    assert isinstance(p, GitHubModels) and p.url == "https://models.github.ai/inference/chat/completions"
+    assert p.adapt_payload({"max_tokens": 9000})["max_tokens"] == 4000
+    assert p.adapt_payload({"max_tokens": 100})["max_tokens"] == 100
+    assert p.rate_limit_scope("") == "model"
+
+
+def test_telegram_report_sends_summary_and_videos(tmp_path, monkeypatch):
+    import httpx
+
+    from yt_factory import notify
+
+    monkeypatch.delenv("YTF_OFFLINE", raising=False)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")
+    video = tmp_path / "00001_short.mp4"
+    video.write_bytes(b"mp4")
+    video.with_suffix(".json").write_text(json.dumps({"description": "desc"}))
+    sent = []
+
+    def handler(req):
+        sent.append((req.url.path.rsplit("/", 1)[-1], req.content))
+        return httpx.Response(200, json={"ok": True})
+
+    res = pipeline.RunResult("mysteries", produced=[{"channel": "mysteries", "title": "T", "file": str(video),
+                                                     "youtube_id": None}], errors=["e"])
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            await notify.daily_report(http, [res])
+
+    asyncio.run(go())
+    assert [m for m, _ in sent] == ["sendMessage", "sendVideo"]
+    assert b"desc" in sent[1][1] and b"chat_id" in sent[1][1]

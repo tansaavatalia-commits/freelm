@@ -5,6 +5,10 @@ name: yt-factory
 on:
   schedule:
     - cron: "17 5 * * *"        # ogni giorno alle 05:17 UTC (06:17/07:17 in Italia): video pronti prima degli slot
+  # prova su un branch di sviluppo: parte solo se il messaggio del commit contiene [run-studio]
+  push:
+    branches: ["claude/**"]
+    paths: ["apps/yt_factory/**", ".github/workflows/yt-factory.yml"]
   workflow_dispatch:
     inputs:
       publish:
@@ -25,9 +29,11 @@ concurrency:
 
 permissions:
   contents: read
+  models: read          # GitHub Models: LLM gratuiti col token automatico del repository
 
 jobs:
   produce:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[run-studio]')
     runs-on: ubuntu-latest
     timeout-minutes: 150
     defaults:
@@ -41,6 +47,10 @@ jobs:
       CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
       MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      GITHUB_MODELS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # notifiche: video e riepilogo sul telefono
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       # dati e media
       YT_API_KEY: ${{ secrets.YT_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
@@ -52,6 +62,8 @@ jobs:
       YT_REFRESH_TOKEN_MONEY: ${{ secrets.YT_REFRESH_TOKEN_MONEY }}
       YT_REFRESH_TOKEN_MYSTERIES: ${{ secrets.YT_REFRESH_TOKEN_MYSTERIES }}
       YTF_DATA_DIR: ${{ github.workspace }}/apps/yt_factory/data
+      # le prove su branch hanno una memoria separata da quella di produzione
+      DB_CACHE: ${{ github.event_name == 'push' && 'ytf-test-db' || 'ytf-db' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -66,8 +78,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: apps/yt_factory/data/factory.sqlite
-          key: ytf-db-${{ github.run_id }}
-          restore-keys: ytf-db-
+          key: ${{ env.DB_CACHE }}-${{ github.run_id }}
+          restore-keys: ${{ env.DB_CACHE }}-
       - name: Produci (e pubblica)
         run: |
           ARGS=""
@@ -75,13 +87,14 @@ jobs:
           if [ "${{ inputs.publish }}" = "true" ]; then ARGS="$ARGS --publish"; fi
           if [ -n "${{ inputs.count }}" ]; then ARGS="$ARGS --count ${{ inputs.count }}"; fi
           if [ "${{ inputs.long }}" = "true" ]; then ARGS="$ARGS --long"; fi
+          if [ "${{ github.event_name }}" = "push" ]; then ARGS="--count 1"; fi   # prova: 1 Short per canale, mai pubblicato
           python -m yt_factory run $ARGS
       - name: Salva memoria della fabbrica
         if: always()
         uses: actions/cache/save@v4
         with:
           path: apps/yt_factory/data/factory.sqlite
-          key: ytf-db-${{ github.run_id }}
+          key: ${{ env.DB_CACHE }}-${{ github.run_id }}
       - name: Video e report (scaricabili per 7 giorni)
         if: always()
         uses: actions/upload-artifact@v4
