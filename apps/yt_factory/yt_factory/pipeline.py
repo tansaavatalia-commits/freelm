@@ -87,7 +87,13 @@ class Factory:
             if not jobs:
                 _log(ch.id, "studio", "quota giornaliera già raggiunta, niente da fare")
                 return res
-            learnings, insights = await asyncio.gather(self.analytics(ch), self.research(ch))
+            learnings, insights = await asyncio.gather(self.analytics(ch), self.research(ch), return_exceptions=True)
+            if isinstance(learnings, BaseException):
+                _log(ch.id, "insights", f"saltato: {learnings}")
+                learnings = ""
+            if isinstance(insights, BaseException):  # senza ricerca si lavora sulla conoscenza della nicchia
+                _log(ch.id, "research", f"ricerca non riuscita, proseguo senza dati live: {insights}")
+                insights = {}
             concepts = await self.ideate(ch, insights, learnings, len(jobs) + 3)
             queue: asyncio.Queue = asyncio.Queue()
             for c in concepts:

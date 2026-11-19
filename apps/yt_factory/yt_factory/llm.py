@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, Optional
 
 from freelm import AsyncFreeLLM
+from freelm.errors import NoProvidersAvailable
 
 
 def extract_json(text: str) -> Any:
@@ -47,7 +48,9 @@ class Brain:
 
     def __init__(self, model: str = "chat", concurrency: int = 4, log: Optional[Any] = None):
         self.model = model
-        self.llm = AsyncFreeLLM.from_env(keyless="auto")
+        # timeout lungo: i modelli "reasoning" gratuiti possono pensare più di un minuto;
+        # wait=True: se tutti i provider sono in raffreddamento, freelm aspetta invece di fallire
+        self.llm = AsyncFreeLLM.from_env(keyless="auto", timeout=240.0, wait=True, max_wait=90.0)
         self.sem = asyncio.Semaphore(concurrency)  # non saturare i tier gratuiti
         self.log = log or (lambda *a: None)
         self.calls = 0
@@ -61,7 +64,7 @@ class Brain:
         async with self.sem:
             for attempt in range(3):
                 self.calls += 1
-                r = await self.llm.chat(msgs, model=model or self.model, max_tokens=budget, temperature=temperature)
+                r = await self._chat_patiently(msgs, model or self.model, budget, temperature)
                 choice = r.choices[0]
                 out = (choice.message.content or "").strip()
                 if out and choice.finish_reason != "length":
@@ -71,6 +74,19 @@ class Brain:
         if out:
             return out
         raise RuntimeError("nessuna risposta dai provider gratuiti")
+
+    async def _chat_patiently(self, msgs: Any, model: str, max_tokens: int, temperature: float) -> Any:
+        """Provider tutti saturi o lenti (capita sui tier gratuiti): attesa crescente e nuovo giro, fino a ~4 minuti."""
+        delays = [10, 30, 60, 120]
+        for i in range(len(delays) + 1):
+            try:
+                return await self.llm.chat(msgs, model=model, max_tokens=max_tokens, temperature=temperature)
+            except NoProvidersAvailable as e:
+                if i == len(delays) or "BadRequest" in str(e) and "Transient" not in str(e):
+                    raise
+                self.log(f"provider saturi, riprovo fra {delays[i]}s")
+                await asyncio.sleep(delays[i])
+        raise RuntimeError("unreachable")
 
     async def ask_json(self, system: str, user: str, *, schema: str, max_tokens: int = 6000,
                        model: Optional[str] = None, temperature: float = 0.8) -> Dict[str, Any]:
