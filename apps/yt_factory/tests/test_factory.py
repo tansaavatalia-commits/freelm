@@ -474,3 +474,24 @@ def test_telegram_report_sends_summary_and_videos(tmp_path, monkeypatch):
     asyncio.run(go())
     assert [m for m, _ in sent] == ["sendMessage", "sendVideo"]
     assert b"desc" in sent[1][1] and b"chat_id" in sent[1][1]
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="serve ffmpeg")
+def test_qc_blocks_black_silent_and_wrong_format(tmp_path, monkeypatch):
+    import subprocess
+
+    from yt_factory import qc
+
+    monkeypatch.delenv("YTF_OFFLINE_TTS", raising=False)
+    monkeypatch.delenv("YTF_NO_AI_IMAGES", raising=False)
+    bad = tmp_path / "bad.mp4"   # 6 s di nero orizzontale con audio muto
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=black:s=1920x1080:d=6",
+                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "6", "-shortest", str(bad)], check=True)
+    r = qc.inspect(bad, "short", 6.0, fallback_ratio=0.8)
+    text = " ".join(i["issue"] for i in r["issues"])
+    assert not r["ok"]
+    assert "risoluzione" in text and "nero" in text and "silenzio" in text and "presentazione" in text
+    good = tmp_path / "good.mp4"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=1080x1920:d=5",
+                    "-f", "lavfi", "-i", "sine=f=220:d=5", "-shortest", str(good)], check=True)
+    assert qc.inspect(good, "short", 5.0)["ok"]

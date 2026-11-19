@@ -200,7 +200,8 @@ async def shot_clip(shot: Dict[str, Any], fmt: str, palette: Sequence[str], work
 
 async def render(*, scenes: List[Dict[str, Any]], words: List[Word], audio: Path, out: Path, fmt: str,
                  palette: Sequence[str], workdir: Path, assets: Sequence[Dict[str, Optional[Path]]],
-                 shot_seconds: float = 2.8, music_dir: Optional[Path] = None, ambient: str = "none") -> Path:
+                 shot_seconds: float = 2.8, music_dir: Optional[Path] = None, ambient: str = "none",
+                 music_track: Optional[Path] = None) -> Path:
     workdir.mkdir(parents=True, exist_ok=True)
     w, h = SIZES[fmt]
     total = duration(audio) + 0.35
@@ -228,7 +229,8 @@ async def render(*, scenes: List[Dict[str, Any]], words: List[Word], audio: Path
 
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(joined), "-i", str(audio), "-i", str(whoosh)]
     cuts = [a for a, _ in times[1:]]
-    a_graph = ["[1:a]aresample=44100,aformat=channel_layouts=stereo,volume=1.0[voice]"]
+    # voce divisa in due: una va nel mix, l'altra "comanda" il ducking della musica (sidechain)
+    a_graph = ["[1:a]aresample=44100,aformat=channel_layouts=stereo,volume=1.0,asplit=2[voice][vkey]"]
     mix = ["[voice]"]
     if cuts:
         a_graph.append(f"[2:a]asplit={len(cuts)}" + "".join(f"[w{i}]" for i in range(len(cuts))))
@@ -236,17 +238,24 @@ async def render(*, scenes: List[Dict[str, Any]], words: List[Word], audio: Path
             ms = max(int((t - 0.2) * 1000), 0)
             a_graph.append(f"[w{i}]adelay={ms}|{ms},volume=0.22[wd{i}]")
             mix.append(f"[wd{i}]")
-    music = sorted(music_dir.glob("*.mp3")) if music_dir and music_dir.exists() else []
-    if music:
-        cmd += ["-stream_loop", "-1", "-i", str(random.choice(music))]
-        a_graph.append("[3:a]aresample=44100,aformat=channel_layouts=stereo,volume=0.08[music]")
+    local = sorted(music_dir.glob("*.mp3")) if music_dir and music_dir.exists() else []
+    track = music_track or (random.choice(local) if local else None)
+    fades = f"afade=t=in:d=1.2,afade=t=out:st={max(total - 1.8, 0):.2f}:d=1.8"
+    if track:  # brano vero: si abbassa da solo quando parla la voce
+        cmd += ["-stream_loop", "-1", "-i", str(track)]
+        a_graph.append(f"[3:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:{total:.3f},{fades},volume=0.32[mraw]")
+        a_graph.append("[mraw][vkey]sidechaincompress=threshold=0.03:ratio=10:attack=15:release=350:makeup=1[music]")
         mix.append("[music]")
     elif ambient in AMBIENT:  # sottofondo sintetico, zero copyright
         cmd += ["-f", "lavfi", "-t", f"{total:.3f}", "-i", AMBIENT[ambient]]
-        a_graph.append("[3:a]aresample=44100,aformat=channel_layouts=stereo,"
-                       f"afade=t=in:d=1.5,afade=t=out:st={max(total - 1.5, 0):.2f}:d=1.5,volume=0.5[music]")
+        a_graph.append(f"[3:a]aresample=44100,aformat=channel_layouts=stereo,{fades},volume=0.5[music]")
+        a_graph.append("[vkey]anullsink")
         mix.append("[music]")
-    a_graph.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:dropout_transition=0:normalize=0[aout]")
+    else:
+        a_graph.append("[vkey]anullsink")
+    # loudness standard delle piattaforme (-14 LUFS, picchi sotto -1.5 dB): nessun video troppo basso o distorto
+    a_graph.append("".join(mix) + f"amix=inputs={len(mix)}:duration=first:dropout_transition=0:normalize=0,"
+                   "loudnorm=I=-14:TP=-1.5:LRA=11[aout]")
     bar_h = 14 if fmt == "short" else 8
     v_graph = (f"[0:v]subtitles='{ass_arg}'[sub];color=c={palette[-1]}:s={w}x{bar_h}:r={FPS}[bar];"
                f"[sub][bar]overlay=x='-w+w*t/{total:.3f}':y=H-h:shortest=1[vout]")

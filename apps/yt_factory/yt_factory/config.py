@@ -28,6 +28,7 @@ class Channel:
     seed_channels: List[str] = field(default_factory=list)
     voice_rate: str = "+8%"
     ambient: str = "none"
+    music_queries: List[str] = field(default_factory=list)
     affiliate_links: List[str] = field(default_factory=list)
 
     def env(self, base: str) -> str:

@@ -39,6 +39,8 @@ category_id = "27"                       # Education
 palette = ["#0b1020", "#1e3a8a", "#facc15"]  # sfondo, sfondo 2, accento
 voice_rate = "+10%"
 ambient = "none"                         # sottofondo sintetico se non c'è musica: none | drone | pulse
+# musica CC0 (pubblico dominio) di compositori affidabili, scelta per umore (Openverse / Wikimedia Commons)
+music_queries = ["Komiku adventure", "Monplaisir", "John Bartmann"]
 # canali di riferimento da studiare (feed pubblici, senza chiave): @handle o ID UC...
 seed_channels = ["@Geopop", "@NovaLectio", "@BarbascuraX", "@curiuss"]
 affiliate_links = []                     # es. ["Libro consigliato: https://amzn.to/..."]
@@ -58,6 +60,7 @@ category_id = "27"                       # Education (finance = RPM tra i più a
 palette = ["#04130c", "#14532d", "#4ade80"]
 voice_rate = "+10%"
 ambient = "pulse"
+music_queries = ["Monplaisir", "John Bartmann", "Komiku"]
 seed_channels = ["@GrahamStephan", "@NateOBrien", "@CharlieChang", "@TheMoneyGuyShow", "@marktilbury"]
 affiliate_links = []
 
@@ -76,5 +79,6 @@ category_id = "24"                       # Entertainment
 palette = ["#0c0a09", "#3b0764", "#c084fc"]
 voice_rate = "+4%"
 ambient = "drone"
+music_queries = ["Rafael Krux", "Komiku evil", "John Bartmann suspense", "Komiku"]
 seed_channels = ["@MrBallen", "@Nexpo", "@LEMMiNO", "@TheWhyFiles", "@Thoughty2", "@BedtimeStories"]
 affiliate_links = []

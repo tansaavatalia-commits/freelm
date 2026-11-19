@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from . import agents as A
-from . import factcheck, notify, render, trends, tts, visuals
+from . import factcheck, music, notify, qc, render, trends, tts, visuals
 from .config import APP_DIR, Channel, Settings
 from .db import DB
 from .llm import Brain
@@ -433,6 +433,9 @@ class Factory:
 
         # ------------------------------------------------ pubblicazione
         result = {"id": vid, "channel": ch.id, "format": fmt, "title": title, "file": str(video), "youtube_id": None}
+        if not meta["qc"]["ok"]:
+            _log(ch.id, "publishing", f"{tag} NON pubblicabile: il controllo qualità l'ha bloccato")
+            return None
         if self.dry_run or not configured(ch):
             why = "dry-run" if self.dry_run else "credenziali YouTube non configurate"
             _log(ch.id, "publishing", f"{tag} non caricato ({why}): pronto per upload manuale")
@@ -486,21 +489,29 @@ class Factory:
         words = await tts.synthesize(spoken, ch.voice, audio, rate=ch.voice_rate)
         _log(ch.id, "production", f"{tag} voce pronta ({words[-1].end:.0f}s, {len(words)} parole)")
         video = out_dir / f"{stem}.mp4"
+        track = await music.pick_track(self.http, ch.music_queries, words[-1].end + 1.0, self.s.data_dir / "media",
+                                       seed=vid, local_dir=APP_DIR / "assets" / "music")
         async with self.render_sem:
             await render.render(scenes=script["scenes"], words=words, audio=audio, out=video, fmt=fmt,
                                 palette=ch.palette, workdir=out_dir / f"{stem}_work", assets=assets,
                                 shot_seconds=self.s.shot_seconds, music_dir=APP_DIR / "assets" / "music",
-                                ambient=ch.ambient)
+                                ambient=ch.ambient, music_track=track)
         audio.unlink(missing_ok=True)
         first_img = next((a["image"] for a in assets if a.get("image")), None)
         thumb = render.thumbnail(str(seo.get("thumbnail_text") or title), ch.palette, out_dir / f"{stem}.png", stem,
                                  background=first_img)
+        abstract = sum(1 for a in assets if a.get("image") is None and a.get("stock") is None) / max(len(assets), 1)
+        report = await asyncio.to_thread(qc.inspect, video, fmt, words[-1].end + 0.35, abstract)
+        _log(ch.id, "qc", f"{tag} {'OK' if report['ok'] else 'BLOCCATO'}"
+                          + "".join(f" | {i['issue']}" for i in report["issues"]) + f" | musica: {track.name if track else 'sintetica'}")
         description = self.description(ch, seo, fmt, credits)
         meta = {"title": title, "titles": seo.get("titles", []), "description": description,
                 "tags": seo.get("tags", []), "pinned_comment": seo.get("pinned_comment", ""), "format": fmt,
-                "slot": slot, "hook": hook, "concept": _public(concept)}
+                "slot": slot, "hook": hook, "concept": _public(concept), "qc": report}
         (out_dir / f"{stem}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        self.db.update_video(vid, status="rendered", file=str(video))
+        self.db.update_video(vid, status="rendered" if report["ok"] else "failed",
+                             error=None if report["ok"] else "controllo qualità: " + "; ".join(
+                                 i["issue"] for i in report["issues"] if i["level"] == "blocking"), file=str(video))
         _log(ch.id, "production", f"{tag} video pronto: {video.relative_to(self.s.data_dir)} ({render.duration(video):.0f}s)")
 
         return video, thumb, meta
