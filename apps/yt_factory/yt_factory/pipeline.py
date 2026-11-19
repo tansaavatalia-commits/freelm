@@ -213,30 +213,51 @@ class Factory:
         return fresh
 
     async def best_hook(self, ch: Channel, concept: Dict[str, Any], tag: str) -> str:
-        """Hook Lab scrive 8 hook; la giuria (un giurato per modello) li vota; vince la media più alta."""
-        lab = await A.HOOK_LAB.run(self.brain, ch, f"Write 8 hooks for this concept:\n{A.dumps(_public(concept))}\n\n"
-                                                    f"Every factual detail in a hook must come from these SOURCE NOTES:\n"
-                                                    f"{_notes(concept)}")
-        hooks = [str(h).strip() for h in (lab.get("hooks") or lab.get("items") or []) if str(h).strip()][:8]
-        if not hooks:
+        """Hook Lab scrive 8 hook; la giuria (un giurato per modello) li vota; vince la media più alta.
+        Se nessuno arriva a 6/10, secondo giro: 8 hook nuovi costruiti sulle critiche della giuria."""
+        feedback, pool = "", []  # pool: (voto, hook) di tutti i giri
+        for round_ in range(2):
+            task = (f"Write 8 hooks for this concept:\n{A.dumps(_public(concept))}\n\n"
+                    f"Every factual detail in a hook must come from these SOURCE NOTES:\n{_notes(concept)}")
+            if feedback:
+                task += (f"\n\nThe audience panel rejected the previous hooks: {feedback}\nWrite 8 NEW hooks: shorter "
+                         f"(max 10 words), one concrete shocking detail each, a gap the viewer must close.")
+            lab = await A.HOOK_LAB.run(self.brain, ch, task)
+            hooks = [str(h).strip() for h in (lab.get("hooks") or lab.get("items") or []) if str(h).strip()][:8]
+            if not hooks:
+                break
+            avg, why = await self.panel_vote(ch, concept, hooks)
+            if avg is None:
+                pool += [(0.0, h) for h in hooks[:1]]
+                break
+            pool += list(zip(avg, hooks))
+            top = max(avg)
+            _log(ch.id, "creative", f"{tag} giuria giro {round_ + 1}: miglior hook {top:.1f}/10")
+            if top >= 6:
+                break
+            feedback = why or "too vague, not surprising enough"
+        if not pool:
             return str(concept.get("hook") or concept.get("topic"))
+        score, hook = max(pool, key=lambda x: x[0])
+        _log(ch.id, "creative", f"{tag} hook scelto ({score:.1f}/10): {hook}")
+        return hook
+
+    async def panel_vote(self, ch: Channel, concept: Dict[str, Any], hooks: List[str]) -> Any:
         listing = "\n".join(f"{i}. {h}" for i, h in enumerate(hooks))
 
-        async def juror(model: str) -> Optional[List[float]]:
+        async def juror(model: str) -> Optional[Dict[str, Any]]:
             try:
                 v = await A.PANEL.run(self.brain, ch, f"Concept: {concept.get('topic')}\nHooks:\n{listing}", model=model)
             except Exception:
                 return None
             scores = [_num(x) for x in v.get("scores", [])]
-            return scores if len(scores) == len(hooks) else None
+            return {"scores": scores, "why": str(v.get("why", ""))} if len(scores) == len(hooks) else None
 
         votes = [v for v in await asyncio.gather(*(juror(m) for m in self.s.panel_models)) if v]
         if not votes:
-            return hooks[0]
-        avg = [sum(v[i] for v in votes) / len(votes) for i in range(len(hooks))]
-        best = max(range(len(hooks)), key=lambda i: avg[i])
-        _log(ch.id, "creative", f"{tag} giuria ({len(votes)} modelli) sceglie hook {avg[best]:.1f}/10: {hooks[best]}")
-        return hooks[best]
+            return None, ""
+        avg = [sum(v["scores"][i] for v in votes) / len(votes) for i in range(len(hooks))]
+        return avg, " / ".join(v["why"] for v in votes if v["why"])
 
     async def write_short(self, ch: Channel, concept: Dict[str, Any], hook: str, insights: Dict[str, Any],
                           fixes: str, previous: Optional[Dict[str, Any]] = None,

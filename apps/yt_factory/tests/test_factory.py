@@ -393,3 +393,22 @@ def test_wikipedia_429_is_retried_then_reported_as_unavailable(tmp_path, monkeyp
     notes = asyncio.run(go(ok))
     assert "Dancing plague of 1518" in notes and "Strasbourg" in notes
     assert calls[0] == "1518 dancing plague Strasbourg"          # query ridotta alle parole chiave
+
+
+def test_weak_hooks_trigger_a_second_round(tmp_path):
+    s = _settings(tmp_path)
+    rounds = []
+
+    class Brain(OfflineBrain):
+        async def ask_json(self, system, user, *, schema, max_tokens=0, model=None, temperature=0.0):
+            if '"hooks"' in schema:
+                rounds.append(user)
+                return {"hooks": ["vago 1", "vago 2"] if len(rounds) == 1 else ["forte", "medio"]}
+            if '"scores"' in schema:
+                return {"scores": [3, 2], "why": "troppo vaghi"} if "vago" in user else {"scores": [8, 5]}
+            return await super().ask_json(system, user, schema=schema)
+
+    f = pipeline.Factory(s, brain=Brain())
+    assert asyncio.run(f.best_hook(s.channel("mysteries"), {"topic": "t"}, "#1")) == "forte"
+    assert len(rounds) == 2 and "troppo vaghi" in rounds[1]
+    f.db.close()
