@@ -7,6 +7,7 @@
   python -m yt_factory auth --channel fatti   # una volta per canale, sul tuo computer
   python -m yt_factory stats               # avanzamento monetizzazione di ogni canale
   python -m yt_factory status              # ultimi video prodotti
+  python -m yt_factory rerender 12         # rimonta il video #12 (immagini/montaggio) senza riscriverlo
 """
 from __future__ import annotations
 
@@ -33,6 +34,8 @@ def main(argv=None) -> int:
     t.add_argument("--channel", required=True)
     a = sub.add_parser("auth", help="collega un canale YouTube (OAuth, una volta)")
     a.add_argument("--channel", required=True)
+    rr = sub.add_parser("rerender", help="rimonta un video già scritto (immagini/montaggio) senza rifare gli script")
+    rr.add_argument("id", type=int, nargs="+", help="numero del video (vedi `status`)")
     sub.add_parser("stats", help="statistiche e avanzamento Programma Partner")
     sub.add_parser("status", help="ultimi video prodotti")
     args = p.parse_args(argv)
@@ -81,6 +84,15 @@ async def _async(args, s) -> int:
                 print(f"  ! {e}")
             failed += 0 if res.produced else 1
         return 1 if failed == len(results) else 0
+
+    if args.cmd == "rerender":
+        f = Factory(s, dry_run=True)
+        try:
+            for vid in args.id:
+                print(await f.rerender(vid))
+        finally:
+            await f.close()
+        return 0
 
     if args.cmd == "trends":
         import httpx

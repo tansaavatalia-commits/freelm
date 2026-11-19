@@ -267,7 +267,7 @@ def test_real_photo_skips_banners_and_credits_cc_by(tmp_path, monkeypatch):
             return httpx.Response(200, json={"results": [
                 {"url": "https://img/banner.jpg", "width": 3000, "height": 400, "license": "cc0"},
                 {"url": "https://img/ok.jpg", "width": 1600, "height": 1200, "license": "by", "license_version": "4.0",
-                 "title": "Terraces", "creator": "Ann", "foreign_landing_url": "https://commons/x"}]})
+                 "title": "Yonaguni Monument Terraces", "creator": "Ann", "foreign_landing_url": "https://commons/x"}]})
         return httpx.Response(200, content=buf.getvalue(), headers={"content-type": "image/jpeg"})
 
     async def go():
@@ -276,6 +276,7 @@ def test_real_photo_skips_banners_and_credits_cc_by(tmp_path, monkeypatch):
 
     got = asyncio.run(go())
     assert got and "Ann" in got["credit"] and "CC BY 4.0" in got["credit"]
+    assert "Monument Terraces" in got["credit"]
     w, h = Image.open(got["path"]).size
     assert h >= 1920 * 1.15 - 1
 
@@ -412,3 +413,22 @@ def test_weak_hooks_trigger_a_second_round(tmp_path):
     assert asyncio.run(f.best_hook(s.channel("mysteries"), {"topic": "t"}, "#1")) == "forte"
     assert len(rounds) == 2 and "troppo vaghi" in rounds[1]
     f.db.close()
+
+
+def test_real_photo_rejects_off_topic_titles(tmp_path, monkeypatch):
+    import httpx
+
+    from yt_factory import visuals
+
+    monkeypatch.delenv("YTF_OFFLINE", raising=False)
+
+    def handler(req):
+        return httpx.Response(200, json={"results": [
+            {"url": "https://img/t.jpg", "width": 2000, "height": 1500, "license": "by",
+             "title": "Woolpit Steam Rally, Vintage Tractors", "tags": [{"name": "suffolk"}]}]})
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            return await visuals.real_photo(http, "Woolpit Suffolk village", "short", tmp_path)
+
+    assert asyncio.run(go()) is None

@@ -16,7 +16,7 @@ import os
 import random
 import urllib.parse
 from pathlib import Path
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 import httpx
 from PIL import Image, ImageDraw, ImageFilter
@@ -85,6 +85,8 @@ async def ai_image(http: httpx.AsyncClient, prompt: str, style: str, fmt: str, s
                 img.save(out, quality=93)
                 return out
             await asyncio.sleep(4 * (attempt + 1))
+            if attempt == 1:  # prompt più corto: alcuni prompt lunghi vengono rifiutati
+                url = "https://image.pollinations.ai/prompt/" + urllib.parse.quote(f"{prompt[:160]}, {style[:80]}")
     return None
 
 
@@ -100,8 +102,8 @@ async def real_photo(http: httpx.AsyncClient, query: str, fmt: str, cache: Path,
     cache.mkdir(parents=True, exist_ok=True)
     words = query.split()
     results: list = []
-    for n in dict.fromkeys([len(words), 4, 3, 2]):  # query troppo specifica = 0 risultati: si accorcia
-        if n > len(words) or n < 1:
+    for n in dict.fromkeys([len(words), 4, 3, 2]):  # query troppo specifica = 0 risultati: si accorcia (mai a 1 parola)
+        if n > len(words) or n < min(2, len(words)):
             continue
         r = await http.get(OPENVERSE, params={"q": " ".join(words[:n]), "license": SAFE_LICENSES, "page_size": 8,
                                               "mature": "false"}, headers={"User-Agent": "yt-factory/0.3"})
@@ -109,7 +111,17 @@ async def real_photo(http: httpx.AsyncClient, query: str, fmt: str, cache: Path,
             results = r.json()["results"]
             break
     w, h = SIZES[fmt]
-    good = [x for x in results
+    key = [x.lower() for x in words if len(x) > 3]
+    need = min(2, len(key))
+
+    def relevant(x: Dict[str, Any]) -> bool:
+        """La foto deve parlare del soggetto: almeno 2 parole chiave nel TITOLO (i tag sono troppo larghi:
+        "Woolpit Steam Rally, Vintage Tractors" ha il tag Suffolk ma non c'entra coi bambini verdi)."""
+        text = str(x.get("title", "")).lower()
+        return sum(k in text for k in key) >= need
+
+    good = [x for x in results if relevant(x)]
+    good = [x for x in good
             if (x.get("width") or 0) >= 1000 and (x.get("height") or 0) >= 650
             and (x.get("width") or 1) / (x.get("height") or 1) < 4]  # niente banner panoramici
     for item in good[pick % max(len(good), 1):] + good[: pick % max(len(good), 1)]:

@@ -427,6 +427,45 @@ class Factory:
             "concept": _public(concept), "hook": hook, "script": script, "review": review, "facts": facts, "art": art, "seo": seo})
         _log(ch.id, "packaging", f"{tag} titolo: {title}")
 
+        video, thumb, meta = await self.build_video(ch, vid, fmt, day, slot, script, art, seo, title, hook, concept, tag)
+        description = meta["description"]
+
+        # ------------------------------------------------ pubblicazione
+        result = {"id": vid, "channel": ch.id, "format": fmt, "title": title, "file": str(video), "youtube_id": None}
+        if self.dry_run or not configured(ch):
+            why = "dry-run" if self.dry_run else "credenziali YouTube non configurate"
+            _log(ch.id, "publishing", f"{tag} non caricato ({why}): pronto per upload manuale")
+            return result
+        publish_at = self.publish_time(day, slot)
+        async with self.quota_lock:
+            project = project_of(ch)
+            if self.db.quota_used(project, day) + self.s.upload_quota_cost > self.s.daily_quota:
+                _log(ch.id, "publishing", f"{tag} quota API esaurita oggi: resta in coda (data/videos)")
+                return result
+            self.db.spend_quota(project, day, self.s.upload_quota_cost)
+        yt = YouTube(ch, self.http)
+        privacy = "private" if self.s.privacy_mode == "private" else "public"
+        yid = await yt.upload(video, title=title, description=description, tags=list(seo.get("tags", [])),
+                              category_id=ch.category_id, language=ch.language, privacy=privacy,
+                              publish_at=publish_at if self.s.privacy_mode == "schedule" else None)
+        self.db.update_video(vid, status="uploaded", youtube_id=yid, publish_at=publish_at)
+        result["youtube_id"] = yid
+        _log(ch.id, "publishing", f"{tag} caricato https://youtu.be/{yid} (uscita {publish_at})")
+        for step, coro in (("miniatura", yt.set_thumbnail(yid, thumb) if fmt == "long" else None),
+                           ("commento", yt.comment(yid, meta["pinned_comment"]) if meta["pinned_comment"] else None)):
+            if coro is None:
+                continue
+            try:
+                await coro
+            except (YouTubeError, httpx.HTTPError) as e:
+                _log(ch.id, "publishing", f"{tag} {step} saltato: {e}")
+        return result
+
+    async def build_video(self, ch: Channel, vid: int, fmt: str, day: str, slot: str, script: Dict[str, Any],
+                          art: Dict[str, Any], seo: Dict[str, Any], title: str, hook: str, concept: Dict[str, Any],
+                          tag: str) -> Any:
+        """Reparti art + produzione: immagini, voce, montaggio, miniatura, metadati. Usato anche da `rerender`."""
+        script = json.loads(json.dumps(script))  # la CTA si aggiunge a una copia: lo script salvato resta pulito
         out_dir = self.s.data_dir / "videos" / ch.id / day
         out_dir.mkdir(parents=True, exist_ok=True)
         stem = f"{vid:05d}_{fmt}"
@@ -463,36 +502,21 @@ class Factory:
         self.db.update_video(vid, status="rendered", file=str(video))
         _log(ch.id, "production", f"{tag} video pronto: {video.relative_to(self.s.data_dir)} ({render.duration(video):.0f}s)")
 
-        # ------------------------------------------------ pubblicazione
-        result = {"id": vid, "channel": ch.id, "format": fmt, "title": title, "file": str(video), "youtube_id": None}
-        if self.dry_run or not configured(ch):
-            why = "dry-run" if self.dry_run else "credenziali YouTube non configurate"
-            _log(ch.id, "publishing", f"{tag} non caricato ({why}): pronto per upload manuale")
-            return result
-        publish_at = self.publish_time(day, slot)
-        async with self.quota_lock:
-            project = project_of(ch)
-            if self.db.quota_used(project, day) + self.s.upload_quota_cost > self.s.daily_quota:
-                _log(ch.id, "publishing", f"{tag} quota API esaurita oggi: resta in coda (data/videos)")
-                return result
-            self.db.spend_quota(project, day, self.s.upload_quota_cost)
-        yt = YouTube(ch, self.http)
-        privacy = "private" if self.s.privacy_mode == "private" else "public"
-        yid = await yt.upload(video, title=title, description=description, tags=list(seo.get("tags", [])),
-                              category_id=ch.category_id, language=ch.language, privacy=privacy,
-                              publish_at=publish_at if self.s.privacy_mode == "schedule" else None)
-        self.db.update_video(vid, status="uploaded", youtube_id=yid, publish_at=publish_at)
-        result["youtube_id"] = yid
-        _log(ch.id, "publishing", f"{tag} caricato https://youtu.be/{yid} (uscita {publish_at})")
-        for step, coro in (("miniatura", yt.set_thumbnail(yid, thumb) if fmt == "long" else None),
-                           ("commento", yt.comment(yid, meta["pinned_comment"]) if meta["pinned_comment"] else None)):
-            if coro is None:
-                continue
-            try:
-                await coro
-            except (YouTubeError, httpx.HTTPError) as e:
-                _log(ch.id, "publishing", f"{tag} {step} saltato: {e}")
-        return result
+        return video, thumb, meta
+
+    async def rerender(self, vid: int) -> Path:
+        """Rimonta un video già scritto (es. dopo aver migliorato immagini o montaggio) senza richiamare gli agenti."""
+        v = self.db.video(vid)
+        if not v or not v["data"].get("script"):
+            raise SystemExit(f"video #{vid} non trovato o senza script")
+        ch = self.s.channel(v["channel"])
+        d = v["data"]
+        async with httpx.AsyncClient(timeout=60, follow_redirects=True) as self.http:
+            video, _, _ = await self.build_video(ch, vid, v["format"], v["day"], d.get("slot", "12:30"), d["script"],
+                                                 d.get("art", {}), d.get("seo", {}), v["title"] or v["topic"],
+                                                 d.get("hook", ""), d.get("concept", {"topic": v["topic"]}),
+                                                 f"#{vid} {v['format']}")
+        return video
 
     async def acquire_assets(self, ch: Channel, scenes: List[Dict[str, Any]], art: Dict[str, Any], fmt: str,
                              vid: int) -> List[Dict[str, Any]]:
@@ -516,7 +540,8 @@ class Factory:
                     "stock": stock if isinstance(stock, Path) else None,
                     "photo": bool(photo), "credit": photo["credit"] if photo else ""}
 
-        return list(await asyncio.gather(*(one(i, s) for i, s in enumerate(scenes))))
+        assets = list(await asyncio.gather(*(one(i, s) for i, s in enumerate(scenes))))
+        return fill_gaps(assets)
 
     def description(self, ch: Channel, seo: Dict[str, Any], fmt: str, credits: Optional[List[str]] = None) -> str:
         body = str(seo.get("description", "")).strip()
@@ -603,6 +628,17 @@ def clean_scenes(scenes: Any, hook: str = "") -> List[Dict[str, Any]]:
     if hook and out and not _norm(out[0]["text"]).startswith(_norm(hook)[:25]):
         out.insert(0, {"text": hook, "on_screen": ""})
     return out
+
+
+def fill_gaps(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Scena senza immagine (servizio non disponibile): meglio l'immagine della scena vicina che la grafica astratta."""
+    pics = [a.get("image2") or a.get("image") for a in assets]
+    for i, a in enumerate(assets):
+        if a.get("image") is None and a.get("stock") is None:
+            near = sorted((j for j, p in enumerate(pics) if p is not None), key=lambda j: abs(j - i))
+            if near:
+                a["image"] = pics[near[0]]
+    return assets
 
 
 def _norm(t: str) -> str:
