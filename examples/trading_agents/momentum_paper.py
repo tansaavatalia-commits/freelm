@@ -1,9 +1,11 @@
 """Momentum combinado en PAPEL: prueba de 20 días sin dinero real.
 
 La estrategia es el «conjunto» de ``strategies.py``: las 10 variantes de
-momentum (5 de tendencia, 5 relativas) a partes iguales, sin elegir ninguna. Es
-la estrategia más prometedora que encontró la validación, pero NO está
-validada. Por eso solo corre en papel.
+momentum (5 de tendencia, 5 relativas) a partes iguales, sin elegir ninguna,
+con covarianza real y volatilidad objetivo del 5 %. Es la configuración que
+superó la validación de ``classic`` en 2019-2026. Aun así corre solo en papel:
+el sesgo de supervivencia del universo no está descartado y falta probarla con
+datos que nadie ha visto.
 
 Una vez al día, tras el cierre de la vela diaria (00:00 UTC):
 
@@ -26,7 +28,7 @@ from dataclasses import replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from market import Candle
-from strategies import StratConfig, default_family, targets
+from strategies import Panel, StratConfig, default_family, fast_targets
 
 DAY_MS = 86_400_000
 PAPER_DAYS = 20
@@ -38,9 +40,15 @@ def closed_daily(candles: Sequence[Candle], now_ms: int) -> List[Candle]:
     return [c for c in candles if c.time + DAY_MS <= now_ms]
 
 
+def signature(family: Dict[str, StratConfig]) -> str:
+    """Huella de la configuración: si cambia, la prueba en papel empieza de cero."""
+    return json.dumps(sorted((k, sorted(c.__dict__.items())) for k, c in family.items()), default=str)
+
+
 def new_state(cash: float, family: Dict[str, StratConfig]) -> dict:
     return {"cash0": cash, "equity": cash, "peak": cash, "last_day": None, "start_day": None, "halted": False,
-            "books": {k: {} for k in family}, "weights": {}, "turnover": 0.0, "days": 0, "basket0": {}}
+            "books": {k: {} for k in family}, "weights": {}, "turnover": 0.0, "days": 0, "basket0": {},
+            "config": signature(family)}
 
 
 def _drift(w: Dict[str, float], rets: Dict[str, float]) -> Dict[str, float]:
@@ -51,10 +59,12 @@ def _drift(w: Dict[str, float], rets: Dict[str, float]) -> Dict[str, float]:
 
 
 def step(state: dict, data: Dict[str, List[Candle]], family: Dict[str, StratConfig]) -> Tuple[dict, dict]:
-    """Procesa el último día cerrado de ``data`` (alineado). Devuelve (estado, informe del día)."""
-    closes = {s: [c.close for c in v] for s, v in data.items()}
-    t = min(len(v) for v in closes.values()) - 1
-    day = next(iter(data.values()))[t].time
+    """Procesa el último día cerrado de ``data`` (cada moneda con su historia, sin recortar).
+    Devuelve (estado, informe del día)."""
+    panel = Panel(data)
+    closes = panel.close
+    t = panel.n - 1
+    day = panel.times[t]
     rep = {"day": day, "skipped": None, "trades": [], "weights": {}}
     if state["last_day"] is not None and day <= state["last_day"]:
         rep["skipped"] = "día ya procesado"
@@ -63,8 +73,7 @@ def step(state: dict, data: Dict[str, List[Candle]], family: Dict[str, StratConf
         rep["skipped"] = "historia insuficiente"
         return state, rep
     first = state["last_day"] is None
-    prev_t = None if first else next((i for i in range(t, -1, -1)
-                                       if next(iter(data.values()))[i].time == state["last_day"]), None)
+    prev_t = None if first else next((i for i in range(t, -1, -1) if panel.times[i] == state["last_day"]), None)
     old = dict(state["weights"])
     # 1) movimiento desde el último día procesado (si faltan días, el retorno los cubre)
     if not first and prev_t is not None and old:
@@ -90,7 +99,7 @@ def step(state: dict, data: Dict[str, List[Candle]], family: Dict[str, StratConf
     for k, cfg in family.items():
         if n_day % cfg.rebalance:
             continue
-        tgt = targets(closes, t, cfg)
+        tgt = fast_targets(panel, t, cfg)
         w = state["books"].get(k, {})
         new = dict(w)
         for s in set(w) | set(tgt):
@@ -141,9 +150,15 @@ def summary(state: dict, track: Sequence[dict]) -> dict:
 
 
 def load(path: str, cash: float, family: Dict[str, StratConfig]) -> dict:
+    """Estado guardado; si se guardó con otra configuración, uno nuevo con ``restarted``."""
     if os.path.exists(path):
         with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
+            st = json.load(fh)
+        if st.get("config") == signature(family):
+            return st
+        fresh = new_state(cash, family)
+        fresh["restarted"] = f"configuración cambiada (antes: día {st.get('days', 0)})"
+        return fresh
     return new_state(cash, family)
 
 
@@ -155,9 +170,10 @@ def save(path: str, state: dict) -> None:
     os.replace(tmp, path)
 
 
-def family_for(target_vol: float = 0.12, fee: Optional[float] = None) -> Dict[str, StratConfig]:
+def family_for(target_vol: float = 0.05, fee: Optional[float] = None, risk_model: str = "cov") -> Dict[str, StratConfig]:
+    """Por defecto, la configuración VALIDADA por ``classic`` (covarianza, volatilidad 5 %)."""
     fam = default_family()
-    return {k: replace(c, target_vol=target_vol, **({"fee": fee} if fee is not None else {}))
+    return {k: replace(c, target_vol=target_vol, risk_model=risk_model, **({"fee": fee} if fee is not None else {}))
             for k, c in fam.items()}
 
 

@@ -2,6 +2,7 @@
 import math
 import os
 import sys
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -1108,7 +1109,8 @@ def test_classic_command_offline(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc in (0, 3) and "conjunto" in out and "77 %" in out
     saved = json.load(open(tmp_path / "classic.json"))
-    assert "conjunto" in saved["strategies"] and saved["interval"] == "1d" and saved["n_trials"] == 51
+    assert "conjunto" in saved["strategies"] and saved["interval"] == "1d" and saved["n_trials"] == 106
+    assert "sin A" in out and "Sensibilidad al universo" in out and set(saved["leave_one_out"]) == {"A", "B", "C"}
 
 
 import momentum_paper as mpp  # noqa: E402
@@ -1163,3 +1165,74 @@ def test_momentum_command_paper_offline(tmp_path, monkeypatch, capsys):
     assert "día ya procesado" in out and "PAPEL" in out
     assert len(open(tmp_path / "momentum_track.jsonl").read().splitlines()) == 1
     assert bot.main(args + ["--report"]) == 0
+
+
+def _rw(seed, n=400, drift=0.0005):
+    import random
+    rng = random.Random(seed)
+    p = [100.0]
+    for _ in range(n - 1):
+        p.append(p[-1] * (1 + drift + rng.gauss(0, 0.03)))
+    return p
+
+
+def test_fast_engine_matches_reference_exactly():
+    data = {s: _daily(_rw(i)) for i, s in enumerate("ABCD")}
+    pan = stg.Panel(data)
+    for cfg in (stg.StratConfig("tsmom", 50), stg.StratConfig("xsmom", 14, rebalance=7)):
+        ref = stg.simulate(data, cfg)
+        fast = stg.simulate_fast(pan, cfg, cfg.warmup)
+        assert fast["equity"] == pytest.approx(ref["equity"], abs=1e-12) and fast["r"] == pytest.approx(ref["r"])
+
+
+def test_panel_handles_coins_listed_later():
+    late = _daily(_rw(2, 200), t0=200 * mpp.DAY_MS)
+    pan = stg.Panel({"OLD": _daily(_rw(1)), "NEW": late})
+    assert pan.n == 400 and not pan.has("NEW", 250, 100) and pan.has("NEW", 399, 150)
+    res = stg.simulate_fast(pan, stg.StratConfig("tsmom", 50), 60)
+    assert len(res["equity"]) == 400 - 60 + 1
+
+
+def test_covariance_risk_model_sees_diversification():
+    import random
+    rng = random.Random(5)
+    a, b = [100.0], [100.0]
+    for _ in range(99):
+        a.append(a[-1] * (1 + rng.gauss(0, 0.02)))
+        b.append(b[-1] * (1 + rng.gauss(0, 0.02)))  # independientes
+    pan = stg.Panel({"A": _daily(a), "B": _daily(b)})
+    w = {"A": 0.5, "B": 0.5}
+    c1 = stg.portfolio_vol(pan, w, 99, stg.StratConfig(risk_model="corr1"), 365)
+    cv = stg.portfolio_vol(pan, w, 99, stg.StratConfig(risk_model="cov", shrink=0.0), 365)
+    assert cv < 0.85 * c1  # sin correlación, la cartera es menos volátil que la suma
+    same = stg.Panel({"A": _daily(a), "B": _daily(a)})
+    assert stg.portfolio_vol(same, w, 99, stg.StratConfig(risk_model="cov"), 365) == pytest.approx(
+        stg.portfolio_vol(same, w, 99, stg.StratConfig(risk_model="corr1"), 365), rel=1e-6)
+
+
+def test_drawdown_control_and_rolling_peak():
+    cfg = stg.StratConfig(dd_budget=0.10, dd_start=0.5)
+    assert stg.dd_multiplier(0.03, cfg) == 1.0 and stg.dd_multiplier(0.075, cfg) == pytest.approx(0.5)
+    assert stg.dd_multiplier(0.12, cfg) == 0.0 and stg.dd_multiplier(0.5, stg.StratConfig()) == 1.0
+    crash = [100 * 1.01 ** i for i in range(250)] + [250 * 0.97 ** i for i in range(60)] + \
+            [250 * 0.97 ** 59 * 1.01 ** i for i in range(400)]
+    pan = stg.Panel({"A": _daily(crash)})
+    base = stg.StratConfig("tsmom", 50, target_vol=10.0, max_positions=1)
+    free = stg.simulate_fast(pan, base, 60)
+    held = stg.simulate_fast(pan, replace(base, dd_budget=0.10), 60)
+    roll = stg.simulate_fast(pan, replace(base, dd_budget=0.10, dd_window=90), 60)
+    assert held["max_drawdown"] < free["max_drawdown"]
+    # con máximo histórico se queda en liquidez; con máximo móvil vuelve a invertir y recupera
+    assert roll["equity"][-1] > held["equity"][-1]
+
+
+def test_momentum_paper_restarts_when_config_changes(tmp_path):
+    p = str(tmp_path / "st.json")
+    old = mpp.family_for(target_vol=0.12, risk_model="corr1")
+    st = mpp.new_state(100.0, old)
+    st["days"] = 3
+    mpp.save(p, st)
+    again = mpp.load(p, 100.0, old)
+    assert again["days"] == 3 and "restarted" not in again
+    new = mpp.load(p, 100.0, mpp.family_for())
+    assert new["days"] == 0 and "restarted" in new and new["config"] == mpp.signature(mpp.family_for())

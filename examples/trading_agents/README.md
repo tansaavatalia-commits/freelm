@@ -210,35 +210,54 @@ dos familias con más evidencia publicada, en velas diarias (`strategies.py`):
   encima de su media de 20, 50, 100, 150 o 200 días.
 - **Momentum relativo** (`xsmom`): cada semana se compran las monedas que más
   subieron en 7, 14, 28, 56 o 90 días, solo si subieron.
-- **El conjunto**: todas las variantes a partes iguales, sin elegir ninguna.
+- **El conjunto**: las 10 variantes a partes iguales, sin elegir ninguna.
 
-Todas son solo spot, con un máximo de 4 posiciones de ≤ 25 % cada una y la
-exposición ajustada a una volatilidad objetivo (`--target-vol`, 12 % anual).
-Pagan comisión y deslizamiento.
+Todas son solo spot, con un máximo de 4 posiciones de ≤ 25 % cada una. Pagan
+comisión y deslizamiento.
 
-**Resultado con datos reales** (8 monedas, ~5,6 años operados de 2021 a 2026,
-51 pruebas descontadas):
+**Mejoras tras analizar GitHub** (ideas, no código copiado):
 
-| | Resultado | Caída máx. | Acierto | Deflated Sharpe |
-|---|---|---|---|---|
-| Las 10 variantes | de +5 % a +64 %: **todas ganan** | 12–23 % | 29–42 % | 0,24–0,87 |
-| Conjunto | +34 % (**+5,4 % al año**) | 13,8 % | 35 % | 0,66 |
-| Cesta comprar y mantener | −12,6 % | | | |
+| Mejora | Inspirada en | Opción |
+|---|---|---|
+| Volatilidad de la cartera con la **covarianza real** y *shrinkage* hacia correlación constante (Ledoit-Wolf), en vez de suponer correlación 1 | Riskfolio-Lib, skfolio, PyPortfolioOpt | `--risk-model cov` (por defecto) |
+| **Historia completa**: cada moneda entra cuando empieza a cotizar (2019–2026, con dos mercados bajistas), así hay más datos y más potencia estadística | Qlib, Lean | por defecto; `--aligned` para la versión anterior |
+| **Control de caída** proporcional al colchón (CPPI), con máximo histórico o móvil | Grossman y Zhou (1993); protections de freqtrade | `--dd-budget 0.10 --dd-window 365` |
+| **Motor rápido**: un `Panel` precalcula sumas acumuladas y la media, la volatilidad y la covarianza cuestan O(1); un panel sirve para toda la familia | vectorbt | siempre; un test garantiza el mismo resultado exacto que el motor anterior |
+| **Sensibilidad al universo**: el conjunto se repite quitando cada moneda | contra el sesgo de supervivencia | siempre |
 
-- Es lo **más prometedor** encontrado: a diferencia de los agentes técnicos,
-  toda la familia gana y supera a la cesta.
-- Pero **no está validado**: la caída supera el 10 % y el Deflated Sharpe
-  no llega a 0,95. Además, elegir la mejor variante es sobreajuste (PBO 34 %),
-  y el último tramo (2025–2026) fue flojo.
-- Con volatilidad objetivo del 8 %, la caída del conjunto baja al 9,6 % y el
-  rendimiento a +4,1 % al año. Sigue sin validarse.
-- El seguimiento de tendencia gana con **pocas operaciones grandes**: su acierto
-  es del 29–42 %. Es **incompatible con la regla del 77 %** por construcción.
+Velocidad medida con los mismos datos: la simulación es 2,5 veces más rápida y
+la validación completa unas 3,5 veces (el bootstrap, que era el 94 % del tiempo,
+ahora es ~20 veces más rápido). No es 15 veces: es lo que se ha medido.
+
+**Resultados con datos reales** (8 monedas, 2019-03 → 2026-11, ~7,7 años
+operados; se descuentan **106 pruebas**, todas las hechas en esta investigación):
+
+| Variante | Conjunto: al año | Caída máx. | DSR | PBO | Validadas |
+|---|---|---|---|---|---|
+| A. Original (correlación 1, vol. 12 %) | +13,6 % | 15,4 % | 0,98 | 16 % | 0 (caída) |
+| B. + control de caída (máximo histórico) | +5,7 % | 8,5 % | 0,67 | 12 % | 0: al tocar el 10 % se queda en liquidez para siempre |
+| C. Covarianza real | +16,6 % | 16,3 % | 0,98 | 13 % | 0 (caída) |
+| D. Covarianza + control de caída con máximo de 1 año | +12,8 % | 12,5 % | 0,99 | 27 % | 0 |
+| **E. Covarianza + vol. objetivo 5 %** (regla fijada antes de mirar: caída máx. / 2) | **+7,9 %** | **7,0 %** | **1,00** | **18 %** | **conjunto + 7 de 10** |
+
+- **E es la primera configuración que supera todas las pruebas.** Sin
+  ninguna de las monedas (también sin SOL o sin AVAX) da de +7,1 % a +8,0 % al
+  año, con caídas ≤ 7,7 %. Solo con BTC y ETH da +5,1 % al año y una caída del 5,8 %.
+- La cesta comprar y mantener hizo +1451 % en el mismo periodo: este momentum
+  **renuncia a gran parte de las subidas** a cambio de caídas pequeñas.
+- **Pegas que siguen ahí:**
+  - El último tramo (2025–2026) fue ligeramente negativo (−1,8 %).
+  - El universo son las monedas grandes de hoy: el **sesgo de supervivencia**
+    no está descartado (faltan LUNA, FTT…).
+  - Acierta un 37 % de las operaciones: es **incompatible con la regla del 77 %**.
+  - Con 100 € muchas posiciones serían menores que el mínimo de orden de Binance.
 
 ### Momentum combinado en papel: prueba de 20 días (`momentum`)
 
-La estrategia más prometedora (el «conjunto» de `classic`) **no está validada**.
-Por eso solo corre en **papel**, con 100 € simulados, durante 20 días:
+Corre en **papel**, con 100 € simulados, durante 20 días. Usa la configuración
+E de `classic` (covarianza, volatilidad 5 %), que supera la validación con datos
+de 2019–2026 pero aún no se ha probado con datos que nadie ha visto. Si cambia la
+configuración, la prueba se reinicia sola y lo avisa, para no mezclar resultados:
 
 - `python bot.py momentum` procesa un día por ejecución, tras el cierre diario
   de las 00:00 UTC. No repite días y no hace nada con datos dudosos o atrasados.
