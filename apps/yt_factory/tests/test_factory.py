@@ -327,3 +327,33 @@ def test_keeps_best_version_when_revisions_get_worse(tmp_path, monkeypatch):
         asyncio.run(go())
     assert "FIRST" in seen["scenes"][1]["text"]   # la bozza da 7 batte le revisioni da 5 e 4
     f.db.close()
+
+
+def test_clean_wikitext():
+    from yt_factory.factcheck import clean_wikitext
+    src = ("{{Short description|x}}'''Track 61''' is a [[railway platform|platform]] under the [[Waldorf Astoria]]."
+           "<ref>{{cite web|url=x}}</ref> Used by [[Franklin D. Roosevelt|FDR]].\n== History ==\nBuilt in 1910s."
+           "\n== References ==\njunk")
+    t = clean_wikitext(src)
+    assert t.startswith("Track 61 is a platform under the Waldorf Astoria.") and "FDR" in t
+    assert "History:" in t and "junk" not in t and "{{" not in t and "<ref" not in t
+
+
+def test_concept_without_sources_is_rejected(tmp_path, monkeypatch):
+    monkeypatch.delenv("YTF_OFFLINE", raising=False)
+    s = _settings(tmp_path)
+    f = pipeline.Factory(s, brain=OfflineBrain())
+
+    async def no_notes(*a, **k):
+        return ""
+
+    monkeypatch.setattr(pipeline.factcheck, "research_notes", no_notes)
+
+    async def go():
+        import httpx
+        async with httpx.AsyncClient() as f.http:
+            return await f.produce(s.channel("mysteries"), {"topic": "invented"}, "short", "12:30", "2030-01-01", {})
+
+    assert asyncio.run(go()) is None
+    assert f.db.videos("mysteries")[0]["status"] == "rejected"
+    f.db.close()

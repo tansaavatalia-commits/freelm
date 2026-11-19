@@ -87,10 +87,12 @@ CONCEPTS = Agent(
     "Yonaguni monument' (saturated, no twist). Good: 'The lighthouse whose logbook was faked 12 years later' (specific, "
     "surprising, has a reveal). Every concept must have: a concrete protagonist/object, stakes, a twist you can state "
     "in one sentence, and a satisfying payoff that is TRUE. Avoid topics the niche has done to death unless your twist "
-    "is genuinely new. Never repeat a topic the channel already covered.",
+    "is genuinely new. Only propose stories that are documented (an encyclopedia article exists about the subject); "
+    "never build a concept on an invented document, log or study. Never repeat a topic the channel already covered.",
     '{"concepts": [{"topic": "specific story, not a broad subject", "inspired_by": "demand/blueprint it serves", '
     '"upgrade": "why ours beats what exists", "twist": "the one-sentence surprise", "payoff": "the true reveal", '
-    '"saturation": "low|medium|high", "viral_score": 8}]}',
+    '"saturation": "low|medium|high", "search_query": "2-5 word encyclopedia query for the real subject", '
+    '"viral_score": 8}]}',
     temperature=0.9,
 )
 
@@ -173,8 +175,8 @@ EDITOR = Agent(
 ART_DIRECTOR = Agent(
     "the Art Director", "art desk",
     "For each scene choose the visual that makes the viewer SEE what the voice says. If the scene names a real place, "
-    "object, artifact, building, animal or historical document, give a short English 'photo_query' to find a real "
-    "freely-licensed photo of exactly that (e.g. 'Yonaguni monument terraces'); otherwise leave it empty. Always "
+    "object, artifact, building, animal or historical document, give a 'photo_query' of 2-4 English words naming "
+    "exactly that subject (e.g. 'Yonaguni monument', 'Waldorf Astoria', 'Franklin Roosevelt'); otherwise leave it empty. Always "
     "also give an 'image_prompt' for an original AI image (subject, composition, lighting, camera; no text, no logos, "
     "no real celebrities, no gore) in the channel's visual style, and a 2-4 word English 'stock_query'. Vary the "
     "framing between scenes (wide, close-up, detail, aerial) so consecutive shots never look the same.",

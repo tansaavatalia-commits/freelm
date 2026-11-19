@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import difflib
 import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -207,7 +208,9 @@ class Factory:
 
     async def best_hook(self, ch: Channel, concept: Dict[str, Any], tag: str) -> str:
         """Hook Lab scrive 8 hook; la giuria (un giurato per modello) li vota; vince la media più alta."""
-        lab = await A.HOOK_LAB.run(self.brain, ch, f"Write 8 hooks for this concept:\n{A.dumps(concept)}")
+        lab = await A.HOOK_LAB.run(self.brain, ch, f"Write 8 hooks for this concept:\n{A.dumps(_public(concept))}\n\n"
+                                                    f"Every factual detail in a hook must come from these SOURCE NOTES:\n"
+                                                    f"{_notes(concept)}")
         hooks = [str(h).strip() for h in (lab.get("hooks") or lab.get("items") or []) if str(h).strip()][:8]
         if not hooks:
             return str(concept.get("hook") or concept.get("topic"))
@@ -236,15 +239,16 @@ class Factory:
         if previous and fixes:  # revisione mirata: si corregge la bozza, non si riparte da zero
             task = (f"REVISE this draft. Apply every fix below, keep everything that works, keep the beat sheet and "
                     f"85-115 spoken words. Weave attribution into the story instead of adding disclaimers.\n"
-                    f"Keep this exact first line: {hook}\nFixes:\n{fixes}\n\nDraft:\n{A.dumps(previous)}")
+                    f"Keep this exact first line: {hook}\nFixes:\n{fixes}\n\nDraft:\n{A.dumps(previous)}"
+                    f"\n\n{GROUNDING}\n{_notes(concept)}")
             return await A.SCRIPTWRITER.run(self.brain, ch, task, model=model)
-        task = (f"Write the Short.\nConcept: {A.dumps(concept)}\nOpening hook (first words, verbatim): {hook}\n"
-                f"Questions the audience is asking: {A.dumps(aud.get('questions', [])[:6])}")
+        task = (f"Write the Short.\nConcept: {A.dumps(_public(concept))}\nOpening hook (first words, verbatim): {hook}\n"
+                f"Questions the audience is asking: {A.dumps(aud.get('questions', [])[:6])}\n\n{GROUNDING}\n{_notes(concept)}")
         return await A.SCRIPTWRITER.run(self.brain, ch, task, model=model)
 
     async def write_long(self, ch: Channel, concept: Dict[str, Any], fixes: str) -> Dict[str, Any]:
-        outline = await A.SHOWRUNNER.run(self.brain, ch, f"Long video about: {A.dumps(concept)}"
-                                         + (f"\nFixes: {fixes}" if fixes else ""))
+        outline = await A.SHOWRUNNER.run(self.brain, ch, f"Long video about: {A.dumps(_public(concept))}"
+                                         + (f"\nFixes: {fixes}" if fixes else "") + f"\n\n{GROUNDING}\n{_notes(concept)}")
         chapters = outline.get("chapters", [])[:7]
 
         async def chapter(i: int, c: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -252,7 +256,8 @@ class Factory:
                     f"\"{outline.get('title_idea', concept['topic'])}\". Chapter: {A.dumps(c)}. "
                     f"This is a LONG-VIDEO chapter: ignore the Short word budget, write 170-220 spoken words, 4-6 scenes. "
                     + (f"Start with this hook verbatim: {outline.get('hook', '')}" if i == 0 else
-                       "No greeting: continue the story from the previous chapter. The first line does not need a hook."))
+                       "No greeting: continue the story from the previous chapter. The first line does not need a hook.")
+                    + f"\n\n{GROUNDING}\n{_notes(concept)}")
             return (await A.SCRIPTWRITER.run(self.brain, ch, task)).get("scenes", [])
 
         parts = await asyncio.gather(*(chapter(i, c) for i, c in enumerate(chapters)))
@@ -271,33 +276,38 @@ class Factory:
             raise RuntimeError("nessuna bozza valida dagli sceneggiatori")
         if len(drafts) == 1:
             return drafts[0], {}
-        reviews = await asyncio.gather(*(self.edit(ch, {**d, "scenes": clean_scenes(d["scenes"], hook)}, fmt, [])
-                                         for d in drafts))
+        reviews = await asyncio.gather(*(self.edit(ch, {**d, "scenes": clean_scenes(d["scenes"], hook)}, fmt, [],
+                                                   _notes(concept)) for d in drafts))
         best = max(range(len(drafts)), key=lambda i: _score(reviews[i].get("score")))
         _log(ch.id, "creative", f"{tag} {len(drafts)} bozze in gara, vince la n.{best + 1} "
                                 f"({' vs '.join(str(_score(r.get('score'))) for r in reviews)})")
         return drafts[best], reviews[best]
 
-    async def edit(self, ch: Channel, script: Dict[str, Any], fmt: str, facts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def edit(self, ch: Channel, script: Dict[str, Any], fmt: str, facts: List[Dict[str, Any]],
+                   notes: str = "") -> Dict[str, Any]:
         spoken = " ".join(str(x.get("text", "")) for x in script.get("scenes", []))
         return await A.EDITOR.run(self.brain, ch, f"Format: {fmt}\nWord count: {len(spoken.split())}\n"
-                                                  f"Script:\n{A.dumps(script)}\n\nFact-check results:\n{A.dumps(facts)}")
+                                                  f"Script:\n{A.dumps(script)}\n\nFact-check results:\n{A.dumps(facts)}\n\n"
+                                                  f"SOURCE NOTES (any claim not supported here is a factual error to remove):\n"
+                                                  f"{notes or '(none)'}")
 
     # ================================================================== quality
-    async def fact_check(self, ch: Channel, script: Dict[str, Any], tag: str) -> List[Dict[str, Any]]:
+    async def fact_check(self, ch: Channel, script: Dict[str, Any], tag: str, notes: str = "") -> List[Dict[str, Any]]:
         spoken = " ".join(str(s.get("text", "")) for s in script.get("scenes", []))
         try:
             claims = (await A.FACT_EXTRACT.run(self.brain, ch, f"Script:\n{spoken}")).get("claims", [])
             if not claims:
                 return []
             sourced = await factcheck.gather_sources(self.http, claims)
-            verdict = await A.FACT_JUDGE.run(self.brain, ch, A.dumps(sourced))
+            verdict = await A.FACT_JUDGE.run(self.brain, ch, f"Claims with encyclopedia excerpts:\n{A.dumps(sourced)}\n\n"
+                                                             f"Background source notes:\n{notes[:5000] or '(none)'}")
         except Exception as e:
             _log(ch.id, "quality", f"{tag} fact-check non disponibile: {e}")
             return []
         results = [r for r in verdict.get("results", []) if isinstance(r, dict)]
         bad = [r for r in results if r.get("verdict") == "false"]
-        _log(ch.id, "quality", f"{tag} fact-check: {len(results)} affermazioni, {len(bad)} false")
+        unv = [r for r in results if r.get("verdict") == "unverified"]
+        _log(ch.id, "quality", f"{tag} fact-check: {len(results)} affermazioni, {len(bad)} false, {len(unv)} senza fonte")
         return results
 
     # ================================================================== un video, dal concetto all'upload
@@ -306,6 +316,15 @@ class Factory:
         vid = self.db.add_video(ch.id, day, fmt, concept["topic"])
         tag = f"#{vid} {fmt}"
         _log(ch.id, "creative", f"{tag} concetto: {concept['topic']}  (meglio perché: {concept.get('upgrade', '-')})")
+        # fonti prima di scrivere: niente fonti = niente video (meglio scartare che inventare)
+        notes = await factcheck.research_notes(self.http, str(concept.get("search_query") or concept["topic"]),
+                                               ch.language, pages=3 if fmt == "long" else 2)
+        if not notes and not os.environ.get("YTF_OFFLINE"):
+            self.db.update_video(vid, status="rejected", error="nessuna fonte trovata")
+            _log(ch.id, "research", f"{tag} SCARTATO: nessuna fonte affidabile per questo concetto")
+            return None
+        concept = {**concept, "_notes": notes}
+        _log(ch.id, "research", f"{tag} fonti raccolte ({len(notes)} caratteri da Wikipedia)")
         hook = await self.best_hook(ch, concept, tag) if fmt == "short" else ""
         fixes, review, facts = "", {}, []
         # prima stesura: più sceneggiatori (modelli diversi) in parallelo, il caporedattore sceglie la migliore
@@ -320,10 +339,11 @@ class Factory:
             if len(script["scenes"]) < 3:
                 fixes = "The script must have at least 6 beats with spoken text."
                 continue
-            facts = await self.fact_check(ch, script, tag)
-            wrong = [f for f in facts if f.get("verdict") == "false"]
+            facts = await self.fact_check(ch, script, tag, _notes(concept))
+            # con le fonti davanti, "non verificabile" significa quasi sempre "inventato"
+            wrong = [f for f in facts if f.get("verdict") == "false" or (_notes(concept) and f.get("verdict") == "unverified")]
             if not review or wrong:
-                review = await self.edit(ch, script, fmt, facts)
+                review = await self.edit(ch, script, fmt, facts, _notes(concept))
             score = _score(review.get("score"))
             _log(ch.id, "quality", f"{tag} voto {score}/10 (guarderei fino alla fine: {review.get('watch_to_end', '?')}), "
                                    f"verdetto {review.get('verdict')}, rischio {review.get('factual_risk')}")
@@ -341,7 +361,9 @@ class Factory:
                 _log(ch.id, "quality", f"{tag} tengo la versione migliore ({score}/10)")
                 break
             fixes = "\n".join(f"- {f}" for f in review.get("fixes", [])[:4])
-            fixes += "".join(f"\n- FALSE CLAIM: '{w.get('claim')}' -> {w.get('fix') or 'remove it'}" for w in wrong)
+            fixes += "".join(f"\n- {'FALSE' if w.get('verdict') == 'false' else 'UNSOURCED (invented?)'} CLAIM: "
+                             f"'{w.get('claim')}' -> {w.get('fix') or 'remove it or replace it with a fact from the notes'}"
+                             for w in wrong)
             fixes = fixes.strip() or "- stronger hook, more concrete details, a clearer twist"
             _log(ch.id, "quality", f"{tag} revisione {attempt + 1}")
         else:
@@ -358,7 +380,7 @@ class Factory:
         )
         title = str(seo.get("title") or (seo.get("titles") or [None])[0] or script.get("title_idea") or concept["topic"])[:100]
         self.db.update_video(vid, status="scripted", title=title, data={
-            "concept": concept, "hook": hook, "script": script, "review": review, "facts": facts, "art": art, "seo": seo})
+            "concept": _public(concept), "hook": hook, "script": script, "review": review, "facts": facts, "art": art, "seo": seo})
         _log(ch.id, "packaging", f"{tag} titolo: {title}")
 
         out_dir = self.s.data_dir / "videos" / ch.id / day
@@ -392,7 +414,7 @@ class Factory:
         description = self.description(ch, seo, fmt, credits)
         meta = {"title": title, "titles": seo.get("titles", []), "description": description,
                 "tags": seo.get("tags", []), "pinned_comment": seo.get("pinned_comment", ""), "format": fmt,
-                "slot": slot, "hook": hook, "concept": concept}
+                "slot": slot, "hook": hook, "concept": _public(concept)}
         (out_dir / f"{stem}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         self.db.update_video(vid, status="rendered", file=str(video))
         _log(ch.id, "production", f"{tag} video pronto: {video.relative_to(self.s.data_dir)} ({render.duration(video):.0f}s)")
@@ -500,6 +522,19 @@ class Factory:
                  *[f"- {p}" for p in out.get("extra_revenue", [])]]
         report.write_text("\n".join(lines) + "\n", encoding="utf-8")
         _log(ch.id, "growth", f"report salvato: {report.relative_to(self.s.data_dir)}")
+
+
+GROUNDING = ("SOURCE NOTES below. Use ONLY facts found in them for every name, number, date, quote, the twist and the "
+             "payoff. If the concept's twist is not supported by the notes, pick a true surprising detail from the notes "
+             "instead. Never invent documents, logs, studies or quotes.")
+
+
+def _notes(concept: Dict[str, Any]) -> str:
+    return str(concept.get("_notes") or "")
+
+
+def _public(concept: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in concept.items() if not k.startswith("_")}
 
 
 def clean_scenes(scenes: Any, hook: str = "") -> List[Dict[str, Any]]:

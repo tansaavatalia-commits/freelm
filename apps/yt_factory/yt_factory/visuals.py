@@ -98,12 +98,18 @@ async def real_photo(http: httpx.AsyncClient, query: str, fmt: str, cache: Path,
     if not query or os.environ.get("YTF_OFFLINE"):
         return None
     cache.mkdir(parents=True, exist_ok=True)
-    r = await http.get(OPENVERSE, params={"q": query, "license": SAFE_LICENSES, "page_size": 8, "mature": "false"},
-                       headers={"User-Agent": "yt-factory/0.3"})
-    if r.status_code != 200:
-        return None
+    words = query.split()
+    results: list = []
+    for n in dict.fromkeys([len(words), 4, 3, 2]):  # query troppo specifica = 0 risultati: si accorcia
+        if n > len(words) or n < 1:
+            continue
+        r = await http.get(OPENVERSE, params={"q": " ".join(words[:n]), "license": SAFE_LICENSES, "page_size": 8,
+                                              "mature": "false"}, headers={"User-Agent": "yt-factory/0.3"})
+        if r.status_code == 200 and r.json().get("results"):
+            results = r.json()["results"]
+            break
     w, h = SIZES[fmt]
-    good = [x for x in r.json().get("results", [])
+    good = [x for x in results
             if (x.get("width") or 0) >= 1000 and (x.get("height") or 0) >= 650
             and (x.get("width") or 1) / (x.get("height") or 1) < 4]  # niente banner panoramici
     for item in good[pick % max(len(good), 1):] + good[: pick % max(len(good), 1)]:
