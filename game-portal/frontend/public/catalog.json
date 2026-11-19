@@ -1,0 +1,44 @@
+[
+  {
+    "slug": "mines",
+    "title": "Mines",
+    "version": "1.0.0",
+    "category": "logic",
+    "tags": [
+      "classic",
+      "logic",
+      "quick"
+    ],
+    "description": "Clear the field without touching a mine. Numbers tell you how many mines are next to each square. Your first move is always safe.",
+    "aspect": "1:1",
+    "usesStorage": true
+  },
+  {
+    "slug": "nonogram",
+    "title": "Nonogram",
+    "version": "1.0.0",
+    "category": "puzzle",
+    "tags": [
+      "daily",
+      "picture",
+      "brain"
+    ],
+    "description": "Use the number clues to fill the right squares and reveal the pattern. A new daily puzzle every day, the same for everyone.",
+    "aspect": "1:1",
+    "usesStorage": true
+  },
+  {
+    "slug": "sudoku",
+    "title": "Sudoku",
+    "version": "1.0.0",
+    "category": "logic",
+    "tags": [
+      "classic",
+      "numbers",
+      "brain"
+    ],
+    "description": "Fill the grid so every row, column and 3×3 box contains the digits 1 to 9. Every puzzle has exactly one solution.",
+    "aspect": "3:4",
+    "usesStorage": true
+  }
+]

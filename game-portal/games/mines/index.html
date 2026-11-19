@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mines — Tabluo</title>
+  <link rel="stylesheet" href="../sdk/base.css" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="bar">
+    <label>Level
+      <select id="level">
+        <option value="easy">Easy</option>
+        <option value="medium">Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+    </label>
+    <button id="new">New game</button>
+    <button id="flag-mode" aria-pressed="false" title="Tap cells to place flags">🚩 Flag mode</button>
+    <span class="stat" id="flags" aria-label="Flags left">10</span>
+    <span class="stat" id="time" aria-label="Time">0:00</span>
+  </div>
+  <div id="board" role="grid" aria-label="Minefield"></div>
+  <p class="message" id="message" role="status" aria-live="polite"></p>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

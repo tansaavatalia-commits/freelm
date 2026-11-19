@@ -1,4 +1,4 @@
-# GAME PORTAL — Architettura (proposta FASE 0, da congelare in FASE 2)
+# Tabluo (GAME PORTAL) — Architettura
 
 ## Principi
 1. **Costo zero ai volumi iniziali**, con soglie di costo note in anticipo.
@@ -92,3 +92,32 @@ Ordine di decisione per ogni slot: **campagna diretta → sponsor → rete → s
 
 ## Portabilità (piano di uscita)
 Hono → Node/Bun su VPS; D1 → file SQLite (`wrangler d1 export`); Pages → qualsiasi hosting statico. Tempo di migrazione stimato: 1–3 giorni **[IPOTESI]**.
+
+## Stato di implementazione (2026-11-19, FASI 2–6 parziali)
+
+| Parte | Implementato | Note |
+|---|---|---|
+| Monorepo pnpm (`shared`, `backend`, `frontend`, `games`) | ✅ | TypeScript strict; `pnpm check` verde |
+| Catalogo da Git con blocco licenze (`scripts/build-catalog.ts`) | ✅ | ADR D-016 |
+| API Hono: catalogo, stato/kill switch, eventi aggregati, ad server, redirect clic | ✅ | test su SQLite reale con la stessa migrazione |
+| Admin API (sospensione, statistiche, inserzionisti, campagne, creatività, report, audit) | ✅ | autenticazione **temporanea** con token (D-017) |
+| Portale React: home, categorie, ricerca, pagina gioco, correlati, preferiti, cronologia, pagine info | ✅ | SPA; prerendering SEO in FASE 4 completa |
+| Player iframe sandbox su origin separato + validazione `postMessage` | ✅ | verificato in browser reale (E2E) |
+| Giochi: Mines, Sudoku, Nonogram (puzzle del giorno) | ✅ | 3/10 di D-013 |
+| Account utente (passkey), Premium, SPA admin con MFA, prerender, i18n | ❌ | FASI 4–8 |
+
+### ADR D-016 — catalogo e licenze in Git
+Fonte di verità del catalogo: `games/<slug>/manifest.json` + `license.json`, revisionati via
+Git. La build genera `catalog.json` **solo** con i giochi pubblicabili (`canPublish`). Il
+database contiene solo lo stato dinamico (sospensioni, statistiche, pubblicità, audit).
+Motivi: nessuna query per servire il catalogo (pagine statiche, limiti D1 preservati),
+storia verificabile di ogni modifica di diritti, impossibilità di "pubblicare per sbaglio"
+da un'interfaccia. La sospensione resta immediata via DB, senza deploy.
+
+### Isolamento verificato
+- Giochi su origin diverso; `sandbox="allow-scripts"` (+ `allow-same-origin` solo per
+  giochi interni con salvataggi locali: lo script di catalogo rifiuta giochi di terzi con storage).
+- Il portale accetta messaggi solo da `event.source === iframe.contentWindow`, dall'origin
+  atteso e con lo schema `tabluo/1`.
+- Test E2E: il gioco non può leggere `parent.document`/cookie né navigare la pagina principale;
+  messaggi falsificati dalla pagina vengono ignorati.

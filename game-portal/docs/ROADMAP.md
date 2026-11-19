@@ -34,7 +34,7 @@ spettano all'utente (vedi `DECISIONS.md`).
 - **Rischi:** dati pubblici scarsi su ricavi dei concorrenti (in gran parte privati).
 - **Approvazioni:** scelta della nicchia, lingua iniziale, nome provvisorio del brand.
 
-## FASE 2 — Architettura e documentazione
+## FASE 2 — Architettura e documentazione ✅ (identità visiva v0, schema, protocollo, ADR)
 - **Obiettivo:** congelare architettura, schema dati, API, design system.
 - **Attività:** ADR in `DECISIONS.md`, schema D1, contratto API (OpenAPI), protocollo
   `postMessage` dei giochi, identità visiva (palette, tipografia, logo testuale), wireframe.
@@ -46,7 +46,7 @@ spettano all'utente (vedi `DECISIONS.md`).
 - **Rischi:** sovra-ingegnerizzazione ⇒ si mantiene un MVP minimo.
 - **Approvazioni:** identità visiva, nome del brand.
 
-## FASE 3 — Fondamenta software
+## FASE 3 — Fondamenta software ✅ in locale (manca solo la CI nel repo dedicato, D-001)
 - **Obiettivo:** monorepo funzionante in locale con CI.
 - **Attività:** pnpm workspaces, TypeScript strict, ESLint/Prettier, Vitest, Playwright,
   Wrangler locale, D1 locale con migrazioni, GitHub Actions (lint, test, build),
@@ -60,7 +60,7 @@ spettano all'utente (vedi `DECISIONS.md`).
 - **Rischi:** versioni instabili ⇒ dipendenze bloccate e versioni LTS.
 - **Approvazioni:** push sul repo remoto.
 
-## FASE 4 — Frontend
+## FASE 4 — Frontend 🟡 (pagine principali fatte; mancano prerender SEO, i18n, Lighthouse CI)
 - **Obiettivo:** portale pubblico veloce, accessibile, mobile-first.
 - **Attività:** home, catalogo, categorie, ricerca, pagina gioco, correlati,
   preferiti/cronologia locali, pagine informative, i18n, prerendering, sitemap, JSON-LD.
@@ -72,7 +72,7 @@ spettano all'utente (vedi `DECISIONS.md`).
 - **Rischi:** peso del bundle ⇒ code splitting, nessuna libreria UI pesante.
 - **Approvazioni:** design definitivo.
 
-## FASE 5 — Backend e database
+## FASE 5 — Backend e database 🟡 (API e DB fatti; mancano account utente e rate limiting)
 - **Obiettivo:** API sicura e dati persistenti.
 - **Attività:** API Hono versionata, schema e migrazioni D1, autenticazione (sessioni
   con cookie HttpOnly, magic link/passkey), catalogo, preferiti, eventi aggregati,
@@ -86,7 +86,7 @@ spettano all'utente (vedi `DECISIONS.md`).
 - **Rischi:** limiti giornalieri D1 ⇒ cache e scritture aggregate.
 - **Approvazioni:** provider email (se necessario).
 
-## FASE 6 — Motore giochi
+## FASE 6 — Motore giochi 🟡 (player, SDK, kill switch fatti; 3/10 giochi)
 - **Obiettivo:** caricamento, isolamento, versioning, telemetria tecnica dei giochi + primi giochi interni.
 - **Attività:** manifest per gioco, build statica per gioco, player iframe sandbox su
   origin separato, SDK `postMessage` minimo (ready/score/error/pause), kill switch,

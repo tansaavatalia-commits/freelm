@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+*.local
+coverage/
+frontend/src/generated/
+backend/src/generated/

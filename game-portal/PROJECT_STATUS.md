@@ -1,35 +1,51 @@
-# GAME PORTAL — Stato del progetto
+# Tabluo (GAME PORTAL) — Stato del progetto
 
 **Aggiornato:** 2026-11-19
-**Fase attuale:** FASE 1 completata (gate G1: **GO condizionato**). Prossima: FASE 2 — Architettura e documentazione.
+**Fase attuale:** FASI 4–6 in corso (sviluppo locale). FASI 0–3 completate.
+**Niente è pubblicato online. Nessuna spesa. Nessun account creato. Nessun contatto esterno.**
 
 ## Attività completate
-- FASE 0: audit, piano A–J, roadmap, architettura, modello v0.
-- Push del branch `claude/game-portal-master-mm5azl` (autorizzato).
-- FASE 1: dossier concorrenti v1, modello finanziario v1, checklist legale aggiornata, catalogo iniziale (D-013), lingua (D-012).
-- D-014 nome Tabluo, D-015 modello ibrido, modello finanziario v2.
+- FASE 0–1: audit, piano A–J, ricerca di mercato, modello finanziario v2 (ibrido).
+- Decisioni: D-001…D-019 (vedi `docs/DECISIONS.md`); nome di lavoro **Tabluo**.
+- FASE 2: architettura, schema D1, protocollo `tabluo/1`, design system v0 (chiaro/scuro), ADR.
+- FASE 3: monorepo pnpm, TypeScript strict, test, build, CI pronta per il repo dedicato.
+- FASE 4 (parziale): portale con home, categorie, ricerca, pagina gioco, correlati, preferiti e cronologia locali, pagine info (bozze legali), mobile-first.
+- FASE 5 (parziale): API Hono + D1 — kill switch, eventi anonimi aggregati, ad server diretto, admin API con audit log.
+- FASE 6 (parziale): player sandbox su origin separato, SDK giochi, 3 giochi originali (Mines, Sudoku, Nonogram con puzzle del giorno).
 
-## In corso
-- Nessuna.
+## Test (eseguiti davvero, 2026-11-19)
+| Suite | Risultato |
+|---|---|
+| `shared` (manifest, licenze, protocollo) | 12/12 ✅ |
+| `games` (logica dei 3 giochi) | 17/17 ✅ |
+| `backend` (API su SQLite reale con la migrazione di produzione) | 16/16 ✅ |
+| `frontend` (isolamento player, ricerca, storage, pagine, navigazione) | 16/16 ✅ |
+| script catalogo (regola bloccante licenze) | 6/6 ✅ |
+| **E2E in Chromium** (`pnpm e2e`: API wrangler/D1 locale + giochi + portale) | 12/12 ✅ |
+| Controllo tipi tutti i pacchetti + build | ✅ |
+| Test falliti | nessuno |
+
+## Errori trovati e corretti
+- Crash di navigazione nei Chromium recenti (effetto React che restituiva la Promise di `scrollTo`): corretto, con test di regressione che fallisce sul vecchio codice.
+- Riquadro di gioco sovradimensionato su desktop: corretto (proporzioni del gioco).
+- Script E2E: server residui e `curl` senza timeout: corretto (gruppi di processi, timeout).
+- `games/public` scambiata per un gioco: corretta (la regola bloccante ha fermato la build come previsto).
 
 ## Bloccate
-- **D-001 (repo dedicato):** approvata ma non eseguibile da questa sessione (non posso creare repository). Serve un repo vuoto creato dall'utente.
-- FASE 3 (codice): attende D-001, per non mescolare il portale con freelm.
+- **D-001 repository dedicato:** in attesa che il titolare crei `game-portal` (privato, vuoto). Istruzioni: `docs/MIGRATION.md`.
 
 ## Decisioni richieste
-- Nessuna decisione bloccante aperta. D-014 (Tabluo) e D-015 (modello ibrido) approvate.
-- Da ricordare: il dominio `tabluo.com` è libero ma **non acquistato** (D-010, ~10–15 €/anno) e potrebbe essere registrato da altri.
+- **Dominio `tabluo.com`** (~10–15 €/anno, D-010): libero il 2026-11-19, non acquistato.
+- **D-019:** riconferma delle licenze dei giochi interni prima della pubblicazione.
 
-## Errori
-- Nessun errore tecnico. Correzioni di modello documentate in CHANGELOG.
-
-## Test
-- Superati: `python3 scripts/financial_model.py` e `--no-network` (output v2/v1 riportati in FINANCIAL_MODEL.md).
-- Falliti: nessuno. Non esiste ancora codice applicativo.
-
-## Limiti della ricerca
-- Nessun bilancio depositato consultato (KvK e altri registri: consultazione diretta, in parte a pagamento).
-- La maggior parte dei dati è [DICH] o [TERZI]; nessun benchmark di sell-through diretto trovato.
+## Limiti noti (non errori, lavoro futuro)
+- Admin: token temporaneo (D-017), manca la SPA admin con passkey + MFA (FASE 7).
+- SEO: SPA senza prerendering (FASE 4); i18n non ancora attivo; Lighthouse CI da aggiungere (FASE 10).
+- Nessun rate limiting sull'API (FASE 5/9); account utente e Premium non iniziati (D-006, D-008).
+- Pagine privacy/termini: **bozze**, serve revisione legale (D-009).
+- Giochi: 3 su 10 di D-013.
 
 ## Prossimo passo
-FASE 2 (documentazione di architettura, schema dati, design) — può partire qui; il codice (FASE 3) parte appena esiste il repository dedicato.
+1. Spostamento nel repository dedicato appena esiste (`git subtree split`, storia preservata).
+2. Altri giochi (Klondike, FreeCell, Spider, Mahjong, Word, Dama, Scacchi).
+3. Prerendering SEO + i18n, SPA admin con passkey.

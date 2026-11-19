@@ -1,0 +1,11 @@
+{
+  "slug": "sudoku",
+  "title": "Sudoku",
+  "version": "1.0.0",
+  "category": "logic",
+  "tags": ["classic", "numbers", "brain"],
+  "description": "Fill the grid so every row, column and 3×3 box contains the digits 1 to 9. Every puzzle has exactly one solution.",
+  "aspect": "3:4",
+  "usesStorage": true,
+  "license": { "type": "internal", "rightsHolder": "Tabluo (titolare del progetto)", "thirdPartyAssets": [] }
+}

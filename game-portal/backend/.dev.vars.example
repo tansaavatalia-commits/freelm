@@ -1,0 +1,2 @@
+# Copia in .dev.vars (ignorato da Git) e scegli un valore lungo e casuale.
+ADMIN_TOKEN=cambia-questo-valore-con-almeno-32-caratteri

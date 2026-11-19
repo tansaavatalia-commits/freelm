@@ -1,0 +1,32 @@
+# CI del repository dedicato (attiva dopo lo spostamento in "game-portal").
+name: ci
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 5 * * *"
+permissions:
+  contents: read
+jobs:
+  check:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+  licenses:
+    # Controllo giornaliero delle licenze: fallisce se una licenza è scaduta.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/build-catalog.ts

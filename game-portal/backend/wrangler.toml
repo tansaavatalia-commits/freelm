@@ -1,0 +1,17 @@
+# Configurazione SOLO LOCALE. Nessun deploy senza autorizzazione (FASE 11).
+# database_id è un segnaposto: verrà sostituito quando esisterà l'account Cloudflare.
+name = "tabluo-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+send_metrics = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "tabluo"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[vars]
+# "on" abilita il riempimento da rete pubblicitaria sull'invenduto (D-015).
+AD_NETWORK = "off"
+# ADMIN_TOKEN va in .dev.vars (locale) o `wrangler secret put` (produzione), mai qui.

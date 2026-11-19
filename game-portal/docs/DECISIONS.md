@@ -24,3 +24,8 @@ Stato: `PROPOSTA` (attende l'utente) · `APPROVATA` · `RESPINTA` · `ADR` (deci
 > **proposte fino a quel momento** e del passaggio alla FASE 1. **Non** copre acquisti,
 > account commerciali, pubblicazione del portale, contatti esterni o spese (D-009, D-010,
 > D-011): per quelle chiederò di nuovo nel momento in cui servono, come da vincoli.
+| D-016 | Catalogo e licenze in Git; build bloccata senza licenza valida; DB solo per lo stato dinamico | ADR APPROVATA 2026-11-19 | 0 € | Vedi ARCHITECTURE |
+| D-017 | Autenticazione admin temporanea con Bearer token ≥ 32 caratteri (confronto a tempo costante), solo finché non esiste la SPA admin con passkey + MFA | ADR APPROVATA (temporanea) | 0 € | Da sostituire prima del lancio (G3) |
+| D-018 | Telemetria Wrangler disattivata (`send_metrics = false`) | ADR APPROVATA | 0 € | Coerenza con la linea privacy |
+| D-019 | Licenze dei 3 giochi interni registrate come `approved` in base all'autorizzazione generale del 2026-11-19 | APPROVATA, **da riconfermare a G4** | 0 € | Il titolare deve confermarle prima della pubblicazione pubblica |
+

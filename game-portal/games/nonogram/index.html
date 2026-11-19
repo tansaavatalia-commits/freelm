@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nonogram — Tabluo</title>
+  <link rel="stylesheet" href="../sdk/base.css" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="bar">
+    <label>Puzzle
+      <select id="mode">
+        <option value="daily">Daily (10×10)</option>
+        <option value="5">Random 5×5</option>
+        <option value="10">Random 10×10</option>
+        <option value="15">Random 15×15</option>
+      </select>
+    </label>
+    <button id="new">New</button>
+    <button id="mark" aria-pressed="false" title="Tap cells to mark them as empty">✕ Mark mode</button>
+    <span class="stat" id="time" aria-label="Time">0:00</span>
+  </div>
+  <div id="wrap"><table id="board" aria-label="Nonogram"></table></div>
+  <p class="message" id="message" role="status" aria-live="polite"></p>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

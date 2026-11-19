@@ -1,5 +1,14 @@
 # GAME PORTAL — Changelog
 
+## 2026-11-19 — FASI 2–6 (parziali), sviluppo locale
+- Monorepo pnpm in `game-portal/`: `shared`, `backend` (Hono + D1), `frontend` (React + Vite), `games` (vanilla JS).
+- Giochi originali: Mines, Sudoku (soluzione unica), Nonogram (puzzle del giorno).
+- Catalogo da Git con regola bloccante delle licenze (D-016); controllo licenze giornaliero in CI.
+- API: kill switch, eventi aggregati anonimi, ad server diretto (sponsor → diretta → rete → nessuno), report, audit log.
+- Test: 67 unitari + 12 end-to-end in Chromium (`pnpm check`, `pnpm e2e`).
+- Bug trovati dai test E2E e corretti: crash di navigazione (effetto React che restituiva la Promise di `scrollTo` nei Chromium recenti) con test di regressione; riquadro di gioco sovradimensionato su desktop; cartella `games/public` scambiata per un gioco.
+- Documenti: DEPLOYMENT, OPERATIONS, MIGRATION; screenshot in `docs/screenshots/`.
+
 ## 2026-11-19 — Decisioni D-014 e D-015
 - D-015 approvata: modello pubblicitario ibrido (diretta → sponsor → rete sull'invenduto, solo con consenso).
 - Modello finanziario v2: ~183k visitatori/mese nello scenario intermedio per 3.000 € netti (v1 solo diretta: ~246k); opzione `--no-network`.

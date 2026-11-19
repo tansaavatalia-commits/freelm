@@ -1,0 +1,23 @@
+{
+  "name": "@tabluo/backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "db:migrate:local": "wrangler d1 migrations apply tabluo --local",
+    "typecheck": "node ../scripts/build-catalog.ts && tsc --noEmit",
+    "test": "node ../scripts/build-catalog.ts && vitest run",
+    "build": "wrangler deploy --dry-run --outdir dist"
+  },
+  "dependencies": {
+    "@tabluo/shared": "workspace:*",
+    "hono": "4.13.19"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261119.1",
+    "@types/node": "26.6.6",
+    "vitest": "5.1.1",
+    "wrangler": "4.165.0"
+  }
+}

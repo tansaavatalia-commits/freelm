@@ -2,9 +2,17 @@
 
 **Regola bloccante:** un gioco può passare a `published` solo se la sua licenza è
 `approved`, non è scaduta, copre il territorio e include diritti di hosting e di
-monetizzazione. Il controllo è applicato **sia nel backend sia nel database**, non solo nell'interfaccia.
+monetizzazione. Il controllo è applicato **in build** da `scripts/build-catalog.ts` (exit 1, nessun
+catalogo generato) ed è coperto da test automatici (`tests/catalog.test.ts`, `shared/test`).
+Nessuna interfaccia può aggirarlo: il catalogo pubblico è solo l'output di quella build.
 
-## Registro (tabella `licenses`)
+## Registro
+
+Implementazione attuale (D-016): un file `games/<slug>/license.json` per gioco, con i campi
+sotto (in camelCase: `rightsHolder`, `licenseType`, `approvalStatus`…), versionato in Git.
+La build applica la regola bloccante. Il catalogo pubblico non espone i dati di licenza.
+
+### Campi
 | Campo | Tipo | Note |
 |---|---|---|
 | `id` | ULID | identificativo |

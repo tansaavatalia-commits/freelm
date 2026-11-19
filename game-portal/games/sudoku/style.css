@@ -1,0 +1,13 @@
+#grid { --s: min(10.5vw, 46px); display: grid; grid-template-columns: repeat(9, var(--s)); border: 2px solid var(--ink); border-radius: 6px; overflow: hidden; }
+#grid button { width: var(--s); height: var(--s); min-height: 0; padding: 0; border-radius: 0; border: 1px solid var(--line);
+  font-size: calc(var(--s) * 0.55); font-variant-numeric: tabular-nums; background: var(--surface); position: relative; }
+#grid button.given { font-weight: 700; }
+#grid button.user { color: var(--felt); }
+#grid button.peer { background: color-mix(in srgb, var(--felt) 8%, var(--surface)); }
+#grid button.same { background: color-mix(in srgb, var(--gold) 25%, var(--surface)); }
+#grid button.sel { background: color-mix(in srgb, var(--felt) 28%, var(--surface)); }
+#grid button.bad { color: var(--accent); }
+#grid button.br { border-right: 2px solid var(--ink); } #grid button.bb { border-bottom: 2px solid var(--ink); }
+#grid .notes { position: absolute; inset: 1px; display: grid; grid-template-columns: repeat(3, 1fr); font-size: calc(var(--s) * 0.22); color: var(--muted); line-height: 1; }
+#pad { display: grid; grid-template-columns: repeat(5, 52px); gap: 6px; }
+#pad button { font-size: 20px; }

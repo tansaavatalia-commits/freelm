@@ -1,0 +1,24 @@
+{
+  "id": "lic-sudoku-001",
+  "title": "Sudoku",
+  "developer": "Tabluo (sviluppo interno con Claude Code)",
+  "rightsHolder": "Titolare del progetto Tabluo",
+  "licenseType": "internal",
+  "territory": "WORLD",
+  "startDate": "2026-11-19",
+  "endDate": null,
+  "exclusivity": "exclusive",
+  "hostingRights": true,
+  "monetizationRights": true,
+  "marketingAssetsRights": true,
+  "attributionText": "",
+  "gameVersion": "1.0.0",
+  "approvalStatus": "approved",
+  "approvedBy": "titolare (autorizzazione generale del 2026-11-19; da riconfermare al gate G4, D-019)",
+  "approvedAt": "2026-11-19",
+  "evidence": [
+    "Codice e grafica originali in games/sudoku (storia Git)",
+    "Nessun asset di terzi; simboli Unicode ed emoji di sistema"
+  ],
+  "notes": "Meccaniche di gioco classiche di pubblico dominio; nome generico, nessun marchio di terzi."
+}

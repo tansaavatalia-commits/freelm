@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sudoku — Tabluo</title>
+  <link rel="stylesheet" href="../sdk/base.css" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="bar">
+    <label>Level
+      <select id="level">
+        <option value="easy">Easy</option>
+        <option value="medium">Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+    </label>
+    <button id="new">New puzzle</button>
+    <button id="notes" aria-pressed="false">✎ Notes</button>
+    <span class="stat" id="time" aria-label="Time">0:00</span>
+  </div>
+  <div id="grid" role="grid" aria-label="Sudoku grid"></div>
+  <div id="pad" aria-label="Number pad"></div>
+  <p class="message" id="message" role="status" aria-live="polite"></p>
+  <p class="sr-only">Use arrow keys to move, digits 1–9 to fill, Backspace to clear, N to toggle notes.</p>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

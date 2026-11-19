@@ -1,0 +1,25 @@
+/* Token di design Tabluo condivisi dai giochi (coerenti con il portale). */
+:root {
+  --bg: #f6f1e7; --surface: #fffdf8; --ink: #1d2a3a; --muted: #5b6878;
+  --felt: #1f5f4a; --felt-ink: #f6f1e7; --accent: #c4512f; --gold: #b7862c;
+  --line: #d9d0bf; --focus: #2a6fdb; --radius: 10px;
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121a22; --surface: #1a2430; --ink: #e9e4da; --muted: #9aa6b4;
+    --felt: #2c7a60; --felt-ink: #f6f1e7; --accent: #ef7b57; --gold: #e0b35a; --line: #2c3a49; --focus: #6aa3ff; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
+body { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; width: 100%; max-width: 560px; }
+.bar .stat { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 4.5em; text-align: center; }
+button, select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 6px 12px; cursor: pointer; min-height: 36px; }
+button:hover { border-color: var(--muted); }
+button[aria-pressed="true"] { background: var(--felt); color: var(--felt-ink); border-color: var(--felt); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.message { min-height: 1.5em; font-weight: 600; text-align: center; }
+.message.win { color: var(--felt); } .message.lose { color: var(--accent); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

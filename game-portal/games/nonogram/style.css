@@ -1,0 +1,10 @@
+#wrap { max-width: 100%; overflow-x: auto; }
+#board { border-collapse: collapse; --s: 28px; }
+#board th { font-size: 12px; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; padding: 2px 4px; }
+#board th.col { vertical-align: bottom; line-height: 1.15; }
+#board th.row { text-align: right; white-space: nowrap; }
+#board th.ok { color: var(--felt); opacity: 0.6; }
+#board td { padding: 0; border: 1px solid var(--line); }
+#board td.b5 { border-right: 2px solid var(--muted); } #board tr.b5 td { border-bottom: 2px solid var(--muted); }
+#board td button { width: var(--s); height: var(--s); min-height: 0; padding: 0; border: 0; border-radius: 0; background: var(--surface); display: block; color: var(--muted); }
+#board td button.fill { background: var(--ink); }

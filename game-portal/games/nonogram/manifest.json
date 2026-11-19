@@ -1,0 +1,11 @@
+{
+  "slug": "nonogram",
+  "title": "Nonogram",
+  "version": "1.0.0",
+  "category": "puzzle",
+  "tags": ["daily", "picture", "brain"],
+  "description": "Use the number clues to fill the right squares and reveal the pattern. A new daily puzzle every day, the same for everyone.",
+  "aspect": "1:1",
+  "usesStorage": true,
+  "license": { "type": "internal", "rightsHolder": "Tabluo (titolare del progetto)", "thirdPartyAssets": [] }
+}

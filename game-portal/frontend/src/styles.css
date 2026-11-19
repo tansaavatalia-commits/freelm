@@ -1,0 +1,92 @@
+/* Tabluo design system v0 — identità "tavolo da gioco": panno verde, carta crema, oro. */
+:root {
+  --bg: #f6f1e7; --surface: #fffdf8; --ink: #1d2a3a; --muted: #5b6878; --line: #e2d9c8;
+  --felt: #1f5f4a; --felt-2: #174a3a; --felt-ink: #f6f1e7; --gold: #b7862c; --accent: #c4512f; --focus: #2a6fdb;
+  --radius: 14px; --gap: 16px; --max: 1120px;
+  --shadow: 0 1px 2px rgb(29 42 58 / 6%), 0 4px 14px rgb(29 42 58 / 6%);
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  line-height: 1.5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #10171e; --surface: #18222d; --ink: #e9e4da; --muted: #9aa6b4; --line: #26333f;
+    --felt: #2c7a60; --felt-2: #1e5a47; --gold: #e0b35a; --accent: #ef7b57; --focus: #6aa3ff;
+    --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 4px 14px rgb(0 0 0 / 25%);
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); }
+a { color: inherit; }
+h1, h2 { line-height: 1.2; letter-spacing: -0.01em; }
+h1 { font-size: clamp(1.6rem, 4vw, 2.4rem); margin: 0.4em 0; }
+h2 { font-size: 1.25rem; margin: 1.6em 0 0.6em; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+button, input { font: inherit; color: inherit; }
+button { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 0.45em 1em; cursor: pointer; min-height: 40px; }
+button:hover { border-color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip { position: absolute; left: -999px; top: 8px; background: var(--surface); padding: 8px 12px; border-radius: 8px; z-index: 10; }
+.skip:focus { left: 8px; }
+.muted { color: var(--muted); }
+
+/* Header */
+.site-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 12px 16px; max-width: var(--max); margin: 0 auto; }
+.logo { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.35rem; text-decoration: none; letter-spacing: -0.02em; }
+.logo-mark { width: 28px; height: 28px; border-radius: 8px; background:
+  radial-gradient(circle at 74% 72%, var(--gold) 0 18%, transparent 19%),
+  linear-gradient(var(--felt-ink), var(--felt-ink)) 50% 30% / 56% 14% no-repeat,
+  linear-gradient(var(--felt-ink), var(--felt-ink)) 50% 62% / 14% 52% no-repeat, var(--felt); }
+.site-header nav { display: flex; gap: 4px; }
+.site-header nav a { text-decoration: none; padding: 6px 12px; border-radius: 999px; color: var(--muted); font-weight: 600; }
+.site-header nav a.active, .site-header nav a:hover { color: var(--ink); background: var(--surface); }
+.search { flex: 1 1 200px; display: flex; justify-content: flex-end; }
+.search input { width: 100%; max-width: 280px; padding: 0.5em 1em; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); min-height: 40px; }
+
+main { max-width: var(--max); margin: 0 auto; padding: 0 16px 48px; }
+
+/* Hero */
+.hero { background: linear-gradient(135deg, var(--felt), var(--felt-2)); color: var(--felt-ink); border-radius: calc(var(--radius) + 6px); padding: clamp(24px, 5vw, 48px); margin: 8px 0 24px; }
+.hero h1 { margin-top: 0; }
+.hero p { max-width: 46ch; opacity: 0.92; }
+.button-primary { display: inline-block; margin-top: 8px; background: var(--gold); color: #1d1a12; text-decoration: none; font-weight: 700; padding: 0.7em 1.3em; border-radius: 999px; }
+.button-primary:hover { filter: brightness(1.06); }
+
+/* Griglia giochi */
+.grid { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.card { display: flex; flex-direction: column; gap: 6px; text-decoration: none; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; box-shadow: var(--shadow); transition: transform 0.15s ease; height: 100%; }
+.card:hover { transform: translateY(-2px); }
+.card-title { font-weight: 700; }
+.card-meta { color: var(--muted); font-size: 0.875rem; }
+.cover { aspect-ratio: 4 / 3; border-radius: calc(var(--radius) - 4px); display: grid; place-items: center;
+  background: radial-gradient(120% 90% at 30% 20%, hsl(var(--hue) 45% 52%), hsl(var(--hue) 45% 30%)); color: #fff; font-size: 2.6rem; font-weight: 800; }
+.cover-large { font-size: 4rem; }
+.chips { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-block; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); text-decoration: none; font-weight: 600; }
+
+/* Pagina gioco */
+.play-head { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.crumbs { margin: 8px 0 0; color: var(--muted); font-size: 0.9rem; }
+.fav[aria-pressed="true"] { background: var(--gold); color: #1d1a12; border-color: var(--gold); }
+.player { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; box-shadow: var(--shadow); }
+.player:fullscreen { display: flex; flex-direction: column; justify-content: center; background: var(--bg); }
+.player-frame { position: relative; width: min(100%, calc(80vh * var(--ar, 1))); margin: 0 auto; }
+.player-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: calc(var(--radius) - 6px); background: var(--bg); }
+.player-overlay { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); gap: 8px; text-align: center; }
+.player-tools { display: flex; justify-content: flex-end; padding-top: 8px; }
+.player-message { padding: 32px; text-align: center; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--line); }
+.lead { font-size: 1.05rem; max-width: 70ch; }
+@media (max-width: 640px) { .player-frame { width: 100%; height: 72vh; aspect-ratio: auto !important; } }
+
+/* Pubblicità: sempre etichettata, mai invadente */
+.ad { margin: 24px auto; text-align: center; }
+.ad-label { display: block; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.ad img { max-width: 100%; height: auto; border-radius: 8px; }
+
+.prose { max-width: 70ch; }
+.draft { background: color-mix(in srgb, var(--gold) 18%, var(--surface)); border-left: 4px solid var(--gold); padding: 8px 12px; border-radius: 6px; }
+
+.site-footer { border-top: 1px solid var(--line); padding: 24px 16px; text-align: center; color: var(--muted); font-size: 0.9rem; }
+.site-footer nav { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 18px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

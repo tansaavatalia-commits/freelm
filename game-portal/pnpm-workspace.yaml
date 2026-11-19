@@ -1,0 +1,8 @@
+packages:
+  - shared
+  - backend
+  - frontend
+  - games
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

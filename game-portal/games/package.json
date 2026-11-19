@@ -1,0 +1,15 @@
+{
+  "name": "@tabluo/games",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5174 --strictPort",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "8.3.8"
+  }
+}

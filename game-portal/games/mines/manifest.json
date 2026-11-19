@@ -1,0 +1,11 @@
+{
+  "slug": "mines",
+  "title": "Mines",
+  "version": "1.0.0",
+  "category": "logic",
+  "tags": ["classic", "logic", "quick"],
+  "description": "Clear the field without touching a mine. Numbers tell you how many mines are next to each square. Your first move is always safe.",
+  "aspect": "1:1",
+  "usesStorage": true,
+  "license": { "type": "internal", "rightsHolder": "Tabluo (titolare del progetto)", "thirdPartyAssets": [] }
+}
