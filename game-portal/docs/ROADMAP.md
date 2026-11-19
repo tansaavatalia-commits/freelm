@@ -18,7 +18,7 @@ spettano all'utente (vedi `DECISIONS.md`).
 - **Rischi:** repository non dedicato (vedi D-001).
 - **Approvazioni:** D-001, D-002 e passaggio alla FASE 1.
 
-## FASE 1 — Ricerca mercato e validazione
+## FASE 1 — Ricerca mercato e validazione ✅ (G1: GO condizionato)
 - **Obiettivo:** validare (o falsificare) la tesi di nicchia e i parametri del modello.
 - **Attività:** dossier su CrazyGames, Poki, Coolmath Games, Y8 e 3–5 portali
   indipendenti; classificazione delle fonti; analisi keyword (Google Trends,

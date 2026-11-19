@@ -1,6 +1,6 @@
 # GAME PORTAL — Master Plan (FASE 0: audit e pianificazione)
 
-> Stato: **FASE 0 completata, in attesa di approvazione per la FASE 1.**
+> Stato: **FASE 0 e FASE 1 completate.** Approvazione utente del 2026-11-19 ("Autorizzo tutto").
 > Data: 2026-11-19. Nessun acquisto, nessuna pubblicazione, nessun contatto esterno.
 > Legenda fonti: **[UFF]** fonte ufficiale · **[DICH]** dichiarato dall'azienda ·
 > **[TERZI]** stima/fonte secondaria · **[IPOTESI]** assunzione da validare · **[NV]** non verificabile.
@@ -106,10 +106,12 @@ parametri sono **[IPOTESI]**):
 
 | Scenario | Visitatori/mese per 3.000 € netti | Pareggio |
 |---|---:|---:|
-| Prudente | ~682.000 | ~85.000 |
-| Intermedio | ~171.000 | ~30.000 |
-| Ambizioso | ~62.000 | ~14.000 |
-| Stress test | ~2,58 milioni | ~419.000 |
+| Prudente | ~1.430.000 | ~179.000 |
+| Intermedio | ~246.000 | ~50.000 |
+| Ambizioso | ~80.000 | ~21.000 |
+| Stress test | ~6,6 milioni | ~1,07 milioni |
+
+*(Aggiornato con il modello v1 dopo la FASE 1: Premium ridotto in base all'evidenza raccolta.)*
 
 **Lettura onesta:**
 - Il costo fisso dominante **non è l'infrastruttura** (≈0 €), ma i **contributi

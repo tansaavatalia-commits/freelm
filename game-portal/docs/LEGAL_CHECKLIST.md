@@ -9,7 +9,7 @@
 - [ ] Tetto paušalni **60.000 €/anno** di ricavi e soglia di ingresso nel sistema IVA **60.000 €** (fonti secondarie 2026: fiskai.hr, mojafirma.hr, rrif.hr) — confermare su Narodne novine.
 - [ ] Contributi mensili paušalni (fonti secondarie: 290,98–298,98 €/mese) e imposta annua per scaglione.
 - [ ] **PDV ID** per servizi B2B a imprese UE (pubblicità venduta a inserzionisti esteri ⇒ reverse charge), anche se non si è soggetti IVA.
-- [ ] Vendite B2C digitali (Premium) a consumatori UE: soglia UE di 10.000 €, regime **OSS**, aliquota del paese del cliente, prova della residenza del cliente.
+- [ ] Vendite B2C digitali (Premium) a consumatori UE: soglia unica UE di **10.000 €** (dal 1/7/2021, anno corrente o precedente), sotto la quale si applica l'IVA croata; sopra, IVA del paese del cliente tramite **OSS** (fonti secondarie: taxually, taxenlight; verificare art. 59c della direttiva IVA). Possibili modifiche ViDA dal 2027.
 - [ ] Vendite a consumatori extra-UE (USA: sales tax statali sui prodotti digitali; UK, CH, NO: soglie proprie).
 - [ ] Fatturazione elettronica e fiskalizacija (obblighi 2026 per B2B/B2C).
 - [ ] Codice attività NKD appropriato.
@@ -21,9 +21,9 @@
 - [ ] Procedura per le richieste degli interessati (accesso, cancellazione) e data breach (72 h, AZOP).
 
 ## Minori
-- [ ] Età del consenso digitale in Croazia (16 anni secondo la legge di attuazione del GDPR: verificare).
+- [ ] Età del consenso digitale in Croazia: **16 anni** (Zakon o provedbi Opće uredbe o zaštiti podataka, NN 42/2018) secondo fonti secondarie (White & Case, IAPP, Linklaters); Linklaters indica che vale per i minori residenti in Croazia. Confermare sul testo di Narodne novine.
 - [ ] USA: COPPA se il sito attrae under 13 (motivo in più per orientarsi agli adulti).
-- [ ] Linee guida della Commissione UE sull'art. 28 del DSA (protezione dei minori online).
+- [ ] Linee guida della Commissione sull'art. 28(1) DSA (pubblicate il 14/7/2025, non vincolanti ma usate come parametro di riferimento). Si applicano alle piattaforme **accessibili ai minori**: non basta dichiarare "18+" nei termini, e l'autodichiarazione dell'età non è considerata adeguata. **Non è stata trovata un'esenzione per le piccole imprese sull'art. 28**: verificare con un legale. Nota: un sito senza contenuti caricati dagli utenti potrebbe non essere una "piattaforma online" ai sensi del DSA (da verificare).
 - [ ] Classificazione PEGI indicativa dei giochi interni; nessuna chat o contenuto generato dagli utenti in MVP.
 
 ## DSA e servizi digitali

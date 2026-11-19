@@ -1,34 +1,33 @@
 # GAME PORTAL — Stato del progetto
 
 **Aggiornato:** 2026-11-19
-**Fase attuale:** FASE 0 — completata, **in attesa di approvazione** per la FASE 1.
+**Fase attuale:** FASE 1 completata (gate G1: **GO condizionato**). Prossima: FASE 2 — Architettura e documentazione.
 
 ## Attività completate
-- Audit ambiente: Node 22, npm 10, pnpm 10, Python 3.13, Git 2.43, Claude Code 2.1.328, Playwright/Chromium.
-- Ispezione repository: `freelm` (non correlato); nessun file di freelm modificato.
-- Piano A–J (`docs/MASTER_PLAN.md`), roadmap 0–13, architettura, modello finanziario, licenze, sicurezza, checklist legale, registro decisioni.
+- FASE 0: audit, piano A–J, roadmap, architettura, modello v0.
+- Push del branch `claude/game-portal-master-mm5azl` (autorizzato).
+- FASE 1: dossier concorrenti v1, modello finanziario v1, checklist legale aggiornata, catalogo iniziale (D-013), lingua (D-012).
 
 ## In corso
-- Nessuna (attesa approvazione).
+- Nessuna.
 
 ## Bloccate
-- FASE 1: attende approvazione esplicita.
-- FASE 3+: attende D-001 (repository dedicato).
+- **D-001 (repo dedicato):** approvata ma non eseguibile da questa sessione (non posso creare repository). Serve un repo vuoto creato dall'utente.
+- FASE 3 (codice): attende D-001, per non mescolare il portale con freelm.
 
 ## Decisioni richieste
-D-001, D-002, D-003, D-006 (vedi `docs/DECISIONS.md`).
+- **D-014** nome del brand · **D-015** vincolo reti pubblicitarie (vedi `docs/DECISIONS.md`).
 
 ## Errori
-- Nessun errore tecnico.
-- Corretto un errore di modello: sponsor indipendenti dal traffico (vedi CHANGELOG).
+- Nessun errore tecnico. Correzioni di modello documentate in CHANGELOG.
 
 ## Test
-- Superati: `python3 scripts/financial_model.py` eseguito con output coerente (riportato in FINANCIAL_MODEL.md).
-- Falliti: nessuno. Non esiste ancora codice applicativo da testare.
+- Superati: `python3 scripts/financial_model.py` (output v1 riportato in FINANCIAL_MODEL.md).
+- Falliti: nessuno. Non esiste ancora codice applicativo.
 
-## Documenti rimandati (per evitare file vuoti)
-- `docs/DEPLOYMENT.md` → FASE 2 · `docs/OPERATIONS.md` → FASE 11 · `COMPETITOR_RESEARCH.md` completo → FASE 1.
-- Cartelle `frontend/ backend/ admin/ shared/ games/ tests/` → FASE 3, nel repository dedicato.
+## Limiti della ricerca
+- Nessun bilancio depositato consultato (KvK e altri registri: consultazione diretta, in parte a pagamento).
+- La maggior parte dei dati è [DICH] o [TERZI]; nessun benchmark di sell-through diretto trovato.
 
 ## Prossimo passo
-Approvazione FASE 1 + decisioni D-001/D-002.
+FASE 2 (documentazione di architettura, schema dati, design) — può partire qui; il codice (FASE 3) parte appena esiste il repository dedicato.

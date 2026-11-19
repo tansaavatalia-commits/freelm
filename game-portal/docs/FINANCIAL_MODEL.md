@@ -1,4 +1,4 @@
-# GAME PORTAL — Modello finanziario (v0, FASE 0)
+# GAME PORTAL — Modello finanziario (v1, FASE 1)
 
 > **Tutti i parametri sono [IPOTESI].** Il portale non ha traffico né ricavi: nessun numero
 > qui è un risultato. Lo scopo è rendere **misurabile** quando i 3.000 € di utile netto
@@ -34,35 +34,41 @@ utile_netto         = ricavi − costi − imposte
 | Parametro | Prudente | Intermedio | Ambizioso | Stress |
 |---|---|---|---|---|
 | CPM diretto (€) | 1,5 | 3,0 | 6,0 | 1,0 |
+| (riferimento [TERZI]: display web 2,5–4,5 $; mediana programmatica 4,2 $) | | | | |
 | Sell-through | 15 % | 35 % | 60 % | 5 % |
 | Sponsor max / visitatori per sponsor | 2 / 200k | 4 / 75k | 8 / 40k | 0 |
 | Valore sponsor (€/mese) | 200 | 400 | 800 | — |
-| Conversione Premium | 0,10 % | 0,30 % | 0,60 % | 0,05 % |
+| Conversione Premium | 0,02 % | 0,08 % | 0,20 % | 0,01 % |
 | Prezzo Premium (IVA incl.) | 3,99 € | 3,99 € | 4,99 € | 2,99 € |
 | Licenze (€/mese) | 0 | 100 | 300 | 200 |
 | Aliquota imposte effettiva | 6 % | 5 % | 4 % | 8 % |
 
-## Risultati (output reale dello script, 2026-11-19)
+## Risultati (output reale dello script v1, 2026-11-19)
+v1: conversione Premium ridotta dopo la FASE 1 (siti di solitario indipendenti dichiarano
+ricavi da abbonamento trascurabili rispetto alla pubblicità).
 ```
 scenario    visitatori/mese   impression      ads  premium  sponsor   ricavi   costi  imposte   utile
-prudente            682,415    4,913,386    1,106    2,091      400    3,597     381      216   3,000
-intermedio          170,669    1,228,817    1,290    1,569      800    3,659     476      183   3,000
-ambizioso            61,934      445,924    1,605    1,424      800    3,829     676      153   3,000
-stress            2,580,779   18,581,612      929    2,963        0    3,892     581      311   3,000
+prudente          1,431,636   10,307,781    2,319      877      400    3,597     381      216   3,000
+intermedio          245,640    1,768,605    1,857      602    1,200    3,659     476      183   3,000
+ambizioso            80,000      576,000    2,074      613    1,600    4,287     676      171   3,439
+stress            6,601,114   47,528,023    2,376    1,516        0    3,892     581      311   3,000
 
-Pareggio (utile = 0):
-  prudente    85,448 / intermedio 29,924 / ambizioso 14,401 / stress 418,628 visitatori/mese
+Pareggio: prudente 179,261 / intermedio 50,074 / ambizioso 20,975 / stress 1,070,767 visitatori/mese
 
 Sensibilità (intermedio):
-     10,000 visitatori -> ricavi      168  utile     -317 EUR
-     50,000 visitatori -> ricavi      838  utile      320 EUR
-    100,000 visitatori -> ricavi    2,075  utile    1,495 EUR
-    250,000 visitatori -> ricavi    5,388  utile    4,643 EUR
+     10,000 visitatori -> ricavi      100  utile     -381 EUR
+     50,000 visitatori -> ricavi      501  utile       -1 EUR
+    100,000 visitatori -> ricavi    1,401  utile      855 EUR
+    250,000 visitatori -> ricavi    3,703  utile    3,041 EUR
 ```
+Nota: nello scenario ambizioso a 80.000 visitatori scatta il secondo sponsor (gradino),
+per questo l'utile supera l'obiettivo.
+
+v0 (FASE 0, conversione Premium più alta) richiedeva 62k / 171k / 682k / 2,58 M visitatori.
 
 ## Interpretazione
-- **Traffico richiesto per i 3.000 € netti: da ~60.000 a ~700.000 visitatori/mese**
-  secondo lo scenario; nello stress test oltre 2,5 milioni.
+- **Traffico richiesto per i 3.000 € netti: da ~80.000 a ~1,4 milioni di visitatori/mese**
+  secondo lo scenario (~250.000 nell'intermedio); nello stress test ~6,6 milioni.
 - La voce più incerta è il **CPM diretto con sell-through**: un piccolo sito che vende
   da solo i propri spazi raramente riempie l'inventario. Va misurato, non assunto.
 - Premium "pesa" molto nel modello ma richiede un sistema di incasso (vedi D-006):

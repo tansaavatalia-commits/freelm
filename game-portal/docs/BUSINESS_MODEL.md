@@ -32,3 +32,9 @@ utenti, prezzi: **tutti di proprietà**. Nessun aggregatore, white-label o reven
 Visitatori unici, retention D1/D7/D30, sessioni per visitatore, tempo di gioco,
 impression viste, sell-through, CPM effettivo, ricavi per 1.000 visitatori (RPM),
 conversione lista d'attesa → Premium, costo per gioco prodotto.
+
+## Aggiornamento FASE 1
+- Domanda validata: i siti indipendenti di solitario e affini sostengono una o due persone ([DICH], vedi COMPETITOR_RESEARCH).
+- Rischio principale confermato: quei ricavi vengono da reti pubblicitarie programmatiche. Con la sola vendita diretta il traffico necessario è molto più alto (decisione D-015).
+- Premium ridimensionato: conversioni trascurabili nella nicchia; lo si tratta come opzione, non come pilastro.
+- Primo catalogo: vedi D-013. Lingua iniziale: inglese (D-012).

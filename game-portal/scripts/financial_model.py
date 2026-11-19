@@ -33,12 +33,13 @@ SCENARIOS = {
     # cpm: EUR per 1000 impression vendute direttamente; st: sell-through (quota venduta)
     # ns_max: max sponsor attivi; vps: visitatori/mese necessari per ogni sponsor (nessuno
     #   sponsor paga un sito senza pubblico); vs: valore medio mensile sponsor
-    # conv: quota visitatori che paga Premium; price: prezzo lordo IVA; lic: licenze/mese
+    # conv: quota visitatori che paga Premium (FASE 1: evidenza di conversioni
+    #   molto basse su siti di solitario, es. ~8 $/mese da abbonamenti vs >10k $ da ads); price: prezzo lordo IVA; lic: licenze/mese
     # tax: aliquota effettiva imposte sul ricavo (paušalni: bassa; DA VERIFICARE)
-    "prudente":   dict(cpm=1.5, st=0.15, ns_max=2,  vps=200_000, vs=200, conv=0.0010, price=3.99, lic=0,   tax=0.06),
-    "intermedio": dict(cpm=3.0, st=0.35, ns_max=4,  vps=75_000,  vs=400, conv=0.0030, price=3.99, lic=100, tax=0.05),
-    "ambizioso":  dict(cpm=6.0, st=0.60, ns_max=8,  vps=40_000,  vs=800, conv=0.0060, price=4.99, lic=300, tax=0.04),
-    "stress":     dict(cpm=1.0, st=0.05, ns_max=0,  vps=1,       vs=0,   conv=0.0005, price=2.99, lic=200, tax=0.08),
+    "prudente":   dict(cpm=1.5, st=0.15, ns_max=2,  vps=200_000, vs=200, conv=0.0002, price=3.99, lic=0,   tax=0.06),
+    "intermedio": dict(cpm=3.0, st=0.35, ns_max=4,  vps=75_000,  vs=400, conv=0.0008, price=3.99, lic=100, tax=0.05),
+    "ambizioso":  dict(cpm=6.0, st=0.60, ns_max=8,  vps=40_000,  vs=800, conv=0.0020, price=4.99, lic=300, tax=0.04),
+    "stress":     dict(cpm=1.0, st=0.05, ns_max=0,  vps=1,       vs=0,   conv=0.0001, price=2.99, lic=200, tax=0.08),
 }
 USAGE = dict(sessions=1.6, pages=3.0, slots=1.5)   # per visitatore unico mensile
 VAT_PREMIUM = 0.25     # IVA HR 25% (B2C UE: aliquota del paese cliente oltre 10k EUR/anno OSS)
