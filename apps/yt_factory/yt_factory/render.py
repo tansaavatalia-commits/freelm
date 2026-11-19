@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
 
+from . import motion
 from .tts import Word
 from .visuals import SIZES, _rgb, generated_background
 
@@ -98,11 +99,15 @@ def scene_times(scenes: Sequence[Dict[str, Any]], words: Sequence[Word], total: 
 
 
 def plan_shots(times: Sequence[Tuple[float, float]], assets: Sequence[Dict[str, Optional[Path]]],
-               shot_seconds: float) -> List[Dict[str, Any]]:
-    """Spezza ogni scena in inquadrature brevi alternando immagine AI (movimenti diversi) e clip stock."""
+               shot_seconds: float, cards: Optional[Dict[int, Path]] = None) -> List[Dict[str, Any]]:
+    """Spezza ogni scena in inquadrature brevi alternando immagine AI (movimenti diversi) e clip stock.
+    Una scena con grafica animata (card) è un'unica inquadratura: la card dura quanto la voce di quella scena."""
     shots: List[Dict[str, Any]] = []
     m = 0
     for i, (a, b) in enumerate(times):
+        if cards and i in cards:
+            shots.append({"scene": i, "start": a, "end": b, "kind": "card", "path": cards[i], "motion": "none"})
+            continue
         n = max(1, math.ceil((b - a) / shot_seconds - 0.15))
         step = (b - a) / n
         asset = assets[i] if i < len(assets) else {}
@@ -185,6 +190,10 @@ async def shot_clip(shot: Dict[str, Any], fmt: str, palette: Sequence[str], work
     clip = workdir / f"shot_{idx:03d}.mp4"
     enc = ["-t", f"{d:.3f}", "-r", str(FPS), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
            "-pix_fmt", "yuv420p", str(clip)]
+    if shot["kind"] == "card" and shot["path"]:  # grafica Remotion: già alla misura giusta, niente filtri colore
+        vf = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={FPS},format=yuv420p"
+        await _run("ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "-1", "-i", str(shot["path"]), "-vf", vf, *enc)
+        return clip
     if shot["kind"] == "video" and shot["path"]:
         vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={FPS},"
               "eq=brightness=-0.08:saturation=1.12,format=yuv420p")
@@ -201,12 +210,28 @@ async def shot_clip(shot: Dict[str, Any], fmt: str, palette: Sequence[str], work
 async def render(*, scenes: List[Dict[str, Any]], words: List[Word], audio: Path, out: Path, fmt: str,
                  palette: Sequence[str], workdir: Path, assets: Sequence[Dict[str, Optional[Path]]],
                  shot_seconds: float = 2.8, music_dir: Optional[Path] = None, ambient: str = "none",
-                 music_track: Optional[Path] = None) -> Path:
+                 music_track: Optional[Path] = None, cards: Optional[Dict[int, Dict[str, Any]]] = None,
+                 public_dir: Optional[Path] = None, log: Any = None) -> Path:
     workdir.mkdir(parents=True, exist_ok=True)
     w, h = SIZES[fmt]
     total = duration(audio) + 0.35
     times = scene_times(scenes, words, total)
-    shots = plan_shots(times, assets, shot_seconds if fmt == "short" else shot_seconds * 2)
+    card_paths: Dict[int, Path] = {}
+    if cards:  # grafiche animate: durata = durata della voce di quella scena
+        jobs = []
+        for i, card in cards.items():
+            if i >= len(times):
+                continue
+            img = assets[i].get("image") if i < len(assets) else None
+            bg = img.name if img and public_dir and Path(img).parent.resolve() == public_dir.resolve() else None
+            jobs.append({"out": str((workdir / f"card_{i:02d}.mp4").resolve()),
+                         "props": {**card, "fmt": fmt, "duration": round(times[i][1] - times[i][0], 3),
+                                   "palette": list(palette), **({"background": bg} if bg else {})}})
+        done = await motion.render_cards(jobs, public_dir or workdir, workdir)
+        card_paths = {int(Path(o).stem.split("_")[1]): Path(o) for o, ok in done.items() if ok}
+        if log:
+            log(f"grafiche animate: {len(card_paths)}/{len(jobs)}")
+    shots = plan_shots(times, assets, shot_seconds if fmt == "short" else shot_seconds * 2, card_paths)
     sem = asyncio.Semaphore(3)
 
     async def one(i: int, s: Dict[str, Any]) -> Path:

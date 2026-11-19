@@ -26,6 +26,8 @@ Tutto gira su **LLM gratuiti** tramite [freelm](../../README.md), con failover a
  QUALITY     Fact Checker             estrae le affermazioni e le verifica su Wikipedia; quelle false vanno corrette
              Retention Editor         voto 0-10 su hook, ritmo, originalità, policy; riscrive o scarta
  ART         Art Director             prompt d'immagine coerenti con lo stile del canale + ricerche stock per scena
+             Motion Designer          fino a 3 grafiche animate per video (Remotion): numeri che contano, confronti,
+                                      elenchi, linee del tempo, citazioni; ogni dato deve comparire nella scena
  PACKAGING   Packaging Strategist     3 titoli, scelta, descrizione, tag, hashtag, testo miniatura, primo commento
  PRODUCTION  voce neurale · immagini AI originali in movimento · clip stock · taglio ogni ~2.8 s · sottotitoli "pop"
              · barra di avanzamento · whoosh ai cambi scena · musica royalty-free · miniatura dall'immagine migliore
@@ -82,6 +84,7 @@ Studiati: [MoneyPrinterTurbo](https://github.com/harry0703/MoneyPrinterTurbo) (1
 ```bash
 cd apps/yt_factory
 pip install -e ../.. -r requirements.txt          # serve anche ffmpeg (apt/brew install ffmpeg)
+(cd motion && npm ci)                             # facoltativo: grafiche animate (Node 20+; Remotion scarica il suo Chrome)
 python -m yt_factory run --offline --count 1       # catena completa senza rete (agenti finti)
 python -m yt_factory run --channel mysteries --count 1 # vero: LLM gratuiti + voce + immagini AI, nessun upload
 ```
@@ -150,6 +153,9 @@ yt_factory/tts.py      voce neurale gratuita con tempi parola-per-parola
 yt_factory/visuals.py  immagini AI (Pollinations), stock (Pexels), grafica di riserva
 yt_factory/factcheck.py verifica dei fatti su Wikipedia
 yt_factory/render.py   inquadrature dinamiche, sottotitoli pop, barra, whoosh, montaggio, miniature
+yt_factory/motion.py   validazione e render delle grafiche animate (cartella motion/: progetto Remotion)
+yt_factory/qc.py       controllo qualità di ogni video prima della pubblicazione
+yt_factory/music.py    musica CC0 per umore con ducking sotto la voce
 yt_factory/youtube.py  upload, miniature, commenti, statistiche, Analytics, avanzamento monetizzazione
 yt_factory/auth.py     collegamento OAuth dei canali
 .github/workflows/yt-factory.yml (nella radice del repo)  esecuzione quotidiana

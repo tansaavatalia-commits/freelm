@@ -6,7 +6,7 @@ RESEARCH DESK   Viral Deconstructor · Audience Researcher · Story Miner (fatti
 CREATIVE DESK   Concept Developer ("versione migliore", mai copia) · Hook Lab · Audience Panel (giuria multi-modello)
                 Scriptwriter · Showrunner (scaletta dei video lunghi)
 QUALITY DESK    Fact Checker (con fonti Wikipedia) · Retention Editor & Compliance
-ART DESK        Art Director (prompt immagini + ricerche stock per scena)
+ART DESK        Art Director (prompt immagini + ricerche stock per scena) · Motion Designer (grafiche animate Remotion)
 PACKAGING       Packaging Strategist (titoli, descrizione, tag, miniatura, primo commento)
 INSIGHTS        Performance Analyst · Growth Strategist
 (Voce, montaggio, upload sono reparti deterministici: tts.py, visuals.py, render.py, youtube.py.)
@@ -197,6 +197,20 @@ ART_DIRECTOR = Agent(
     "framing between scenes (wide, close-up, detail, aerial) so consecutive shots never look the same.",
     '{"shots": [{"scene": 0, "photo_query": "", "image_prompt": "...", "stock_query": "..."}]}',
     max_tokens=6000, temperature=0.7,
+)
+
+MOTION_DESIGNER = Agent(
+    "the Motion Designer", "art desk",
+    "You pick at most 3 scenes whose content is clearer and more engaging as an animated graphic, and design it. "
+    "Kinds: 'stat' (one striking number), 'compare' (two values side by side), 'list' (2-4 short items), 'timeline' "
+    "(2-4 dated events), 'quote' (a short quoted sentence). Use ONLY numbers, names and words that appear in that "
+    "scene's spoken text — copy them exactly as written (keep units and symbols). Labels max 5 words, in the "
+    "viewer-facing language. Skip scenes with nothing visualisable; return an empty list rather than forcing it.",
+    '{"cards": [{"scene": 0, "kind": "stat|compare|list|timeline|quote", "title": "max 4 words", '
+    '"value": "for stat", "label": "for stat", "sub": "optional", "a": {"value": "", "label": ""}, '
+    '"b": {"value": "", "label": ""}, "items": ["for list"], "points": [{"year": "", "label": ""}], '
+    '"text": "for quote", "author": "for quote"}]}',
+    max_tokens=4000, temperature=0.4,
 )
 
 PACKAGING = Agent(

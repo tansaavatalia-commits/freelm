@@ -549,3 +549,36 @@ def test_keyless_models_are_only_a_fallback_when_github_models_exist(monkeypatch
     b = Brain()
     pri = {p.name: p.priority for p in b.llm.providers}
     assert pri["github"] < pri["kilo"] and pri["github"] < pri["ovh"]
+
+
+def test_motion_cards_only_use_data_spoken_in_the_scene():
+    from yt_factory.motion import validate
+    scene = "In 2011 the Durbin Amendment cut swipe fees from 44¢ to 21¢ and saved merchants $9.4 billion."
+    assert validate({"kind": "stat", "value": "$9.4 billion", "label": "saved"}, scene)["value"] == "$9.4 billion"
+    assert validate({"kind": "stat", "value": "$12 billion", "label": "saved"}, scene) is None       # cifra inventata
+    ok = validate({"kind": "compare", "a": {"value": "44¢", "label": "Before"}, "b": {"value": "21¢", "label": "After"}}, scene)
+    assert ok and ok["b"]["value"] == "21¢"
+    assert validate({"kind": "compare", "a": {"value": "44¢"}, "b": {"value": "30¢"}}, scene) is None
+    assert validate({"kind": "timeline", "points": [{"year": "2011", "label": "x"}, {"year": "2015", "label": "y"}]}, scene) is None
+    assert validate({"kind": "quote", "text": "nobody expected this"}, scene) is None
+    assert validate({"kind": "chart3d"}, scene) is None
+
+
+def test_card_scene_is_a_single_shot(tmp_path):
+    card = tmp_path / "card_01.mp4"
+    shots = render.plan_shots([(0.0, 6.0), (6.0, 12.0)], [{"image": None}, {"image": None}], 2.8, {1: card})
+    assert [s["kind"] for s in shots if s["scene"] == 1] == ["card"]
+    assert shots[-1]["path"] == card and shots[-1]["end"] == 12.0
+    assert len([s for s in shots if s["scene"] == 0]) == 2
+
+
+def test_pipeline_keeps_first_and_last_scene_free_of_cards(tmp_path):
+    s = _settings(tmp_path)
+    f = pipeline.Factory(s, brain=OfflineBrain())
+    scenes = [{"text": "Hook 2011."}, {"text": "Fees fell from 44¢ to 21¢."}, {"text": "End 2011."}]
+    cards = f.validate_cards(s.channel("money"), scenes, {"cards": [
+        {"scene": 0, "kind": "stat", "value": "2011"},
+        {"scene": 1, "kind": "compare", "a": {"value": "44¢", "label": "a"}, "b": {"value": "21¢", "label": "b"}},
+        {"scene": 2, "kind": "stat", "value": "2011"}]}, "#1")
+    assert list(cards) == ["1"]
+    f.db.close()

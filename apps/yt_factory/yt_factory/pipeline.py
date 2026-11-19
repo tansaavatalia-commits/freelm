@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from . import agents as A
-from . import factcheck, music, notify, qc, render, trends, tts, visuals
+from . import factcheck, motion, music, notify, qc, render, trends, tts, visuals
 from .config import APP_DIR, Channel, Settings
 from .db import DB
 from .llm import Brain
@@ -441,11 +441,17 @@ class Factory:
         _log(ch.id, "quality", f"{tag} script approvato ({len(' '.join(x['text'] for x in script['scenes']).split())} parole)")
 
         # ------------------------------------------------ art + packaging (in parallelo)
-        art, seo = await asyncio.gather(
-            A.ART_DIRECTOR.run(self.brain, ch, f"Visual style: {ch.visual_style}\nScenes:\n"
-                               + "\n".join(f"{i}. {s['text']}" for i, s in enumerate(script["scenes"]))),
+        scene_list = "\n".join(f"{i}. {s['text']}" for i, s in enumerate(script["scenes"]))
+        art, seo, mo = await asyncio.gather(
+            A.ART_DIRECTOR.run(self.brain, ch, f"Visual style: {ch.visual_style}\nScenes:\n{scene_list}"),
             A.PACKAGING.run(self.brain, ch, f"Format: {fmt}\nScript:\n{A.dumps(script)}"),
+            A.MOTION_DESIGNER.run(self.brain, ch, f"Scenes:\n{scene_list}") if motion.available() else _none(),
+            return_exceptions=True,
         )
+        for name, val in (("art", art), ("seo", seo)):
+            if isinstance(val, BaseException):
+                raise val
+        art["cards"] = self.validate_cards(ch, script["scenes"], mo if isinstance(mo, dict) else {}, tag)
         title = str(seo.get("title") or (seo.get("titles") or [None])[0] or script.get("title_idea") or concept["topic"])[:100]
         self.db.update_video(vid, status="scripted", title=title, data={
             "concept": _public(concept), "hook": hook, "script": script, "review": review, "facts": facts, "art": art, "seo": seo})
@@ -520,7 +526,9 @@ class Factory:
             await render.render(scenes=script["scenes"], words=words, audio=audio, out=video, fmt=fmt,
                                 palette=ch.palette, workdir=out_dir / f"{stem}_work", assets=assets,
                                 shot_seconds=self.s.shot_seconds, music_dir=APP_DIR / "assets" / "music",
-                                ambient=ch.ambient, music_track=track)
+                                ambient=ch.ambient, music_track=track,
+                                cards={int(k): v for k, v in (art.get("cards") or {}).items()},
+                                public_dir=self.s.data_dir / "media", log=lambda m: _log(ch.id, "production", f"{tag} {m}"))
         audio.unlink(missing_ok=True)
         first_img = next((a["image"] for a in assets if a.get("image")), None)
         thumb = render.thumbnail(str(seo.get("thumbnail_text") or title), ch.palette, out_dir / f"{stem}.png", stem,
@@ -557,6 +565,20 @@ class Factory:
                                                  d.get("hook", ""), d.get("concept", {"topic": v["topic"]}),
                                                  f"#{vid} {v['format']}")
         return video
+
+    def validate_cards(self, ch: Channel, scenes: List[Dict[str, Any]], mo: Dict[str, Any], tag: str) -> Dict[str, Any]:
+        """Card del Motion Designer verificate sul testo di ogni scena (prima e ultima scena restano immagini:
+        l'hook e il finale devono avere la massima forza visiva)."""
+        out: Dict[str, Any] = {}
+        for c in mo.get("cards", []) if isinstance(mo.get("cards"), list) else []:
+            i = int(_num(c.get("scene"))) if isinstance(c, dict) else -1
+            if 0 < i < len(scenes) - 1 and str(i) not in out and len(out) < 3:
+                v = motion.validate(c, str(scenes[i].get("text", "")))
+                if v:
+                    out[str(i)] = v
+        if mo:
+            _log(ch.id, "art", f"{tag} grafiche animate approvate: {len(out)} ({', '.join(c['kind'] for c in out.values()) or '-'})")
+        return out
 
     async def acquire_assets(self, ch: Channel, scenes: List[Dict[str, Any]], art: Dict[str, Any], fmt: str,
                              vid: int) -> List[Dict[str, Any]]:

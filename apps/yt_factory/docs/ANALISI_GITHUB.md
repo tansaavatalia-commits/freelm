@@ -44,8 +44,7 @@ di noi, licenza, fattibilità gratis su GitHub Actions (solo CPU), decisione.
 
 ## Roadmap (in ordine di impatto)
 
-1. **Grafica animata con Remotion o HyperFrames** per *Money Decoded*: numeri che crescono, confronti, grafici.
-   È ciò che distingue un canale finanza professionale da una presentazione.
+1. ~~Grafica animata~~ **fatto**: Remotion 4.0.541 (`motion/`), 5 tipi di card, dati verificati sul testo della scena.
 2. **Filmati reali in movimento** (NASA, Wikimedia Commons video, Archive.org) al posto delle foto ferme, con
    selezione per pertinenza.
 3. **Analisi del montaggio dei virali** (stile rea-video): ritmo dei tagli, durata dei sottotitoli e struttura,

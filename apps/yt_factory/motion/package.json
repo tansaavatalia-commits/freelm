@@ -1,0 +1,16 @@
+{
+  "name": "yt-factory-motion",
+  "private": true,
+  "description": "Grafiche animate dello studio (Remotion): numeri, confronti, elenchi, linee del tempo, citazioni",
+  "type": "module",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.541",
+    "@remotion/renderer": "4.0.541",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "remotion": "4.0.541"
+  }
+}
