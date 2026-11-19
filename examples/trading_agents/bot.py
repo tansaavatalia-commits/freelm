@@ -109,7 +109,8 @@ def state_file(args: argparse.Namespace) -> Optional[str]:
     return args.state or p(args, f"memoria-{args.source}-{args.interval}.json")
 
 
-def load_universe(args: argparse.Namespace) -> Dict[str, List[Candle]]:
+def load_raw(args: argparse.Namespace) -> Dict[str, List[Candle]]:
+    """Velas de cada símbolo SIN recortar a las fechas comunes (cada moneda con su historia)."""
     syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     if args.source == "binance":
         data = {}
@@ -118,13 +119,17 @@ def load_universe(args: argparse.Namespace) -> Dict[str, List[Candle]]:
                 data[s] = fetch_candles(s, args.interval, args.limit)
             except Exception as e:  # noqa: BLE001 - un símbolo caído no tumba el resto
                 print(f"[aviso] {s}: {type(e).__name__}: {e}", file=sys.stderr)
-        return align(data)
+        return data
     if args.source == "csv":
         if not args.csv:
             raise SystemExit("--source csv necesita --csv PLANTILLA (p. ej. datos/{symbol}.csv)")
-        return align({s: load_csv(args.csv.format(symbol=s)) for s in syms})
+        return {s: load_csv(args.csv.format(symbol=s)) for s in syms}
     return {s: synthetic(args.limit, seed=args.seed + i, start=100.0 * (i + 1), structure=args.structure)
             for i, s in enumerate(syms)}
+
+
+def load_universe(args: argparse.Namespace) -> Dict[str, List[Candle]]:
+    return align(load_raw(args))
 
 
 def load_sentiment(args: argparse.Namespace) -> Optional[Dict[str, int]]:
@@ -438,43 +443,98 @@ def cmd_validate(args: argparse.Namespace) -> int:
 def cmd_classic(args: argparse.Namespace) -> int:
     """Valida las estrategias clásicas con respaldo académico (strategies.py): momentum de
     tendencia y momentum relativo, más el conjunto de todas, con las mismas pruebas que
-    ``validate``. Por defecto con velas diarias."""
+    ``validate``. Por defecto: velas diarias, historia completa de cada moneda (cada una
+    entra cuando empieza a cotizar) y covarianza real con shrinkage."""
     import strategies as stg
-    from validation import judge
-    data = load_universe(args)
-    if not data:
+    from validation import judge, probabilistic_sharpe, returns_from_equity, segment_returns
+    raw = load_raw(args)
+    if not raw:
         raise SystemExit("sin datos")
+    data = raw if args.full_history else align(raw)
     ppy = PERIODS_PER_YEAR.get(args.interval, 365)
-    cost = Config(taker_fee=0.00075) if args.bnb else Config()
-    family = {k: replace(c, target_vol=args.target_vol, fee=cost.taker_fee)
+    fee = 0.00075 if args.bnb else Config().taker_fee
+    family = {k: replace(c, target_vol=args.target_vol, fee=fee, risk_model=args.risk_model,
+                         dd_budget=args.dd_budget, dd_window=args.dd_window)
               for k, c in stg.default_family().items()}
     trade_from = max(c.warmup for c in family.values())
-    n = min(len(v) for v in data.values())
-    if n - trade_from < 200:
-        raise SystemExit(f"pocas velas ({n}); usa --limit mayor")
-    results = {k: stg.simulate(data, c, trade_from, ppy) for k, c in family.items()}
+    panel = stg.Panel(data)
+    if panel.n - trade_from < 200:
+        raise SystemExit(f"pocas velas ({panel.n}); usa --limit mayor")
+    results = {k: stg.simulate_fast(panel, c, trade_from, ppy) for k, c in family.items()}
     results["conjunto"] = stg.ensemble({k: results[k] for k in family})
     n_trials = len(results) + args.prior_trials
-    days = (n - trade_from) * INTERVAL_SECONDS.get(args.interval, 86_400) / 86_400
+    days = (panel.n - trade_from) * INTERVAL_SECONDS.get(args.interval, 86_400) / 86_400
+    years = max(days / 365, 1e-9)
+    first = time.strftime("%Y-%m-%d", time.gmtime(panel.times[trade_from] / 1000))
     print(f"Estrategias clásicas sobre {', '.join(data)} ({args.source}, {args.interval}): "
-          f"{n - trade_from} velas operadas (~{days / 365:.1f} años); volatilidad objetivo {args.target_vol:.0%}")
+          f"{panel.n - trade_from} velas operadas desde {first} (~{years:.1f} años)")
+    print(f"  {'historia completa de cada moneda' if args.full_history else 'solo fechas comunes'}; "
+          f"riesgo {'covarianza con shrinkage' if args.risk_model == 'cov' else 'correlación 1 supuesta'}; "
+          f"volatilidad objetivo {args.target_vol:.0%}"
+          + (f"; control de caída {args.dd_budget:.0%}" if args.dd_budget > 0 else ""))
     print(f"  pruebas que se descuentan (Deflated Sharpe): {n_trials} "
           f"({len(results)} de esta familia + {args.prior_trials} anteriores)")
     print(f"  cesta comprar y mantener en el mismo tramo: {results['conjunto']['buy_hold']:+.2%}\n")
     rep = judge(results, stg.neighbours(family), n_trials)
-    for k, v in rep["strategies"].items():
-        years = max(days / 365, 1e-9)
+    for v in rep["strategies"].values():
         v["annual"] = (1 + v["return"]) ** (1 / years) - 1 if v["return"] > -1 else -1.0
     ok = print_judgement(rep)
+    # robustez de calendario: el reequilibrio semanal hace que el resultado dependa del día de
+    # inicio. Se repite TODO empezando 1..phases-1 días más tarde y solo cuenta como validada la
+    # estrategia que pasa en todos los inicios (regla fijada antes de mirar el resultado).
+    phases = []
+    if args.phases > 1:
+        t_all = panel.times
+        print(f"\n  Robustez de calendario ({args.phases} días de inicio distintos):")
+        for k in range(args.phases):
+            if k == 0:
+                rk = rep
+            else:
+                pk = stg.Panel({s: [c for c in cs if c.time >= t_all[k]] for s, cs in data.items()})
+                rs = {n: stg.simulate_fast(pk, c, trade_from, ppy) for n, c in family.items()}
+                rs["conjunto"] = stg.ensemble({n: rs[n] for n in family})
+                rk = judge(rs, stg.neighbours(family), n_trials)
+            okk = {n for n, v in rk["strategies"].items() if v["validated"]}
+            ek = rk["strategies"]["conjunto"]
+            phases.append({"offset": k, "pbo": rk["pbo"], "validated": sorted(okk),
+                           "conjunto_dsr": ek["dsr"], "conjunto_dd": ek["max_drawdown"]})
+            pbo_k = "—" if rk["pbo"] is None else f"{rk['pbo']:.0%}"
+            print(f"    +{k} días: PBO {pbo_k:>4} · conjunto DSR {ek['dsr']:.2f}, caída {ek['max_drawdown']:.1%} · "
+                  f"validadas {len(okk)}")
+        robust = set.intersection(*(set(ph["validated"]) for ph in phases)) if phases else set()
+        ok = [n for n in ok if n in robust]
+        print("  => " + (f"validadas en TODOS los inicios: {', '.join(ok)}" if ok else
+                         "ninguna estrategia pasa en todos los inicios: el resultado depende del calendario, "
+                         "NO está validado de forma robusta"))
     best = rep["strategies"]["conjunto"]
     print(f"\n  conjunto (sin elegir ninguna variante): {best['annual']:+.1%} al año, caída {best['max_drawdown']:.1%}, "
           f"acierto por operación {best['win_rate']:.0%}")
     if best["win_rate"] < 0.77:
         print("  ojo: el seguimiento de tendencia gana con pocas operaciones grandes; su acierto NUNCA llega "
               "al 77 % exigido por la regla de entrada del bot")
+    # sensibilidad al universo (sesgo de supervivencia): el conjunto sin cada moneda
+    loo = {}
+    if len(data) > 2:
+        print("\n  Sensibilidad al universo (conjunto sin cada moneda):")
+        for s in data:
+            pn = stg.Panel({k: v for k, v in data.items() if k != s})
+            e = stg.ensemble({k: stg.simulate_fast(pn, c, trade_from, ppy) for k, c in family.items()})
+            ann = e["equity"][-1] ** (1 / years) - 1
+            psr = probabilistic_sharpe(returns_from_equity(e["equity"]))
+            loo[s] = {"annual": ann, "max_drawdown": e["max_drawdown"], "psr": psr,
+                      "segments": segment_returns(e["equity"])}
+            print(f"    sin {s:<9} {ann:+6.1%} al año · caída {e['max_drawdown']:5.1%} · PSR {psr:.2f}")
+        worst = min(loo.values(), key=lambda x: x["annual"])
+        print(f"  peor caso: {worst['annual']:+.1%} al año, caída {worst['max_drawdown']:.1%}"
+              + ("  -> no depende de una sola moneda" if worst["annual"] > 0 and worst["max_drawdown"] <= 0.10
+                 else "  -> DEPENDE de alguna moneda concreta"))
+    print("  aviso: el universo son las monedas grandes de HOY; las que desaparecieron (LUNA, FTT...) no están, "
+          "así que el resultado puede estar inflado por sesgo de supervivencia")
     save_json(p(args, "classic.json"), {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "interval": args.interval,
                                        "symbols": list(data), "pbo": rep["pbo"], "n_trials": n_trials,
-                                       "strategies": rep["strategies"]})
+                                       "config": family["tsmom·50"].__dict__ | {"lookback": "familia"},
+                                       "strategies": rep["strategies"], "leave_one_out": loo,
+                                       "phases": phases, "robust_validated": ok})
     return 0 if ok else 3
 
 
@@ -482,11 +542,18 @@ def cmd_momentum(args: argparse.Namespace) -> int:
     """Momentum combinado en PAPEL (20 días): un día por ejecución, tras el cierre diario."""
     import momentum_paper as mp_
     from safety import check_window
-    fam = mp_.family_for(args.target_vol, 0.00075 if args.bnb else None)
+    fam = mp_.family_for(args.target_vol, 0.00075 if args.bnb else None, args.risk_model)
     sp, tp = p(args, "momentum_state.json"), p(args, "momentum_track.jsonl")
     state = mp_.load(sp, args.cash, fam)
-    track = load_track(tp)
     notifier = Notifier()
+    if state.get("restarted"):
+        print(f"[aviso] prueba en papel reiniciada: {state['restarted']}")
+        notifier.send(f"freelm momentum: prueba en papel reiniciada ({state['restarted']})")
+        if os.path.exists(tp):
+            os.replace(tp, tp + ".anterior")
+        state.pop("restarted")
+        mp_.save(sp, state)
+    track = load_track(tp)
 
     def show(final: bool = False) -> str:
         sm = mp_.summary(state, track)
@@ -525,7 +592,7 @@ def cmd_momentum(args: argparse.Namespace) -> int:
             notifier.send(f"freelm momentum: sin datos de {s}; hoy no se opera")
             print(f"[aviso] {s}: sin datos ({type(e).__name__}); hoy no se opera", file=sys.stderr)
             return 0
-    data = align(raw)
+    data = raw  # cada moneda con su historia (el motor maneja universos desiguales)
     problems = {s: pr for s, cs in data.items() for pr in [check_window(cs)] if pr}
     stale = {s: m for s, cs in data.items() for m in [check_fresh(cs, 86_400)] if m}
     if problems or stale:
@@ -963,8 +1030,16 @@ def parser() -> argparse.ArgumentParser:
     cl = sub.add_parser("classic", help="validar estrategias clásicas (momentum) con las mismas pruebas")
     common(cl, limit=3000)
     cl.set_defaults(interval="1d")
-    cl.add_argument("--target-vol", type=float, default=0.12, help="volatilidad anual objetivo de la cartera")
-    cl.add_argument("--prior-trials", type=int, default=40,
+    cl.add_argument("--target-vol", type=float, default=0.05,
+                    help="volatilidad anual objetivo (regla fijada: caída máxima / 2 = 5 %%)")
+    cl.add_argument("--risk-model", choices=["cov", "corr1"], default="cov")
+    cl.add_argument("--dd-budget", type=float, default=0.0, help="control de caída tipo CPPI (0 = apagado)")
+    cl.add_argument("--dd-window", type=int, default=0, help="días del máximo de referencia (0 = histórico)")
+    cl.add_argument("--aligned", dest="full_history", action="store_false",
+                    help="solo fechas comunes a todas las monedas (antes: por defecto)")
+    cl.add_argument("--phases", type=int, default=7,
+                    help="días de inicio distintos que deben pasar todos (7 = una semana; 1 = sin esta prueba)")
+    cl.add_argument("--prior-trials", type=int, default=95,
                     help="pruebas hechas antes con estos datos (se descuentan en el Deflated Sharpe)")
     cl.set_defaults(func=cmd_classic)
 
@@ -973,7 +1048,8 @@ def parser() -> argparse.ArgumentParser:
     mo.add_argument("--limit", type=int, default=260, help="velas diarias que se descargan")
     mo.add_argument("--dir", help=f"carpeta de memoria (por defecto {STATE_DIR})")
     mo.add_argument("--cash", type=float, default=100.0)
-    mo.add_argument("--target-vol", type=float, default=0.12)
+    mo.add_argument("--target-vol", type=float, default=0.05, help="la candidata de classic usa 5 %%")
+    mo.add_argument("--risk-model", choices=["cov", "corr1"], default="cov")
     mo.add_argument("--bnb", action="store_true", help="comisiones con descuento BNB")
     mo.add_argument("--report", action="store_true", help="solo mostrar cómo va")
     mo.add_argument("--continue-after", action="store_true", help="seguir en papel después de los 20 días")
