@@ -304,6 +304,7 @@ class Factory:
         fixes, review, facts = "", {}, []
         # prima stesura: più sceneggiatori (modelli diversi) in parallelo, il caporedattore sceglie la migliore
         script, review = await self.first_draft(ch, concept, hook, insights, fmt, tag)
+        best: Optional[tuple] = None  # (voto, script, review, facts): una revisione può peggiorare, si tiene il meglio
         for attempt in range(self.s.max_rewrites + 1):
             if attempt:
                 script = await (self.write_short(ch, concept, hook, insights, fixes, script) if fmt == "short"
@@ -324,9 +325,14 @@ class Factory:
                 self.db.update_video(vid, status="rejected", data={"script": script, "review": review})
                 _log(ch.id, "quality", f"{tag} SCARTATO: {review.get('policy_issues')}")
                 return None
+            if not wrong and (best is None or score > best[0]):
+                best = (score, json.loads(json.dumps(script)), review, facts)
             good = score >= self.s.min_quality_score and review.get("verdict") != "rewrite"
-            last_ok = attempt == self.s.max_rewrites and score >= self.s.min_quality_score - 1
-            if (good or last_ok) and not wrong:
+            if good and not wrong:
+                break
+            if attempt == self.s.max_rewrites and best and best[0] >= self.s.min_quality_score - 1:
+                score, script, review, facts = best
+                _log(ch.id, "quality", f"{tag} tengo la versione migliore ({score}/10)")
                 break
             fixes = "\n".join(f"- {f}" for f in review.get("fixes", [])[:4])
             fixes += "".join(f"\n- FALSE CLAIM: '{w.get('claim')}' -> {w.get('fix') or 'remove it'}" for w in wrong)

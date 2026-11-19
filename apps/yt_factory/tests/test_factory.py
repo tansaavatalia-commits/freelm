@@ -286,3 +286,44 @@ def test_description_lists_photo_credits(tmp_path):
     d = f.description(s.channel("mysteries"), {"description": "x", "hashtags": []}, "short", ["\"T\" by Ann, CC BY 4.0"])
     assert "Photos: \"T\" by Ann, CC BY 4.0" in d
     f.db.close()
+
+
+def test_keeps_best_version_when_revisions_get_worse(tmp_path, monkeypatch):
+    monkeypatch.setenv("YTF_OFFLINE", "1")
+    s = _settings(tmp_path)
+    s.writer_models = ["chat"]
+    s.min_quality_score = 8
+    scores = iter([7, 5, 4])
+
+    class Brain(OfflineBrain):
+        async def ask_json(self, system, user, *, schema, max_tokens=0, model=None, temperature=0.0):
+            if '"watch_to_end"' in schema:
+                return {"score": next(scores), "verdict": "rewrite", "fixes": ["x"]}
+            if '"scenes"' in schema:
+                tag = "REVISED" if "REVISE" in user else "FIRST"
+                return {"scenes": [{"text": f"{tag} line {i}.", "on_screen": ""} for i in range(4)]}
+            return await super().ask_json(system, user, schema=schema)
+
+    f = pipeline.Factory(s, brain=Brain())
+    seen = {}
+
+    async def fake_render(**kw):
+        seen["scenes"] = kw["scenes"]
+        raise RuntimeError("stop qui")
+
+    monkeypatch.setattr(pipeline.render, "render", fake_render)
+    monkeypatch.setattr(pipeline.tts, "synthesize", lambda *a, **k: _words())
+
+    async def _words():
+        from yt_factory.tts import Word
+        return [Word("x", 0, 1)]
+
+    async def go():
+        import httpx
+        async with httpx.AsyncClient() as f.http:
+            await f.produce(s.channel("mysteries"), {"topic": "t"}, "short", "12:30", "2030-01-01", {})
+
+    with pytest.raises(RuntimeError, match="stop qui"):
+        asyncio.run(go())
+    assert "FIRST" in seen["scenes"][1]["text"]   # la bozza da 7 batte le revisioni da 5 e 4
+    f.db.close()
