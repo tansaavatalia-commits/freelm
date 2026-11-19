@@ -1,9 +1,9 @@
 {
  "cash0": 100.0,
- "equity": 99.94341180081197,
+ "equity": 100.0,
  "peak": 100.0,
  "last_day": 1794960000000,
- "start_day": 1794873600000,
+ "start_day": 1794960000000,
  "halted": false,
  "books": {
   "tsmom·20": {},
@@ -15,23 +15,20 @@
   "xsmom·14": {},
   "xsmom·28": {},
   "xsmom·56": {},
-  "xsmom·90": {
-   "AVAXUSDT": 0.14446476784335818
-  }
+  "xsmom·90": {}
  },
- "weights": {
-  "AVAXUSDT": 0.014446476784335818
- },
- "turnover": 0.014982085758451856,
- "days": 1,
+ "weights": {},
+ "turnover": 0.0,
+ "days": 0,
  "basket0": {
-  "BTCUSDT": 64947.35,
-  "ETHUSDT": 1824.88,
-  "SOLUSDT": 75.19,
-  "BNBUSDT": 597.47,
-  "XRPUSDT": 0.9837,
-  "ADAUSDT": 0.1554,
-  "AVAXUSDT": 7.299,
-  "LINKUSDT": 9.328
- }
+  "BTCUSDT": 63068.22,
+  "ETHUSDT": 1777.19,
+  "SOLUSDT": 73.64,
+  "BNBUSDT": 582.71,
+  "XRPUSDT": 0.9677,
+  "ADAUSDT": 0.1514,
+  "AVAXUSDT": 7.033,
+  "LINKUSDT": 9.083
+ },
+ "config": "[[\"tsmom\\u00b7100\", [[\"band\", 0.02], [\"dd_budget\", 0.0], [\"dd_start\", 0.5], [\"dd_window\", 0], [\"fee\", 0.001], [\"kind\", \"tsmom\"], [\"lookback\", 100], [\"max_positions\", 4], [\"rebalance\", 1], [\"risk_model\", \"cov\"], [\"shrink\", 0.5], [\"slippage\", 0.0005], [\"target_vol\", 0.05], [\"vol_window\", 30]]], [\"tsmom\\u00b7150\", [[\"band\", 0.02], [\"dd_budget\", 0.0], [\"dd_start\", 0.5], [\"dd_window\", 0], [\"fee\", 0.001], [\"kind\", \"tsmom\"], [\"lookback\", 150], [\"max_positions\", 4], [\"rebalance\", 1], [\"risk_model\", \"cov\"], [\"shrink\", 0.5], [\"slippage\", 0.0005], [\"target_vol\", 0.05], [\"vol_window\", 30]]], [\"tsmom\\u00b720\", [[\"band\", 0.02], [\"dd_budget\", 0.0], [\"dd_start\", 0.5], [\"dd_window\", 0], [\"fee\", 0.001], [\"kind\", \"tsmom\"], [\"lookback\", 20], [\"max_positions\", 4], [\"rebalance\", 1], [\"risk_model\", \"cov\"], [\"shrink\", 0.5], [\"slippage\", 0.0005], [\"target_vol\", 0.05], [\"vol_window\", 30]]], [\"tsmom\\u00b7200\", [[\"band\", 0.02], [\"dd_budget\", 0.0], [\"dd_start\", 0.5], [\"dd_window\", 0], [\"fee\", 0.001], [\"kind\", \"tsmom\"], [\"lookback\", 200], [\"max_positions\", 4], [\"rebalance\", 1], [\"risk_model\", \"cov\"], [\"shrink\", 0.5], [\"slippage\", 0.0005], [\"target_vol\", 0.05], [\"vol_window\", 30]]], [\"tsmom\\u00b750\", [[\"band\", 0.02], [\"dd_budget\", 0.0], [\"dd_start\", 0.5], [\"dd_window\", 0], [\"fee\", 0.001], [\"kind\", \"tsmom\"], [\"lookback\", 50], [\"max_positions\", 4], [\"rebalance\", 1], [\"risk_model\", \"cov\"], [\"shrink\", 0.5], [\"slippage\", 0.0005], [\"target_vol\", 0.05], [\"vol_window\", 30]]], [\"xsmom\\u00b714\", [[\"band\", 0.02], [\"dd_budget\", 0.0], [\"dd_start\", 0.5], [\"dd_window\", 0], [\"fee\", 0.001], [\"kind\", \"xsmom\"], [\"lookback\", 14], [\"max_positions\", 4], [\"rebalance\", 7], [\"risk_model\", \"cov\"], [\"shrink\", 0.5], [\"slippage\", 0.0005], [\"target_vol\", 0.05], [\"vol_window\", 30]]], [\"xsmom\\u00b728\", [[\"band\", 0.02], [\"dd_budget\", 0.0], [\"dd_start\", 0.5], [\"dd_window\", 0], [\"fee\", 0.001], [\"kind\", \"xsmom\"], [\"lookback\", 28], [\"max_positions\", 4], [\"rebalance\", 7], [\"risk_model\", \"cov\"], [\"shrink\", 0.5], [\"slippage\", 0.0005], [\"target_vol\", 0.05], [\"vol_window\", 30]]], [\"xsmom\\u00b756\", [[\"band\", 0.02], [\"dd_budget\", 0.0], [\"dd_start\", 0.5], [\"dd_window\", 0], [\"fee\", 0.001], [\"kind\", \"xsmom\"], [\"lookback\", 56], [\"max_positions\", 4], [\"rebalance\", 7], [\"risk_model\", \"cov\"], [\"shrink\", 0.5], [\"slippage\", 0.0005], [\"target_vol\", 0.05], [\"vol_window\", 30]]], [\"xsmom\\u00b77\", [[\"band\", 0.02], [\"dd_budget\", 0.0], [\"dd_start\", 0.5], [\"dd_window\", 0], [\"fee\", 0.001], [\"kind\", \"xsmom\"], [\"lookback\", 7], [\"max_positions\", 4], [\"rebalance\", 7], [\"risk_model\", \"cov\"], [\"shrink\", 0.5], [\"slippage\", 0.0005], [\"target_vol\", 0.05], [\"vol_window\", 30]]], [\"xsmom\\u00b790\", [[\"band\", 0.02], [\"dd_budget\", 0.0], [\"dd_start\", 0.5], [\"dd_window\", 0], [\"fee\", 0.001], [\"kind\", \"xsmom\"], [\"lookback\", 90], [\"max_positions\", 4], [\"rebalance\", 7], [\"risk_model\", \"cov\"], [\"shrink\", 0.5], [\"slippage\", 0.0005], [\"target_vol\", 0.05], [\"vol_window\", 30]]]]"
 }

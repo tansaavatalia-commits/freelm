@@ -1,2 +1,3 @@
 {"t": 1794960000000, "utc": "2026-11-18 00:00", "tipo": "orden_papel", "estrategia": "momentum", "simbolo": "AVAXUSDT", "lado": "compra", "peso": 0.0001}
 {"t": 1794960000000, "utc": "2026-11-18 00:00", "tipo": "cartera", "estrategia": "momentum", "capital": 99.943412, "pesos": {"AVAXUSDT": 0.0144}, "evento": null}
+{"t": 1794960000000, "utc": "2026-11-18 00:00", "tipo": "cartera", "estrategia": "momentum", "capital": 100.0, "pesos": {}, "evento": null}
