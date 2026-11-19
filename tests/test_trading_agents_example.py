@@ -1110,6 +1110,7 @@ def test_classic_command_offline(tmp_path, capsys):
     assert rc in (0, 3) and "conjunto" in out and "77 %" in out
     saved = json.load(open(tmp_path / "classic.json"))
     assert "conjunto" in saved["strategies"] and saved["interval"] == "1d" and saved["n_trials"] == 106
+    assert "Robustez de calendario" in out and len(saved["phases"]) == 7 and "robust_validated" in saved
     assert "sin A" in out and "Sensibilidad al universo" in out and set(saved["leave_one_out"]) == {"A", "B", "C"}
 
 

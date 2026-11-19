@@ -2,10 +2,10 @@
 
 La estrategia es el «conjunto» de ``strategies.py``: las 10 variantes de
 momentum (5 de tendencia, 5 relativas) a partes iguales, sin elegir ninguna,
-con covarianza real y volatilidad objetivo del 5 %. Es la configuración que
-superó la validación de ``classic`` en 2019-2026. Aun así corre solo en papel:
-el sesgo de supervivencia del universo no está descartado y falta probarla con
-datos que nadie ha visto.
+con covarianza real y volatilidad objetivo del 5 %. Es la candidata más sólida
+de ``classic`` (2019-2026, estable en todos los días de inicio), pero NO está
+validada de forma robusta (el PBO de la familia depende del calendario), el sesgo
+de supervivencia no está descartado y falta probarla con datos nuevos. Solo papel.
 
 Una vez al día, tras el cierre de la vela diaria (00:00 UTC):
 

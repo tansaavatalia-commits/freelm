@@ -238,11 +238,22 @@ operados; se descuentan **106 pruebas**, todas las hechas en esta investigación
 | B. + control de caída (máximo histórico) | +5,7 % | 8,5 % | 0,67 | 12 % | 0: al tocar el 10 % se queda en liquidez para siempre |
 | C. Covarianza real | +16,6 % | 16,3 % | 0,98 | 13 % | 0 (caída) |
 | D. Covarianza + control de caída con máximo de 1 año | +12,8 % | 12,5 % | 0,99 | 27 % | 0 |
-| **E. Covarianza + vol. objetivo 5 %** (regla fijada antes de mirar: caída máx. / 2) | **+7,9 %** | **7,0 %** | **1,00** | **18 %** | **conjunto + 7 de 10** |
+| **E. Covarianza + vol. objetivo 5 %** (regla fijada antes de mirar: caída máx. / 2) | **+7,9 %** | **7,0 %** | **1,00** | 18 % (17–43 % según el día de inicio) | conjunto + 7 de 10 en un inicio; **0 en los 7 inicios** |
 
-- **E es la primera configuración que supera todas las pruebas.** Sin
-  ninguna de las monedas (también sin SOL o sin AVAX) da de +7,1 % a +8,0 % al
-  año, con caídas ≤ 7,7 %. Solo con BTC y ETH da +5,1 % al año y una caída del 5,8 %.
+- E supera todas las pruebas con los datos tal como empiezan, **pero no es
+  robusto al calendario**. Si la prueba empieza 1 a 6 días más tarde, el
+  reequilibrio semanal cambia de día:
+  - el **conjunto** apenas varía: +6,8 % a +7,9 % al año, caída del 6,7 % al
+    8,2 % y DSR de 0,98 a 1,00 en 15 inicios distintos;
+  - el **PBO** de la familia oscila entre el 17 % y el 43 %, y solo cumple el
+    ≤ 25 % en 6 de 15 inicios.
+
+  Por eso `classic` exige ahora pasar en los 7 inicios de una semana
+  (`--phases 7`) y el veredicto es **NO validada de forma robusta**: el
+  conjunto es estable, pero elegir variantes dentro de la familia no generaliza.
+- Sin ninguna de las monedas (también sin SOL o sin AVAX), el conjunto da de
+  +7,1 % a +8,0 % al año con caídas ≤ 7,7 %. Solo con BTC y ETH, +5,1 % al año y
+  una caída del 5,8 %.
 - La cesta comprar y mantener hizo +1451 % en el mismo periodo: este momentum
   **renuncia a gran parte de las subidas** a cambio de caídas pequeñas.
 - **Pegas que siguen ahí:**
@@ -255,8 +266,9 @@ operados; se descuentan **106 pruebas**, todas las hechas en esta investigación
 ### Momentum combinado en papel: prueba de 20 días (`momentum`)
 
 Corre en **papel**, con 100 € simulados, durante 20 días. Usa la configuración
-E de `classic` (covarianza, volatilidad 5 %), que supera la validación con datos
-de 2019–2026 pero aún no se ha probado con datos que nadie ha visto. Si cambia la
+E de `classic` (covarianza, volatilidad 5 %): la candidata más sólida, estable en
+todos los inicios, aunque **no validada de forma robusta** y aún sin probar con
+datos que nadie ha visto. Si cambia la
 configuración, la prueba se reinicia sola y lo avisa, para no mezclar resultados:
 
 - `python bot.py momentum` procesa un día por ejecución, tras el cierre diario

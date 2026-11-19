@@ -479,6 +479,33 @@ def cmd_classic(args: argparse.Namespace) -> int:
     for v in rep["strategies"].values():
         v["annual"] = (1 + v["return"]) ** (1 / years) - 1 if v["return"] > -1 else -1.0
     ok = print_judgement(rep)
+    # robustez de calendario: el reequilibrio semanal hace que el resultado dependa del día de
+    # inicio. Se repite TODO empezando 1..phases-1 días más tarde y solo cuenta como validada la
+    # estrategia que pasa en todos los inicios (regla fijada antes de mirar el resultado).
+    phases = []
+    if args.phases > 1:
+        t_all = panel.times
+        print(f"\n  Robustez de calendario ({args.phases} días de inicio distintos):")
+        for k in range(args.phases):
+            if k == 0:
+                rk = rep
+            else:
+                pk = stg.Panel({s: [c for c in cs if c.time >= t_all[k]] for s, cs in data.items()})
+                rs = {n: stg.simulate_fast(pk, c, trade_from, ppy) for n, c in family.items()}
+                rs["conjunto"] = stg.ensemble({n: rs[n] for n in family})
+                rk = judge(rs, stg.neighbours(family), n_trials)
+            okk = {n for n, v in rk["strategies"].items() if v["validated"]}
+            ek = rk["strategies"]["conjunto"]
+            phases.append({"offset": k, "pbo": rk["pbo"], "validated": sorted(okk),
+                           "conjunto_dsr": ek["dsr"], "conjunto_dd": ek["max_drawdown"]})
+            pbo_k = "—" if rk["pbo"] is None else f"{rk['pbo']:.0%}"
+            print(f"    +{k} días: PBO {pbo_k:>4} · conjunto DSR {ek['dsr']:.2f}, caída {ek['max_drawdown']:.1%} · "
+                  f"validadas {len(okk)}")
+        robust = set.intersection(*(set(ph["validated"]) for ph in phases)) if phases else set()
+        ok = [n for n in ok if n in robust]
+        print("  => " + (f"validadas en TODOS los inicios: {', '.join(ok)}" if ok else
+                         "ninguna estrategia pasa en todos los inicios: el resultado depende del calendario, "
+                         "NO está validado de forma robusta"))
     best = rep["strategies"]["conjunto"]
     print(f"\n  conjunto (sin elegir ninguna variante): {best['annual']:+.1%} al año, caída {best['max_drawdown']:.1%}, "
           f"acierto por operación {best['win_rate']:.0%}")
@@ -506,7 +533,8 @@ def cmd_classic(args: argparse.Namespace) -> int:
     save_json(p(args, "classic.json"), {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "interval": args.interval,
                                        "symbols": list(data), "pbo": rep["pbo"], "n_trials": n_trials,
                                        "config": family["tsmom·50"].__dict__ | {"lookback": "familia"},
-                                       "strategies": rep["strategies"], "leave_one_out": loo})
+                                       "strategies": rep["strategies"], "leave_one_out": loo,
+                                       "phases": phases, "robust_validated": ok})
     return 0 if ok else 3
 
 
@@ -1009,6 +1037,8 @@ def parser() -> argparse.ArgumentParser:
     cl.add_argument("--dd-window", type=int, default=0, help="días del máximo de referencia (0 = histórico)")
     cl.add_argument("--aligned", dest="full_history", action="store_false",
                     help="solo fechas comunes a todas las monedas (antes: por defecto)")
+    cl.add_argument("--phases", type=int, default=7,
+                    help="días de inicio distintos que deben pasar todos (7 = una semana; 1 = sin esta prueba)")
     cl.add_argument("--prior-trials", type=int, default=95,
                     help="pruebas hechas antes con estos datos (se descuentan en el Deflated Sharpe)")
     cl.set_defaults(func=cmd_classic)
@@ -1018,7 +1048,7 @@ def parser() -> argparse.ArgumentParser:
     mo.add_argument("--limit", type=int, default=260, help="velas diarias que se descargan")
     mo.add_argument("--dir", help=f"carpeta de memoria (por defecto {STATE_DIR})")
     mo.add_argument("--cash", type=float, default=100.0)
-    mo.add_argument("--target-vol", type=float, default=0.05, help="la configuración validada usa 5 %%")
+    mo.add_argument("--target-vol", type=float, default=0.05, help="la candidata de classic usa 5 %%")
     mo.add_argument("--risk-model", choices=["cov", "corr1"], default="cov")
     mo.add_argument("--bnb", action="store_true", help="comisiones con descuento BNB")
     mo.add_argument("--report", action="store_true", help="solo mostrar cómo va")
