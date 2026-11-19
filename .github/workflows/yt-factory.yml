@@ -71,7 +71,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: ffmpeg + font
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core fonts-inter
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends ffmpeg fonts-dejavu-core fonts-inter
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
