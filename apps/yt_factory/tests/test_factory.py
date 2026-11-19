@@ -631,3 +631,19 @@ def test_visual_qa_replaces_mismatched_images(tmp_path, monkeypatch):
     assert assets[2]["image"].name == "ai_jet.jpg" and not assets[2]["photo"]   # foto fuori tema -> immagine AI
     assert len(calls) == 3 and "Radar saw the jet" in calls[2]
     f.db.close()
+
+
+def test_scene_times_align_on_the_exact_words_spoken():
+    # la voce legge "350" come una parola sola nel boundary ma la durata è lunga: conta la posizione nel testo
+    scenes = [{"text": "An estimated 350 ships vanished."}, {"text": "The Mi'kmaq called it where the land ends."},
+              {"text": "In 1778, 25 men stranded."}]
+    seq = "An estimated 350 ships vanished The Mi'kmaq called it where the land ends In 1778 25 men stranded".split()
+    words, t = [], 0.0
+    for w in seq:
+        d = 1.2 if w[0].isdigit() else 0.3   # i numeri durano molto di più a voce
+        words.append(Word(w, t, t + d))
+        t += d + 0.05
+    times = render.scene_times(scenes, words, t + 0.3)
+    second = next(w for w in words if w.text == "The").start
+    third = next(w for w in words if w.text == "In").start
+    assert abs(times[1][0] - (second - 0.05)) < 1e-6 and abs(times[2][0] - (third - 0.05)) < 1e-6

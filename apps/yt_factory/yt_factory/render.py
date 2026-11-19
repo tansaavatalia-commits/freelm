@@ -86,6 +86,47 @@ def duration(path: Path) -> float:
 
 # --------------------------------------------------------------------------- tempi
 def scene_times(scenes: Sequence[Dict[str, Any]], words: Sequence[Word], total: float) -> List[Tuple[float, float]]:
+    """Inizio di ogni scena = istante in cui la voce pronuncia la sua prima parola.
+    Ogni parola della voce (Edge TTS riporta il testo esatto letto) viene ritrovata, in ordine, nel testo dello script:
+    la scena a cui appartiene quella posizione è la scena in onda. Preciso anche con numeri letti come più parole
+    ("350" -> "three hundred fifty"). Se l'allineamento non riesce, ripiega sulla proporzione delle parole."""
+    exact = _aligned_times(scenes, words, total)
+    return exact if exact else _proportional_times(scenes, words, total)
+
+
+def _aligned_times(scenes: Sequence[Dict[str, Any]], words: Sequence[Word], total: float) -> Optional[List[Tuple[float, float]]]:
+    texts = [str(s.get("text", "")) for s in scenes]
+    spoken = " ".join(texts).lower()
+    starts, pos = [], 0
+    for t in texts:
+        starts.append(pos)
+        pos += len(t) + 1
+    first_word_time: Dict[int, float] = {}
+    cursor, found = 0, 0
+    for w in words:
+        token = re.sub(r"^\W+|\W+$", "", w.text.lower())
+        if not token:
+            continue
+        at = spoken.find(token, cursor)
+        if at < 0 or at - cursor > 60:  # parola non trovata vicino al cursore: non la si usa per allineare
+            continue
+        found += 1
+        cursor = at + len(token)
+        scene = max(i for i, st in enumerate(starts) if st <= at)
+        first_word_time.setdefault(scene, w.start)
+    if not words or found < 0.8 * len(words) or 0 not in first_word_time:
+        return None
+    bounds = [0.0]
+    for i in range(1, len(scenes)):
+        b = first_word_time.get(i)
+        if b is None:  # scena senza parole riconosciute: in proporzione fra le vicine
+            return None
+        bounds.append(max(b - 0.05, bounds[-1] + 0.3))  # cambio immagine un attimo prima della parola
+    bounds.append(max(total, bounds[-1] + 0.3))
+    return [(bounds[i], bounds[i + 1]) for i in range(len(scenes))]
+
+
+def _proportional_times(scenes: Sequence[Dict[str, Any]], words: Sequence[Word], total: float) -> List[Tuple[float, float]]:
     """Divide la timeline fra le scene in proporzione alle PAROLE dette (la voce ne legge una per volta),
     agganciandosi all'inizio della parola esatta: l'immagine cambia quando la voce passa alla frase successiva."""
     lengths = [max(len(re.findall(r"[\w']+", str(s.get("text", "")))), 1) for s in scenes]
