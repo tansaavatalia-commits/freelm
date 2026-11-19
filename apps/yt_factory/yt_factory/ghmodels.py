@@ -24,11 +24,11 @@ class GitHubModels(Provider):
     base_url = "https://models.github.ai/inference"
     TIERS: Dict[str, Dict[str, Any]] = {"free": {"rpm": 10, "rpd": None}}
     DEFAULT_MODELS = [
-        ModelSpec("openai/gpt-4.1", ("chat", "large", "tools"), ctx=8000, priority=0),
+        ModelSpec("openai/gpt-4.1", ("chat", "large", "tools", "vision"), ctx=8000, priority=0),
         ModelSpec("deepseek/DeepSeek-V3-0324", ("chat", "large"), ctx=8000, priority=1),
         ModelSpec("meta/Llama-3.3-70B-Instruct", ("chat", "large", "tools"), ctx=8000, priority=2),
-        ModelSpec("openai/gpt-4.1-mini", ("chat", "fast", "small", "tools"), ctx=8000, priority=3),
-        ModelSpec("openai/gpt-4o-mini", ("chat", "fast", "small", "tools"), ctx=8000, priority=4),
+        ModelSpec("openai/gpt-4.1-mini", ("chat", "fast", "small", "tools", "vision"), ctx=8000, priority=3),
+        ModelSpec("openai/gpt-4o-mini", ("chat", "fast", "small", "tools", "vision"), ctx=8000, priority=4),
     ]
 
     def rate_limit_scope(self, body: str) -> str:

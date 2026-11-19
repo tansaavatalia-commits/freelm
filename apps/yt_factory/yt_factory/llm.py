@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
 import re
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from freelm import AsyncFreeLLM
 from freelm.config import providers_from_env
 from freelm.errors import NoProvidersAvailable
+from PIL import Image
 
 from .ghmodels import github_models_providers
 
@@ -92,6 +96,29 @@ class Brain:
         if out:
             return out
         raise RuntimeError("nessuna risposta dai provider gratuiti")
+
+    async def ask_vision(self, prompt: str, image: Path, *, schema: str, max_tokens: int = 600) -> Optional[Dict[str, Any]]:
+        """Domanda su un'immagine a un modello che vede (alias freelm "vision": GPT-4.1 / GPT-4o-mini su GitHub Models).
+        None se nessun provider con vista risponde: chi chiama tratta l'immagine come non verificata."""
+        try:
+            with Image.open(image) as im:
+                im = im.convert("RGB")
+                im.thumbnail((512, 512))
+                buf = io.BytesIO()
+                im.save(buf, "JPEG", quality=80)
+        except OSError:
+            return None
+        url = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+        msgs = [{"role": "user", "content": [
+            {"type": "text", "text": f"{prompt}\n\nAnswer ONLY with JSON shaped like: {schema}"},
+            {"type": "image_url", "image_url": {"url": url, "detail": "low"}}]}]
+        async with self.sem:
+            self.calls += 1
+            try:
+                r = await self._chat_patiently(msgs, "vision", max_tokens, 0.1)
+                return extract_json(r.choices[0].message.content or "")
+            except Exception:
+                return None
 
     async def _chat_patiently(self, msgs: Any, model: str, max_tokens: int, temperature: float) -> Any:
         """Provider tutti saturi o lenti (capita sui tier gratuiti): attesa crescente e nuovo giro, fino a ~4 minuti."""

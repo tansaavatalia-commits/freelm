@@ -446,6 +446,8 @@ class Factory:
         _log(ch.id, "quality", f"{tag} script approvato ({len(' '.join(x['text'] for x in script['scenes']).split())} parole)")
 
         # ------------------------------------------------ art + packaging (in parallelo)
+        # una "scena" per frase: ogni frase avrà la sua immagine, che cambia quando la voce passa alla frase dopo
+        script["scenes"] = split_beats(script["scenes"])
         scene_list = "\n".join(f"{i}. {s['text']}" for i, s in enumerate(script["scenes"]))
         art, seo, mo = await asyncio.gather(
             A.ART_DIRECTOR.run(self.brain, ch, f"Visual style: {ch.visual_style}\nScenes:\n{scene_list}"),
@@ -628,7 +630,52 @@ class Factory:
                     a.update(image=a.get("image2"), image2=None, photo=False, credit="")
                 else:
                     seen.add(a["image"])
+        await self.visual_qa(ch, scenes, shots, assets, fmt, vid)
         return fill_gaps(assets)
+
+    async def visual_qa(self, ch: Channel, scenes: List[Dict[str, Any]], shots: Dict[int, Dict[str, Any]],
+                        assets: List[Dict[str, Any]], fmt: str, vid: int) -> None:
+        """Reparto controllo visivo: un modello che VEDE confronta ogni immagine con la frase detta in quel momento.
+        Se non corrisponde: la foto reale lascia il posto all'immagine AI, l'immagine AI viene rifatta con un prompt
+        letterale. Senza un modello con vista il controllo si salta (e lo si dice nel log)."""
+        ask = getattr(self.brain, "ask_vision", None)
+        if ask is None or not self.s.ai_images:
+            return
+        sem = asyncio.Semaphore(3)
+        stats = {"ok": 0, "fixed": 0, "unchecked": 0}
+        cache = self.s.data_dir / "media"
+
+        async def check(i: int, a: Dict[str, Any]) -> None:
+            img = a.get("image")
+            if img is None:
+                return
+            line = str(scenes[i].get("text", ""))
+            subject = str(shots.get(i, {}).get("subject") or "")
+            async with sem:
+                v = await ask(f'Narration line heard while this image is on screen: "{line}"\n'
+                              f'It should show: {subject or "what the line describes"}.\n'
+                              "Does the image clearly show what the line is about (subject, era, action)? Be strict: "
+                              "generic mood images, wrong era or unrelated objects are NOT a match.",
+                              Path(img), schema=A.VISUAL_QA_SCHEMA)
+            if not isinstance(v, dict):
+                stats["unchecked"] += 1
+                return
+            if v.get("match") in (True, "true", "yes"):
+                stats["ok"] += 1
+                return
+            if a.get("photo") and a.get("image2"):  # foto reale fuori tema: c'è già l'immagine AI della frase
+                a.update(image=a["image2"], image2=None, photo=False, credit="")
+                stats["fixed"] += 1
+                return
+            fix = str(v.get("fix_prompt") or shots.get(i, {}).get("image_prompt") or line)[:400]
+            new = await visuals.ai_image(self.http, fix, ch.visual_style, fmt, vid * 100 + i + 5000, cache)
+            if new:
+                a.update(image=new, photo=False, credit="")
+                stats["fixed"] += 1
+
+        await asyncio.gather(*(check(i, a) for i, a in enumerate(assets)), return_exceptions=True)
+        _log(ch.id, "art", f"verifica visiva: {stats['ok']} immagini corrispondono alla frase, {stats['fixed']} rifatte, "
+                           f"{stats['unchecked']} non verificabili")
 
     def description(self, ch: Channel, seo: Dict[str, Any], fmt: str, credits: Optional[List[str]] = None) -> str:
         body = str(seo.get("description", "")).strip()
@@ -715,6 +762,26 @@ def clean_scenes(scenes: Any, hook: str = "") -> List[Dict[str, Any]]:
     if hook and out and not _norm(out[0]["text"]).startswith(_norm(hook)[:25]):
         out.insert(0, {"text": hook, "on_screen": ""})
     return out
+
+
+def split_beats(scenes: List[Dict[str, Any]], min_words: int = 6) -> List[Dict[str, Any]]:
+    """Scene -> frasi. Frasi cortissime ("Vanished.") si uniscono alla successiva: un'immagine per meno di un secondo
+    non si legge. Il testo a schermo resta sulla prima frase della scena."""
+    beats: List[Dict[str, Any]] = []
+    for sc in scenes:
+        parts = [p for p in re.split(r"(?<=[.!?…])\s+", str(sc.get("text", "")).strip()) if p]
+        buf: List[str] = []
+        first = True
+        for k, p in enumerate(parts):
+            buf.append(p)
+            if len(" ".join(buf).split()) >= min_words or k == len(parts) - 1:
+                beats.append({**sc, "text": " ".join(buf), "on_screen": sc.get("on_screen", "") if first else ""})
+                buf, first = [], False
+    # una frase finale troppo corta si attacca alla precedente
+    if len(beats) > 1 and len(beats[-1]["text"].split()) < 3:
+        last = beats.pop()
+        beats[-1] = {**beats[-1], "text": beats[-1]["text"] + " " + last["text"]}
+    return beats
 
 
 def fill_gaps(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

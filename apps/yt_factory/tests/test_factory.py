@@ -582,3 +582,52 @@ def test_pipeline_keeps_first_and_last_scene_free_of_cards(tmp_path):
         {"scene": 2, "kind": "stat", "value": "2011"}]}, "#1")
     assert list(cards) == ["1"]
     f.db.close()
+
+
+def test_split_beats_one_image_per_sentence():
+    beats = pipeline.split_beats([
+        {"text": "In 1953 a jet took off from Kinross. Vanished. Radar lost it over Lake Superior.", "on_screen": "1953"},
+        {"text": "The Air Force blamed a crash into the lake.", "on_screen": ""}])
+    assert [b["text"] for b in beats] == ["In 1953 a jet took off from Kinross.",
+                                         "Vanished. Radar lost it over Lake Superior.",
+                                         "The Air Force blamed a crash into the lake."]
+    assert beats[0]["on_screen"] == "1953" and beats[1]["on_screen"] == ""
+
+
+def test_scene_times_follow_spoken_words():
+    words = [Word(f"w{i}", i * 0.5, i * 0.5 + 0.4) for i in range(10)]
+    t = render.scene_times([{"text": "one two"}, {"text": "three four five six seven eight nine ten!!!!!!!!!!!!"}],
+                           words, 5.2)
+    assert t[0][1] == 1.0          # cambio immagine esattamente all'inizio della terza parola detta
+
+
+def test_visual_qa_replaces_mismatched_images(tmp_path, monkeypatch):
+    s = _settings(tmp_path)
+    calls = []
+
+    class Brain(OfflineBrain):
+        async def ask_vision(self, prompt, image, *, schema, max_tokens=0):
+            calls.append(prompt)
+            return {"match": "jet" in str(image), "shows": "x", "fix_prompt": "1950s F-89 jet over a lake"}
+
+    f = pipeline.Factory(s, brain=Brain())
+
+    async def fake_ai(http, prompt, style, fmt, seed, cache):
+        return tmp_path / "regenerated_jet.jpg"
+
+    monkeypatch.setattr(pipeline.visuals, "ai_image", fake_ai)
+    assets = [{"image": tmp_path / "jet.jpg"}, {"image": tmp_path / "fog.jpg"},
+              {"image": tmp_path / "photo.jpg", "image2": tmp_path / "ai_jet.jpg", "photo": True, "credit": "c"}]
+    scenes = [{"text": "A jet took off."}, {"text": "The jet vanished."}, {"text": "Radar saw the jet."}]
+
+    async def go():
+        import httpx
+        async with httpx.AsyncClient() as f.http:
+            await f.visual_qa(s.channel("mysteries"), scenes, {}, assets, "short", 1)
+
+    asyncio.run(go())
+    assert assets[0]["image"].name == "jet.jpg"                  # corrispondeva: resta
+    assert assets[1]["image"].name == "regenerated_jet.jpg"      # nebbia generica: rifatta
+    assert assets[2]["image"].name == "ai_jet.jpg" and not assets[2]["photo"]   # foto fuori tema -> immagine AI
+    assert len(calls) == 3 and "Radar saw the jet" in calls[2]
+    f.db.close()

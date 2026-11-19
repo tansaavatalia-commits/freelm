@@ -12,6 +12,7 @@ import asyncio
 import math
 import os
 import random
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -85,8 +86,9 @@ def duration(path: Path) -> float:
 
 # --------------------------------------------------------------------------- tempi
 def scene_times(scenes: Sequence[Dict[str, Any]], words: Sequence[Word], total: float) -> List[Tuple[float, float]]:
-    """Divide la timeline fra le scene in proporzione ai caratteri, agganciandosi ai confini delle parole."""
-    lengths = [max(len(s.get("text", "")), 1) for s in scenes]
+    """Divide la timeline fra le scene in proporzione alle PAROLE dette (la voce ne legge una per volta),
+    agganciandosi all'inizio della parola esatta: l'immagine cambia quando la voce passa alla frase successiva."""
+    lengths = [max(len(re.findall(r"[\w']+", str(s.get("text", "")))), 1) for s in scenes]
     tot, cum, bounds = sum(lengths), 0, [0.0]
     n = len(words)
     for ln in lengths[:-1]:
@@ -111,8 +113,9 @@ def plan_shots(times: Sequence[Tuple[float, float]], assets: Sequence[Dict[str, 
         n = max(1, math.ceil((b - a) / shot_seconds - 0.15))
         step = (b - a) / n
         asset = assets[i] if i < len(assets) else {}
-        # immagine principale (foto reale o AI) sui tagli pari; sui dispari clip stock o seconda immagine
-        alts = [x for x in (asset.get("stock"), asset.get("image2")) if x is not None]
+        # ogni frase ha la SUA immagine: i tagli interni cambiano solo il movimento di camera (o la clip stock
+        # cercata per la stessa frase), mai il soggetto
+        alts = [x for x in (asset.get("stock"),) if x is not None]
         for k in range(n):
             alt = alts[(k // 2) % len(alts)] if alts and (k % 2 == 1 or asset.get("image") is None) else None
             path = alt if alt is not None else asset.get("image")

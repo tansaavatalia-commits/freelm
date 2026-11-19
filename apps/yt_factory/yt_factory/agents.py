@@ -189,15 +189,21 @@ EDITOR = Agent(
 # ----------------------------------------------------------------------------------------- art & packaging
 ART_DIRECTOR = Agent(
     "the Art Director", "art desk",
-    "For each scene choose the visual that makes the viewer SEE what the voice says. If the scene names a real place, "
-    "object, artifact, building, animal or historical document, give a 'photo_query' of 2-4 English words naming "
-    "exactly that subject (e.g. 'Yonaguni monument', 'Waldorf Astoria', 'Franklin Roosevelt'); otherwise leave it empty. Always "
-    "also give an 'image_prompt' for an original AI image (subject, composition, lighting, camera; no text, no logos, "
-    "no real celebrities, no gore) in the channel's visual style, and a 2-4 word English 'stock_query'. Vary the "
-    "framing between scenes (wide, close-up, detail, aerial) so consecutive shots never look the same.",
-    '{"shots": [{"scene": 0, "photo_query": "", "image_prompt": "...", "stock_query": "..."}]}',
-    max_tokens=6000, temperature=0.7,
+    "Every line of narration gets its own picture, and the picture must SHOW WHAT THAT LINE SAYS, so a viewer who "
+    "only watches understands the story. For each line: name the concrete subject (who/what), the era, the place and "
+    "the action, exactly as in the line (e.g. line 'Roosevelt rode the train straight into the hotel' -> "
+    "'1940s president in a wheelchair inside a private railway car under a hotel, 1940s photo'). If a line is abstract, "
+    "show the concrete thing it refers to (a number about fees -> a bank fee statement; a feeling -> a person's face "
+    "showing it). Never generic mood shots (fog, silhouettes, empty corridors) unless the line describes them. "
+    "Style words go last and stay short. Also give 'photo_query' (2-4 English words naming a real subject that the "
+    "line mentions, else empty) and a 2-4 word 'stock_query'. No text, logos or real celebrities' faces in AI prompts.",
+    '{"shots": [{"scene": 0, "subject": "what must be visible", "photo_query": "", '
+    '"image_prompt": "literal description, then short style", "stock_query": "..."}]}',
+    max_tokens=6000, temperature=0.5,
 )
+
+VISUAL_QA_SCHEMA = ('{"match": true, "shows": "what the image actually shows, 8 words", '
+                    '"fix_prompt": "if no match: a literal image prompt that would show the line"}')
 
 MOTION_DESIGNER = Agent(
     "the Motion Designer", "art desk",
