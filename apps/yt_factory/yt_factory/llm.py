@@ -55,7 +55,12 @@ class Brain:
         # timeout lungo: i modelli "reasoning" gratuiti possono pensare più di un minuto;
         # wait=True: se tutti i provider sono in raffreddamento, freelm aspetta invece di fallire
         # + GitHub Models (gratis dentro GitHub Actions col token del repository)
-        providers = providers_from_env("auto") + github_models_providers()
+        gh = github_models_providers()
+        providers = providers_from_env("auto") + gh
+        if gh:  # i modelli pubblici senza chiave sono molto più deboli: solo riserva quando GitHub Models non risponde
+            for p in providers:
+                if getattr(p, "keyless", False):
+                    p.priority = 10
         self.llm = AsyncFreeLLM(providers, timeout=240.0, wait=True, max_wait=90.0)
         self.log(f"provider LLM: {', '.join(p.name for p in providers)}")
         self.sem = asyncio.Semaphore(concurrency)  # non saturare i tier gratuiti

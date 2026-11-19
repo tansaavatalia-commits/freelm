@@ -532,3 +532,20 @@ def test_story_without_quotes_in_sources_is_rejected(tmp_path, monkeypatch):
     assert asyncio.run(go()) is None
     assert "fonti" in f.db.videos("mysteries")[0]["error"]
     f.db.close()
+
+
+def test_off_topic_sources_are_detected():
+    from yt_factory.factcheck import notes_on_topic
+    notes = "### Agriculture in ancient Rome (Wikipedia en)\nWheat...\n### Trade route (Wikipedia en)\nSilk..."
+    assert not notes_on_topic(notes, "Claude-only side hustle profit experiment")
+    assert notes_on_topic("### Endowment effect (Wikipedia en)\n...", "endowment effect subscriptions")
+    assert notes_on_topic("### Felix Moncla (Wikipedia en)\n...", "Felix Moncla Kinross incident")
+
+
+def test_keyless_models_are_only_a_fallback_when_github_models_exist(monkeypatch):
+    from yt_factory.llm import Brain
+
+    monkeypatch.setenv("GITHUB_MODELS_TOKEN", "ghs_x")
+    b = Brain()
+    pri = {p.name: p.priority for p in b.llm.providers}
+    assert pri["github"] < pri["kilo"] and pri["github"] < pri["ovh"]

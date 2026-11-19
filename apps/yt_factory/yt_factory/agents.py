@@ -87,8 +87,11 @@ CONCEPTS = Agent(
     "Yonaguni monument' (saturated, no twist). Good: 'The lighthouse whose logbook was faked 12 years later' (specific, "
     "surprising, has a reveal). Every concept must have: a concrete protagonist/object, stakes, a twist you can state "
     "in one sentence, and a satisfying payoff that is TRUE. Avoid topics the niche has done to death unless your twist "
-    "is genuinely new. Only propose stories that are documented (an encyclopedia article exists about the subject); "
-    "never build a concept on an invented document, log or study. Never repeat a topic the channel already covered.",
+    "is genuinely new. Only propose stories that are documented (an encyclopedia article exists about the subject): "
+    "a named event, place, person, study, law, phenomenon or concept. NEVER invent anecdotes about unnamed people "
+    "('a teacher who...', 'a man who earned...'), case studies, experiments, documents, logs or statistics; for money "
+    "topics use documented phenomena, studies, laws, historical events or well-known rules (e.g. 'the endowment effect', "
+    "'the Rule of 72', 'the 2009 CARD Act'). Never repeat a topic the channel already covered.",
     '{"concepts": [{"topic": "specific story, not a broad subject", "inspired_by": "demand/blueprint it serves", '
     '"upgrade": "why ours beats what exists", "twist": "the one-sentence surprise", "payoff": "the true reveal", '
     '"saturation": "low|medium|high", "search_query": "2-5 word encyclopedia query for the real subject", '

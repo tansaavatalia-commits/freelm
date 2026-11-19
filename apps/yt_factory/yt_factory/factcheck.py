@@ -172,7 +172,7 @@ def numbers_not_in_notes(spoken: str, notes: str) -> List[str]:
             value = float(re.sub(r"[.,\s](?=\d{3}\b)", "", num).replace(",", "."))
         except ValueError:
             continue
-        if value <= 10 and not pct:
+        if (value <= 10 and not pct) or (pct and value in (0, 100)):  # "0% interessi", "100%" sono modi di dire
             continue
         if not any(re.search(rf"(?<![\d]){re.escape(c)}(?![\d])", plain) for c in _canon(num)):
             missing.append(num + ("%" if pct else ""))
@@ -181,3 +181,11 @@ def numbers_not_in_notes(spoken: str, notes: str) -> List[str]:
 
 def source_titles(notes: str) -> List[str]:
     return re.findall(r"^### (.+)$", notes, flags=re.M)
+
+
+def notes_on_topic(notes: str, query: str) -> bool:
+    """Le fonti parlano davvero dell'argomento? Almeno una parola significativa della ricerca nei titoli delle voci
+    (una ricerca su un'idea inventata restituisce comunque *qualche* voce: va riconosciuta e scartata)."""
+    titles = " ".join(source_titles(notes)).lower()
+    words = [w for w in _norm(query).split() if len(w) > 3 and w not in _STOP]
+    return any(w in titles or w.rstrip("s") in titles for w in words)

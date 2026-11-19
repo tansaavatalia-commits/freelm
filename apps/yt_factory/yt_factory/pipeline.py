@@ -358,8 +358,12 @@ class Factory:
             self.db.update_video(vid, status="rejected", error="nessuna fonte trovata")
             _log(ch.id, "research", f"{tag} SCARTATO: nessuna fonte affidabile per questo concetto")
             return None
+        if notes and not factcheck.notes_on_topic(notes, str(concept.get("search_query") or concept["topic"])):
+            self.db.update_video(vid, status="rejected", error="fonti fuori tema")
+            _log(ch.id, "research", f"{tag} SCARTATO: le fonti trovate parlano d'altro ({', '.join(factcheck.source_titles(notes))})")
+            return None
         concept = {**concept, "_notes": notes}
-        _log(ch.id, "research", f"{tag} fonti raccolte ({len(notes)} caratteri da Wikipedia)")
+        _log(ch.id, "research", f"{tag} fonti raccolte: {', '.join(factcheck.source_titles(notes))}")
         if notes:  # lo Story Miner riduce le fonti ai fatti migliori, ognuno con la sua citazione
             try:
                 story = await A.STORY_MINER.run(self.brain, ch, f"Concept: {A.dumps(_public(concept))}\n\nSOURCE NOTES:\n{notes}")
