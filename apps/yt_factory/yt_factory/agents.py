@@ -2,7 +2,7 @@
 
 I prompt sono in inglese (i modelli rendono meglio); tutto ciò che vede lo spettatore esce nella lingua del canale.
 
-RESEARCH DESK   Viral Deconstructor · Audience Researcher
+RESEARCH DESK   Viral Deconstructor · Audience Researcher · Story Miner (fatti sorprendenti + citazioni dalle fonti)
 CREATIVE DESK   Concept Developer ("versione migliore", mai copia) · Hook Lab · Audience Panel (giuria multi-modello)
                 Scriptwriter · Showrunner (scaletta dei video lunghi)
 QUALITY DESK    Fact Checker (con fonti Wikipedia) · Retention Editor & Compliance
@@ -94,6 +94,18 @@ CONCEPTS = Agent(
     '"saturation": "low|medium|high", "search_query": "2-5 word encyclopedia query for the real subject", '
     '"viral_score": 8}]}',
     temperature=0.9,
+)
+
+STORY_MINER = Agent(
+    "the Story Miner", "research desk",
+    "You read encyclopedia source notes and dig out the STORY a great Short can tell. Select the 5-7 most surprising, "
+    "concrete facts (numbers, names, dates, physical details), each copied with the exact supporting quote from the "
+    "notes. Then pick the true twist (the fact that most flips expectations) and the payoff (the satisfying real "
+    "answer). Use nothing that is not in the notes. If the concept's angle is not supported, follow the best true story "
+    "the notes contain instead.",
+    '{"angle": "one-sentence story angle", "facts": [{"fact": "short fact", "quote": "exact quote from notes"}], '
+    '"twist": "true twist", "payoff": "true payoff"}',
+    max_tokens=5000, temperature=0.3,
 )
 
 HOOK_LAB = Agent(

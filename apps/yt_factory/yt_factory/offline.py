@@ -30,6 +30,8 @@ class OfflineBrain:
         if '"concepts"' in schema:
             return {"concepts": [{"topic": f"{TOPICS[(n + i) % len(TOPICS)]} {n}-{i}: fatto sorprendente",
                                   "upgrade": "più chiaro", "viral_score": 9 - i} for i in range(8)]}
+        if '"angle"' in schema and '"quote"' in schema:
+            return {"angle": "a", "facts": [{"fact": "f", "quote": "q"}] * 3, "twist": "t", "payoff": "p"}
         if '"hooks"' in schema:
             return {"hooks": ["Il tuo cervello ti inganna ogni giorno", "Non vedi il tuo naso", "Ecco un segreto"]}
         if '"scores"' in schema:

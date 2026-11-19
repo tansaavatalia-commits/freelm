@@ -337,6 +337,17 @@ class Factory:
             return None
         concept = {**concept, "_notes": notes}
         _log(ch.id, "research", f"{tag} fonti raccolte ({len(notes)} caratteri da Wikipedia)")
+        if notes:  # lo Story Miner riduce le fonti ai fatti migliori, ognuno con la sua citazione
+            try:
+                story = await A.STORY_MINER.run(self.brain, ch, f"Concept: {A.dumps(_public(concept))}\n\nSOURCE NOTES:\n{notes}")
+                facts = [f for f in story.get("facts", []) if isinstance(f, dict) and f.get("fact")]
+                if len(facts) >= 3:
+                    concept = {**concept, "_story": story, "angle": story.get("angle", concept.get("angle")),
+                               "twist": story.get("twist", concept.get("twist")),
+                               "payoff": story.get("payoff", concept.get("payoff"))}
+                    _log(ch.id, "research", f"{tag} storia: {story.get('angle', '')}  | colpo di scena: {story.get('twist', '')}")
+            except Exception as e:
+                _log(ch.id, "research", f"{tag} story miner non disponibile: {e}")
         hook = await self.best_hook(ch, concept, tag) if fmt == "short" else ""
         fixes, review, facts = "", {}, []
         # prima stesura: più sceneggiatori (modelli diversi) in parallelo, il caporedattore sceglie la migliore
@@ -542,7 +553,14 @@ GROUNDING = ("SOURCE NOTES below. Use ONLY facts found in them for every name, n
 
 
 def _notes(concept: Dict[str, Any]) -> str:
-    return str(concept.get("_notes") or "")
+    """Materiale per chi scrive: i fatti scelti dallo Story Miner (con citazione) e, sotto, le fonti complete."""
+    notes = str(concept.get("_notes") or "")
+    story = concept.get("_story")
+    if not story:
+        return notes
+    facts = "\n".join(f"- {f.get('fact')}  [source: \"{str(f.get('quote', ''))[:200]}\"]" for f in story.get("facts", []))
+    return (f"KEY FACTS (build the script from these):\n{facts}\nTRUE TWIST: {story.get('twist')}\n"
+            f"TRUE PAYOFF: {story.get('payoff')}\n\nFULL NOTES (for checking only):\n{notes[:4000]}")
 
 
 def _public(concept: Dict[str, Any]) -> Dict[str, Any]:
