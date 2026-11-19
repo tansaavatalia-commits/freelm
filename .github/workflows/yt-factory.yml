@@ -75,6 +75,7 @@ jobs:
       - name: Dipendenze
         run: pip install -e ../.. -r requirements.txt
       - name: Ripristina memoria della fabbrica (storico video, apprendimenti, quota)
+        if: github.event_name != 'push'          # le prove su branch partono sempre da zero
         uses: actions/cache/restore@v4
         with:
           path: apps/yt_factory/data/factory.sqlite
@@ -90,7 +91,7 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then ARGS="--count 1"; fi   # prova: 1 Short per canale, mai pubblicato
           python -m yt_factory run $ARGS
       - name: Salva memoria della fabbrica
-        if: always()
+        if: always() && github.event_name != 'push'
         uses: actions/cache/save@v4
         with:
           path: apps/yt_factory/data/factory.sqlite

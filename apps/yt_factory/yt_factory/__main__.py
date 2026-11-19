@@ -82,8 +82,8 @@ async def _async(args, s) -> int:
                 print(f"  - [{v['format']}] {v['title']}\n    {where}")
             for e in res.errors:
                 print(f"  ! {e}")
-            failed += 0 if res.produced else 1
-        return 1 if failed == len(results) else 0
+            failed += 1 if res.errors and not res.produced else 0  # "niente da fare oggi" non è un errore
+        return 1 if results and failed == len(results) else 0
 
     if args.cmd == "rerender":
         f = Factory(s, dry_run=True)
