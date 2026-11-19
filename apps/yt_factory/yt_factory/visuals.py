@@ -14,6 +14,7 @@ import hashlib
 import io
 import os
 import random
+import time
 import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
@@ -70,10 +71,17 @@ async def ai_image(http: httpx.AsyncClient, prompt: str, style: str, fmt: str, s
     if os.environ.get("POLLINATIONS_TOKEN"):  # opzionale: token gratuito = limiti più alti, niente filigrana
         params["token"] = os.environ["POLLINATIONS_TOKEN"]
     _POLL_SEM = _POLL_SEM or asyncio.Semaphore(int(os.environ.get("YTF_IMAGE_CONCURRENCY", "1")))
+    # senza token il tier anonimo accetta ~1 richiesta ogni 15 s: le richieste si mettono in fila a livello di studio
+    gap = float(os.environ.get("YTF_IMAGE_GAP") or (3.0 if os.environ.get("POLLINATIONS_TOKEN") else 15.0))
+    delays = [10, 20, 40, 60]
     async with _POLL_SEM:
-        for attempt in range(3):
+        for attempt in range(len(delays) + 1):
+            wait = _LAST_CALL[0] + gap - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            _LAST_CALL[0] = time.monotonic()
             try:
-                r = await http.get(url, params=params, timeout=90)
+                r = await http.get(url, params=params, timeout=120)
             except httpx.HTTPError:
                 r = None
             if r is not None and r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
@@ -84,10 +92,16 @@ async def ai_image(http: httpx.AsyncClient, prompt: str, style: str, fmt: str, s
                 img = img.resize((int(img.width * scale), int(img.height * scale)), Image.LANCZOS)
                 img.save(out, quality=93)
                 return out
-            await asyncio.sleep(4 * (attempt + 1))
+            if attempt == len(delays):
+                break
+            retry_after = r.headers.get("retry-after", "") if r is not None else ""
+            await asyncio.sleep(float(retry_after) if retry_after.replace(".", "").isdigit() else delays[attempt])
             if attempt == 1:  # prompt più corto: alcuni prompt lunghi vengono rifiutati
                 url = "https://image.pollinations.ai/prompt/" + urllib.parse.quote(f"{prompt[:160]}, {style[:80]}")
     return None
+
+
+_LAST_CALL = [0.0]
 
 
 OPENVERSE = "https://api.openverse.org/v1/images/"
@@ -95,7 +109,8 @@ OPENVERSE = "https://api.openverse.org/v1/images/"
 SAFE_LICENSES = "cc0,pdm,by"
 
 
-async def real_photo(http: httpx.AsyncClient, query: str, fmt: str, cache: Path, pick: int = 0) -> Optional[Dict[str, str]]:
+async def real_photo(http: httpx.AsyncClient, query: str, fmt: str, cache: Path, pick: int = 0,
+                     min_match: int = 2, exclude: Optional[set] = None) -> Optional[Dict[str, str]]:
     """Foto reale con licenza libera. Restituisce {"path", "credit"} (credit vuoto per CC0/pubblico dominio)."""
     if not query or os.environ.get("YTF_OFFLINE"):
         return None
@@ -112,7 +127,7 @@ async def real_photo(http: httpx.AsyncClient, query: str, fmt: str, cache: Path,
             break
     w, h = SIZES[fmt]
     key = [x.lower() for x in words if len(x) > 3]
-    need = min(2, len(key))
+    need = min(min_match, len(key))
 
     def relevant(x: Dict[str, Any]) -> bool:
         """La foto deve parlare del soggetto: almeno 2 parole chiave nel TITOLO (i tag sono troppo larghi:
@@ -125,6 +140,8 @@ async def real_photo(http: httpx.AsyncClient, query: str, fmt: str, cache: Path,
             if (x.get("width") or 0) >= 1000 and (x.get("height") or 0) >= 650
             and (x.get("width") or 1) / (x.get("height") or 1) < 4]  # niente banner panoramici
     for item in good[pick % max(len(good), 1):] + good[: pick % max(len(good), 1)]:
+        if exclude and item["url"] in exclude:
+            continue
         out = cache / f"photo_{hashlib.sha1(item['url'].encode()).hexdigest()[:16]}.jpg"
         if not out.exists():
             try:
@@ -142,6 +159,8 @@ async def real_photo(http: httpx.AsyncClient, query: str, fmt: str, cache: Path,
         credit = "" if lic in ("cc0", "pdm") else (
             f"\"{item.get('title', 'photo')}\" by {item.get('creator') or 'unknown'}, CC BY "
             f"{item.get('license_version', '')} ({item.get('foreign_landing_url') or item['url']})")
+        if exclude is not None:
+            exclude.add(item["url"])
         return {"path": str(out), "credit": credit}
     return None
 

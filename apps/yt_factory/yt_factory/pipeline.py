@@ -501,7 +501,9 @@ class Factory:
 
         # ------------------------------------------------ produzione
         cta = str(script.get("cta", "")).strip()
-        if cta:
+        last = str(script["scenes"][-1]["text"]).strip() if script.get("scenes") else ""
+        if cta and (last.endswith("?") or any(w in last.lower() for w in ("comment", "comment", "scrivi", "follow", "segui", "iscriv", "subscribe"))):
+            cta = ""  # il finale ha già la sua domanda/chiamata: niente doppione
             script["scenes"][-1]["text"] = f"{script['scenes'][-1]['text']} {cta}"
         spoken = " ".join(str(s["text"]).strip() for s in script["scenes"])
         audio = out_dir / f"{stem}.mp3"
@@ -577,6 +579,17 @@ class Factory:
                     "photo": bool(photo), "credit": photo["credit"] if photo else ""}
 
         assets = list(await asyncio.gather(*(one(i, s) for i, s in enumerate(scenes))))
+        # scene rimaste senza immagine (servizio AI saturo): foto reale CC0 sul tema della scena, prima di copiare
+        used: set = set()
+        for i, a in enumerate(assets):
+            if a.get("image") is None and a.get("stock") is None:
+                q = str(shots.get(i, {}).get("stock_query") or "")
+                try:
+                    p = await visuals.real_photo(self.http, q, fmt, cache, pick=i, min_match=1, exclude=used)
+                except httpx.HTTPError:
+                    p = None
+                if p:
+                    a.update(image=Path(p["path"]), photo=True, credit=p["credit"])
         seen: set = set()
         for a in assets:  # la stessa foto in più scene stanca: dalla seconda volta si usa l'immagine AI della scena
             if a.get("photo"):
