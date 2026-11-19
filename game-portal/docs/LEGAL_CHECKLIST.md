@@ -31,6 +31,8 @@
 - [ ] Esenzioni per micro e piccole imprese.
 
 ## Pubblicità
+- [ ] **Reti pubblicitarie (D-015):** consenso preventivo per cookie e identificatori (art. 5(3) ePrivacy, ZEK), CMP certificata TCF v2.x (requisito tipico delle grandi reti nello SEE/UK), banner con "rifiuta" facile quanto "accetta", nessun annuncio personalizzato ai minori (art. 28(2) DSA), registro dei consensi, aggiornamento dell'informativa privacy e della lista dei fornitori.
+- [ ] Termini della rete pubblicitaria: idoneità del sito, contenuti vietati, pagamento e dati fiscali (W-8BEN-E per reti USA, PDV ID). L'apertura dell'account richiede un'autorizzazione separata (FASE 11).
 - [ ] Riconoscibilità della pubblicità, divieto di pratiche commerciali sleali (direttiva 2005/29/CE), norme sulla pubblicità ai minori.
 - [ ] Categorie vietate o limitate (gioco d'azzardo, alcol, ecc.) e policy editoriale.
 - [ ] Contratto tipo per inserzionisti e sponsor.

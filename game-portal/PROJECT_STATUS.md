@@ -7,6 +7,7 @@
 - FASE 0: audit, piano A–J, roadmap, architettura, modello v0.
 - Push del branch `claude/game-portal-master-mm5azl` (autorizzato).
 - FASE 1: dossier concorrenti v1, modello finanziario v1, checklist legale aggiornata, catalogo iniziale (D-013), lingua (D-012).
+- D-014 nome Tabluo, D-015 modello ibrido, modello finanziario v2.
 
 ## In corso
 - Nessuna.
@@ -16,13 +17,14 @@
 - FASE 3 (codice): attende D-001, per non mescolare il portale con freelm.
 
 ## Decisioni richieste
-- **D-014** nome del brand · **D-015** vincolo reti pubblicitarie (vedi `docs/DECISIONS.md`).
+- Nessuna decisione bloccante aperta. D-014 (Tabluo) e D-015 (modello ibrido) approvate.
+- Da ricordare: il dominio `tabluo.com` è libero ma **non acquistato** (D-010, ~10–15 €/anno) e potrebbe essere registrato da altri.
 
 ## Errori
 - Nessun errore tecnico. Correzioni di modello documentate in CHANGELOG.
 
 ## Test
-- Superati: `python3 scripts/financial_model.py` (output v1 riportato in FINANCIAL_MODEL.md).
+- Superati: `python3 scripts/financial_model.py` e `--no-network` (output v2/v1 riportati in FINANCIAL_MODEL.md).
 - Falliti: nessuno. Non esiste ancora codice applicativo.
 
 ## Limiti della ricerca

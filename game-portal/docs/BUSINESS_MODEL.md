@@ -1,4 +1,4 @@
-# GAME PORTAL — Modello di business (bozza FASE 0)
+# GAME PORTAL (Tabluo) — Modello di business
 
 ## Proposta di valore
 Portale di giochi HTML5 **curato, veloce e senza intrusioni**: niente installazioni,
@@ -24,6 +24,7 @@ utenti, prezzi: **tutti di proprietà**. Nessun aggregatore, white-label o reven
 | Flusso | Avvio | Gestione iniziale | Prerequisiti |
 |---|---|---|---|
 | Pubblicità diretta | Quando il traffico supera la soglia del media kit (G6) | Vendita manuale, fattura, bonifico | Soggetto fiscale, contratto tipo |
+| Rete pubblicitaria (D-015) | Al lancio, sull'inventario invenduto | Automatica, solo con consenso | Account presso la rete (autorizzazione FASE 11), CMP, soggetto fiscale |
 | Sponsorizzazioni | Insieme alla pubblicità | Accordi diretti per categoria, gioco o evento | Idem |
 | Premium | Dopo una lista d'attesa che dimostri la domanda | Prima solo lista d'attesa (gratuita) | Processore di pagamento (D-006), OSS IVA |
 | Prodotti digitali | FASE 12+ | Es. pacchetti di puzzle stampabili, temi | Stessi obblighi di Premium |
@@ -38,3 +39,7 @@ conversione lista d'attesa → Premium, costo per gioco prodotto.
 - Rischio principale confermato: quei ricavi vengono da reti pubblicitarie programmatiche. Con la sola vendita diretta il traffico necessario è molto più alto (decisione D-015).
 - Premium ridimensionato: conversioni trascurabili nella nicchia; lo si tratta come opzione, non come pilastro.
 - Primo catalogo: vedi D-013. Lingua iniziale: inglese (D-012).
+
+## Aggiornamento D-014 / D-015
+- Nome di lavoro: **Tabluo** (alternativa Mellodeck).
+- Modello pubblicitario **ibrido**: diretta e sponsor prioritari, rete sull'invenduto. Il controllo di spazi, priorità e dati resta interno (ad server proprio).

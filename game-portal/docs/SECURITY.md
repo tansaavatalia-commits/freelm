@@ -11,6 +11,7 @@
 | Giochi malevoli | iframe sandbox su origin senza cookie, CSP `frame-ancestors`, `Permissions-Policy` restrittiva, kill switch |
 | Credential leakage / segreti | Segreti solo in `wrangler secret`/GitHub Secrets, `.dev.vars` in `.gitignore`, secret scanning e push protection di GitHub, nessun segreto nel bundle client |
 | Abuso pubblicitario | Impression contate solo se visibili, deduplica per sessione, filtro dei bot noti, soglie anomale ⇒ segnalazione, creatività solo statiche e revisionate |
+| Script di reti pubblicitarie (D-015) | Caricati solo dopo il consenso, mai sull'origin dei giochi né sull'admin; CSP con allowlist limitata alle pagine con slot; Subresource Integrity non applicabile ⇒ isolamento negli slot e monitoraggio di malvertising/redirect |
 | Supply chain | Lockfile, Dependabot, `pnpm audit`, numero minimo di dipendenze |
 
 Header standard: `Content-Security-Policy`, `Strict-Transport-Security`,

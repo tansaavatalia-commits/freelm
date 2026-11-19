@@ -1,5 +1,11 @@
 # GAME PORTAL — Changelog
 
+## 2026-11-19 — Decisioni D-014 e D-015
+- D-015 approvata: modello pubblicitario ibrido (diretta → sponsor → rete sull'invenduto, solo con consenso).
+- Modello finanziario v2: ~183k visitatori/mese nello scenario intermedio per 3.000 € netti (v1 solo diretta: ~246k); opzione `--no-network`.
+- D-014: nome di lavoro **Tabluo** (alternativa Mellodeck); .com liberi via RDAP, nessun acquisto.
+- ARCHITECTURE, SECURITY, LEGAL_CHECKLIST aggiornati per CMP/TCF e isolamento degli script di rete.
+
 ## 2026-11-19 — FASE 1
 - Approvazione utente ("Autorizzo tutto"): push eseguito, decisioni D-001…D-008 approvate.
 - Dossier concorrenti v1 (Poki, CrazyGames, Coolmath, Y8, siti di solitario indipendenti) con fonti classificate.

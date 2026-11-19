@@ -77,6 +77,14 @@ Regola d'integrità: un trigger/controllo applicativo impedisce `status='publish
 - Le creatività sono immagini statiche servite dal nostro origin: **nessuno script o pixel di terzi**.
 - Se nessuna campagna è attiva lo slot collassa (`display: none`), senza spazi vuoti.
 
+### Riempimento da rete pubblicitaria (D-015)
+Ordine di decisione per ogni slot: **campagna diretta → sponsor → rete → slot collassato**.
+- Lo script della rete viene caricato **solo** se: (1) l'utente ha dato il consenso tramite una CMP certificata TCF v2.x (adatta allo SEE; la CMP gratuita della rete è un'opzione da verificare); (2) lo slot non ha campagne dirette; (3) la pagina non è una pagina di gioco a schermo intero.
+- Senza consenso: nessuno script della rete, oppure solo annunci non personalizzati/limitati se la rete li consente e la base giuridica è verificata (FASE 9).
+- La rete non viene mai inserita **dentro** l'iframe del gioco e non riceve eventi di gioco.
+- La CSP del portale si allarga solo ai domini della rete, solo nelle pagine con slot, e l'admin non carica mai script di terzi.
+- Metriche separate in `ad_daily_stats.source` (`direct` | `sponsor` | `network`), così il report economico distingue le fonti.
+
 ## Soglie di costo note
 - Workers Free: 100.000 richieste/giorno **[TERZI, verificare in FASE 2]** ⇒ oltre si passa a Workers Paid (~5 $/mese).
 - D1 Free: limiti giornalieri di letture/scritture applicati dal 1/9/2026 **[UFF]**; storage ~5 GB **[TERZI]**.

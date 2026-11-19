@@ -10,15 +10,15 @@ Stato: `PROPOSTA` (attende l'utente) · `APPROVATA` · `RESPINTA` · `ADR` (deci
 | D-004 | Stack: React + Vite + TS, Hono su Workers, D1, Pages, pnpm monorepo | APPROVATA 2026-11-19 | 0 € | Vedi ARCHITECTURE |
 | D-005 | Analytics proprietari aggregati senza cookie, nessun tracker di terzi | APPROVATA 2026-11-19 | 0 € | Conferma legale in FASE 9 |
 | D-006 | Nessun processore di pagamento fino a verifica di costi/fiscalità; Premium = lista d'attesa | APPROVATA 2026-11-19 | 0 € | Blocca i ricavi Premium |
-| D-007 | Valutare in futuro, **solo come fallback opzionale**, una rete pubblicitaria contestuale consent-based se la vendita diretta non parte entro G6 | PROPOSTA (futura) | 0 € | Contrario al vincolo attuale: serve una tua scelta esplicita, non è nel piano base |
+| D-007 | Rete pubblicitaria come fallback | ASSORBITA in D-015 | 0 € | |
 | D-008 | Autenticazione utenti senza email (passkey) in MVP per evitare un provider email | APPROVATA 2026-11-19 | 0 € | |
 | D-009 | Revisione legale professionale prima del lancio | PROPOSTA | 300–1.500 € stimati | Fuori budget attuale: va autorizzata più avanti |
 | D-010 | Acquisto del dominio al lancio controllato | PROPOSTA (FASE 11) | ~10–15 €/anno | Primo costo inevitabile |
 | D-011 | Apertura del soggetto fiscale prima del primo incasso | PROPOSTA (FASE 11–12) | ~291–299 €/mese di contributi | Da decidere col commercialista |
 | D-012 | Lingua iniziale: **inglese**; i18n predisposto per IT/HR/DE/ES in seguito | APPROVATA (inclusa in "Autorizzo tutto") | 0 € | Mercato mondiale/UE/USA |
 | D-013 | Primi 10 giochi interni: Klondike, Spider, FreeCell, Sudoku, Mahjong a tessere, "Mines" (campo minato), Nonogram, word game del giorno (nome e grafica originali), Dama, Scacchi contro CPU | APPROVATA | 0 € | Nomi generici, nessun marchio di terzi ("Minesweeper", "Wordle", "Tetris" esclusi) |
-| D-014 | Nome del brand | **APERTA** | 0 € (ricerca di anteriorità gratuita su EUIPO/TMview) | Scelta tua: è un'impronta legale e commerciale |
-| D-015 | Vincolo "niente reti pubblicitarie": confermarlo o ammettere D-007 come fallback | **APERTA, importante** | 0 € | La FASE 1 mostra che i siti comparabili vivono quasi solo di reti pubblicitarie |
+| D-014 | Nome del brand: **Tabluo** (nome di lavoro; alternativa: **Mellodeck**) | APPROVATA 2026-11-19 (delegata: "ispirati ai colossi") | 0 € ora; dominio ~10–15 €/anno solo con autorizzazione | Stile dei leader (nome breve e inventato, come Poki o Y8) senza imitarne nessuno. `tabluo.com` e `mellodeck.com` risultavano liberi via RDAP il 2026-11-19 (nessun acquisto: possono essere registrati da altri in ogni momento). Ricerca web senza omonimi; somiglianza fonetica lontana con "Tableau" (software dati, altra classe) ⇒ verifica TMview/EUIPO classi 9/41/42 prima del lancio. Scartati: Joviplay (troppo simile all'app JoiPlay), nomi simili a Poki/CrazyGames |
+| D-015 | Ammettere le reti pubblicitarie | APPROVATA 2026-11-19 ("se conviene, fallo": conviene, vedi FINANCIAL_MODEL v2) | 0 € | Modello **ibrido**: vendita diretta e sponsor prioritari; rete solo sull'inventario invenduto, solo dopo il consenso tramite CMP certificata TCF, mai sui giochi e mai annunci personalizzati ai minori. L'apertura dell'account presso la rete (accettazione dei termini, dati fiscali) resta un'autorizzazione separata in FASE 11 |
 
 > "Autorizzo tutto" (2026-11-19) è stato interpretato come approvazione delle decisioni
 > **proposte fino a quel momento** e del passaggio alla FASE 1. **Non** copre acquisti,

@@ -1,4 +1,4 @@
-# GAME PORTAL — Master Plan (FASE 0: audit e pianificazione)
+# GAME PORTAL (nome di lavoro: Tabluo) — Master Plan (FASE 0: audit e pianificazione)
 
 > Stato: **FASE 0 e FASE 1 completate.** Approvazione utente del 2026-11-19 ("Autorizzo tutto").
 > Data: 2026-11-19. Nessun acquisto, nessuna pubblicazione, nessun contatto esterno.
@@ -104,23 +104,22 @@ riproducibile con `python3 game-portal/scripts/financial_model.py`.
 Visitatori unici mensili necessari per **3.000 € di utile netto mensile** (tutti i
 parametri sono **[IPOTESI]**):
 
-| Scenario | Visitatori/mese per 3.000 € netti | Pareggio |
+| Scenario (v2 ibrido, D-015) | Visitatori/mese per 3.000 € netti | Pareggio |
 |---|---:|---:|
-| Prudente | ~1.430.000 | ~179.000 |
-| Intermedio | ~246.000 | ~50.000 |
-| Ambizioso | ~80.000 | ~21.000 |
-| Stress test | ~6,6 milioni | ~1,07 milioni |
+| Prudente | ~565.000 | ~71.000 |
+| Intermedio | ~183.000 | ~32.000 |
+| Ambizioso | ~76.000 | ~18.000 |
+| Stress test | ~1,7 milioni | ~275.000 |
 
-*(Aggiornato con il modello v1 dopo la FASE 1: Premium ridotto in base all'evidenza raccolta.)*
+*(v2: rete pubblicitaria sull'invenduto ammessa con D-015. Solo vendita diretta: ~246.000 nell'intermedio.)*
 
 **Lettura onesta:**
 - Il costo fisso dominante **non è l'infrastruttura** (≈0 €), ma i **contributi
   obbligatori** se si apre un obrt (~291–299 €/mese, fonti secondarie) e il commercialista.
   Finché non esiste un soggetto fiscale non si possono incassare ricavi in modo lecito.
-- Il vincolo "niente reti pubblicitarie" significa che **i ricavi pubblicitari saranno
-  ~0 finché il traffico non permette la vendita diretta**, cioè probabilmente per
-  molti mesi. Gli inserzionisti diretti raramente comprano siti con meno di decine di
-  migliaia di visitatori al mese **[IPOTESI]**.
+- Con D-015 la rete pubblicitaria copre l'inventario invenduto: i ricavi partono dal
+  lancio invece che solo quando il traffico permette la vendita diretta. Gli inserzionisti
+  diretti raramente comprano siti con meno di decine di migliaia di visitatori al mese **[IPOTESI]**.
 - Premium richiede un sistema di incasso; senza un processore di pagamento (vietato per
   ora) Premium è di fatto **0 €** nelle prime fasi.
 - Il raggiungimento dei 3.000 € **non è garantito** e, per un sito nuovo basato su SEO,
