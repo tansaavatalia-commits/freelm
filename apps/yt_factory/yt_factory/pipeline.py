@@ -119,6 +119,10 @@ class Factory:
                     while (concept := await next_concept()) is not None:
                         try:
                             out = await self.produce(ch, concept, job["format"], job["slot"], day, insights)
+                        except factcheck.SourcesUnavailable as e:  # senza fonti non si produce: si rimanda
+                            res.errors.append(f"rimandato: {e}")
+                            _log(ch.id, "research", f"fonti non raggiungibili, slot {job['slot']} rimandato al prossimo giro")
+                            return
                         except Exception as e:  # un video fallito non ferma gli altri
                             res.errors.append(f"{concept.get('topic')}: {e}")
                             _log(ch.id, "studio", f"ERRORE su '{concept.get('topic')}': {e}")
@@ -298,9 +302,11 @@ class Factory:
             claims = (await A.FACT_EXTRACT.run(self.brain, ch, f"Script:\n{spoken}")).get("claims", [])
             if not claims:
                 return []
-            sourced = await factcheck.gather_sources(self.http, claims)
-            verdict = await A.FACT_JUDGE.run(self.brain, ch, f"Claims with encyclopedia excerpts:\n{A.dumps(sourced)}\n\n"
-                                                             f"Background source notes:\n{notes[:5000] or '(none)'}")
+            # con le fonti già raccolte si verifica su quelle: decine di ricerche in meno (e niente limiti di Wikipedia)
+            sourced = [{"claim": c.get("claim", "")} for c in claims[:6]] if notes else \
+                await factcheck.gather_sources(self.http, claims)
+            verdict = await A.FACT_JUDGE.run(self.brain, ch, f"Claims:\n{A.dumps(sourced)}\n\n"
+                                                             f"Encyclopedia source notes:\n{notes[:7000] or '(none)'}")
         except Exception as e:
             _log(ch.id, "quality", f"{tag} fact-check non disponibile: {e}")
             return []
@@ -317,8 +323,12 @@ class Factory:
         tag = f"#{vid} {fmt}"
         _log(ch.id, "creative", f"{tag} concetto: {concept['topic']}  (meglio perché: {concept.get('upgrade', '-')})")
         # fonti prima di scrivere: niente fonti = niente video (meglio scartare che inventare)
-        notes = await factcheck.research_notes(self.http, str(concept.get("search_query") or concept["topic"]),
-                                               ch.language, pages=3 if fmt == "long" else 2)
+        try:
+            notes = await factcheck.research_notes(self.http, str(concept.get("search_query") or concept["topic"]),
+                                                   ch.language, pages=3 if fmt == "long" else 2)
+        except factcheck.SourcesUnavailable:
+            self.db.update_video(vid, status="failed", error="fonti non raggiungibili")
+            raise
         if not notes and not os.environ.get("YTF_OFFLINE"):
             self.db.update_video(vid, status="rejected", error="nessuna fonte trovata")
             _log(ch.id, "research", f"{tag} SCARTATO: nessuna fonte affidabile per questo concetto")

@@ -357,3 +357,39 @@ def test_concept_without_sources_is_rejected(tmp_path, monkeypatch):
     assert asyncio.run(go()) is None
     assert f.db.videos("mysteries")[0]["status"] == "rejected"
     f.db.close()
+
+
+def test_wikipedia_429_is_retried_then_reported_as_unavailable(tmp_path, monkeypatch):
+    import httpx
+
+    from yt_factory import factcheck
+
+    monkeypatch.delenv("YTF_OFFLINE", raising=False)
+    sleeps = []
+
+    async def fake_sleep(s):
+        sleeps.append(s)
+
+    monkeypatch.setattr(factcheck.asyncio, "sleep", fake_sleep)
+    factcheck._CACHE.clear()
+    factcheck._SEM = None
+
+    async def go(handler):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            return await factcheck.research_notes(http, "The 1518 dancing plague in Strasbourg", "en")
+
+    with pytest.raises(factcheck.SourcesUnavailable):
+        asyncio.run(go(lambda req: httpx.Response(429, headers={"retry-after": "2"})))
+    assert 2.0 in sleeps                                         # rispetta Retry-After
+
+    calls = []
+
+    def ok(req):
+        calls.append(req.url.params.get("q"))
+        if "search" in req.url.path:
+            return httpx.Response(200, json={"pages": [{"key": "Dancing_plague_of_1518", "title": "Dancing plague of 1518"}]})
+        return httpx.Response(200, json={"source": "'''The dancing plague''' happened in [[Strasbourg]]. " * 20})
+
+    notes = asyncio.run(go(ok))
+    assert "Dancing plague of 1518" in notes and "Strasbourg" in notes
+    assert calls[0] == "1518 dancing plague Strasbourg"          # query ridotta alle parole chiave
