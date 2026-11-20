@@ -85,10 +85,21 @@ jobs:
       - name: Controllo GitHub Models (diagnosi)
         continue-on-error: true
         run: |
-          curl -sS -m 60 -o /tmp/ghm.json -w "HTTP %{http_code}\n" https://models.github.ai/inference/chat/completions \
-            -H "Authorization: Bearer $GITHUB_MODELS_TOKEN" -H "Content-Type: application/json" \
-            -d '{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Reply with OK"}],"max_tokens":5}'
-          head -c 400 /tmp/ghm.json; echo
+          BODY='{"model":"openai/gpt-4.1-mini","messages":[{"role":"user","content":"Reply with the single word PINEAPPLE"}],"max_tokens":8}'
+          for v in plain headers azure; do
+            case $v in
+              plain)   URL=https://models.github.ai/inference/chat/completions; EXTRA=() ;;
+              headers) URL=https://models.github.ai/inference/chat/completions
+                       EXTRA=(-H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28") ;;
+              azure)   URL=https://models.inference.ai.azure.com/chat/completions; EXTRA=() ;;
+            esac
+            B=$BODY; [ $v = azure ] && B=${BODY/openai\/gpt-4.1-mini/gpt-4o-mini}
+            echo "== $v"
+            curl -sS -m 60 -D /tmp/h.txt -o /tmp/ghm.json -w "HTTP %{http_code}\n" "$URL" "${EXTRA[@]}" \
+              -H "Authorization: Bearer $GITHUB_MODELS_TOKEN" -H "Content-Type: application/json" -d "$B" || true
+            grep -i "^content-type" /tmp/h.txt || true
+            head -c 300 /tmp/ghm.json; echo
+          done
       - name: Ripristina memoria della fabbrica (storico video, apprendimenti, quota)
         if: github.event_name != 'push'          # le prove su branch partono sempre da zero
         uses: actions/cache/restore@v4
@@ -97,6 +108,7 @@ jobs:
           key: ${{ env.DB_CACHE }}-${{ github.run_id }}
           restore-keys: ${{ env.DB_CACHE }}-
       - name: Produci (e pubblica)
+        if: ${{ !contains(github.event.head_commit.message, '[diag-only]') }}   # [diag-only]: solo i controlli
         run: |
           ARGS=""
           if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ vars.YTF_PUBLISH }}" = "true" ]; then ARGS="$ARGS --publish"; fi
