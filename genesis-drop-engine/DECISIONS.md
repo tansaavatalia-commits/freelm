@@ -29,13 +29,19 @@ richiede l'operatore) · contesto · decisione · conseguenze.
 |----|-----------|---------------------------------|
 | **D-001** | Spostare il progetto in un repository GitHub **privato** dedicato `genesis-drop-engine`? (la sessione attuale non può creare repository) | Sì: l'operatore crea il repo vuoto privato e lo aggiunge alla sessione; la cronologia di questa cartella viene trasferita |
 | **D-002** | Paese di registrazione dell'impresa e forma giuridica | Decisione legale/fiscale con un commercialista; il sistema resta parametrico. Un soggetto UE con OSS/IOSS semplifica IVA e idoneità ai marketplace |
-| **D-003** | Approvazione dello stack tecnologico (T-001…T-013) | Approvare |
+| **D-003** | Approvazione dello stack tecnologico (T-001…T-013) | ✅ **APPROVATA** dall'operatore il 2026-11-20 |
 | **D-004** | Primo canale di vendita | Allegro (sandbox gratuita), poi Kaufland — dopo verifica ufficiale |
 | **D-005** | Paesi di destinazione iniziali | 2–3 paesi a domanda alta e IVA moderata (da selezionare con dati in Fase 2) |
 | **D-006** | Livello di automazione iniziale | LEVEL 1 (ricerca e raccomandazioni) |
 | **D-007** | Parametri riserve (rimborsi 10%, chargeback 1%, IVA 100%) e margine di cambio 3% | Approvare come default prudenziali |
 | **D-008** | Destinazione dei backup esterni | Da scegliere (disco esterno o cloud già posseduto) |
 | **D-009** | Pacchetti multipack da valutare (default 1, 2, 3, 5, 10) | Approvare |
-| **D-010** | **Fattibilità economica**: con dazio UE €3 e costi realistici, la singola unità a €6–7 con €3 netti è quasi irrealizzabile da Cina (vedi `BUSINESS_RULES.md` §5). Confermare che il sistema privilegi multipack e fornitori con magazzino UE, e che un prezzo per unità superiore a €6–7 (es. ~€8,50 nei multipack) sia accettabile | Confermare: le regole €1 e €3 restano invariate, cambia la strategia di configurazione |
+| **D-010** | **Fattibilità economica**: con dazio UE €3 e costi realistici, la singola unità a €6–7 con €3 netti è quasi irrealizzabile da Cina (vedi `BUSINESS_RULES.md` §5). Confermare che il sistema privilegi multipack e fornitori con magazzino UE, e che un prezzo per unità superiore a €6–7 (es. ~€8,50 nei multipack) sia accettabile | ✅ **APPROVATA** dall'operatore il 2026-11-20: multipack privilegiati, regole €1 e €3 invariate |
 | **D-011** | **Capitale zero vs fornitori prepagati**: i primi ordini saranno bloccati finché non esiste un saldo disponibile. Accettare questo comportamento, oppure autorizzare esplicitamente un fondo operativo iniziale con importo massimo? | Il sistema funziona in entrambi i casi; un eventuale fondo va registrato come approvazione con tetto e tracciato nel ledger |
 | **D-012** | Approvazione di eventuali servizi a pagamento futuri (BigBuy, canoni marketplace, VPS) | Nessuno necessario per la Fase 2 |
+
+## Chiarimenti dell'operatore
+
+| ID | Data | Chiarimento |
+|----|------|-------------|
+| C-001 | 2026-11-20 | Modello operativo: **il fornitore (es. AliExpress, CJ) spedisce direttamente al cliente finale**. Nessun magazzino proprio. È il modello già previsto dall'architettura. Il dazio UE e l'IVA all'importazione restano comunque un costo del pacco e vanno inclusi nel calcolo (pagati all'acquisto dal fornitore o dal cliente alla consegna) |

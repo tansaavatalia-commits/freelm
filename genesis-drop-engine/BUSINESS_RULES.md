@@ -7,6 +7,13 @@ un'approvazione esplicita dell'operatore e genera una voce di audit.
 
 ---
 
+## 0. Modello operativo
+
+Dropshipping puro: il cliente compra sul marketplace dell'operatore, il sistema ordina al fornitore e
+**il fornitore spedisce direttamente al cliente finale** (nessun magazzino proprio). Il pacco attraversa
+comunque la dogana UE quando parte da fuori UE: dazio e IVA all'importazione sono quindi costi reali
+dell'ordine, inclusi nel Profit Engine (decisione C-001).
+
 ## 1. Acquisizione prodotto
 
 | ID | Regola | Applicazione |
