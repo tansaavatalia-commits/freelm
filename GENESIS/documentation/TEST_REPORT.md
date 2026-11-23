@@ -30,10 +30,26 @@ Cosa coprono i 72 test:
 - CLI: tutti i comandi principali, migrazione su un «nuovo PC», codici di uscita,
   nessun file privato dentro `GENESIS/`.
 
-### CI su GitHub Actions (`genesis-ci`)
+### CI su GitHub Actions (`genesis-core-ci`)
 
-Esito su Linux e Windows (Python 3.11 e 3.13): vedi la sezione aggiornata qui
-sotto dopo l'esecuzione.
+Esecuzione 45287815680 (commit `0c29556`, allora col nome `genesis-ci`):
+**4 job su 4 passati**.
+
+| Runner | Python | Lint | Test | `doctor` su hardware reale |
+|---|---|---|---|---|
+| ubuntu-latest | 3.11 | passato | 72 passati | passato |
+| ubuntu-latest | 3.13 | passato | 72 passati | passato |
+| windows-latest | 3.11 | passato | 72 passati | passato |
+| windows-latest | 3.13 | passato | 72 passati (3,1 s) | passato |
+
+Rilevamento sul runner Windows (Windows Server 2025, build 10.0.26100):
+CPU «AMD EPYC 9V74» letta dal registro, RAM 16,0 GB da `GlobalMemoryStatusEx`,
+GPU «Microsoft Hyper-V Video» dal registro, SQLite 3.50.4 **con FTS5**, profilo
+`standard`. Il percorso Windows del codice è quindi verificato; manca solo il PC
+del proprietario (Windows 10, 4 GB → profilo atteso `lite-4gb`).
+
+Difetto trovato e corretto: con l'output rediretto Windows usava la codepage
+ANSI («GÉNESIS» mostrato come «G?NESIS» nei log). Ora la CLI scrive sempre UTF-8.
 
 ### Non eseguito
 

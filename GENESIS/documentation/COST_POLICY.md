@@ -17,7 +17,7 @@ l'approvazione esplicita del proprietario.
 | Servizio | Uso | Costo verificato | Note |
 |---|---|---|---|
 | Python, SQLite, libreria standard | core | 0 € (open source) | — |
-| GitHub Actions (`genesis-ci`) | test Linux e Windows | 0 € finché il repo è pubblico | runner standard |
+| GitHub Actions (`genesis-core-ci`) | test Linux e Windows | 0 € finché il repo è pubblico | runner standard |
 | OpenRouter (modelli `:free`) | Fase 3, disattivato | NON VERIFICATO | chiave dell'ambiente cloud non funzionante (2026-11-23); comprare crediti è vietato |
 | Google AI Studio (Gemini) | Fase 3, disattivato | NON VERIFICATO | gratuito solo senza fatturazione sul progetto: da confermare dal proprietario |
 | Groq, Cerebras, Mistral, Cohere, Z.ai, NVIDIA NIM, Cloudflare | Fase 3, disattivati | NON VERIFICATO | da verificare uno per uno prima di attivarli |

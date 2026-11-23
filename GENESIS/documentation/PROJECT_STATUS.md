@@ -5,7 +5,7 @@ Aggiornato: 2026-11-23 · Versione del core: 0.1.0 · Branch: `claude/genesis-ph
 | Fase | Stato |
 |---|---|
 | 0 — Audit | COMPLETATA, tranne l'hardware reale del PC (PENDENTE: vedi `FASE_0_AUDIT.md`, Appendice A) |
-| 1 — Core | IMPLEMENTATA e testata nel cloud (Linux, Python 3.11 e 3.13). Windows: verificato dalla CI `genesis-ci` (vedi `TEST_REPORT.md`). Sul PC del proprietario: PENDENTE |
+| 1 — Core | IMPLEMENTATA e testata nel cloud (Linux, Python 3.11 e 3.13). Windows: verificato dalla CI `genesis-core-ci` (vedi `TEST_REPORT.md`). Sul PC del proprietario: PENDENTE |
 | 2 — Desktop | PENDENTE |
 | 3–10 | PENDENTI |
 

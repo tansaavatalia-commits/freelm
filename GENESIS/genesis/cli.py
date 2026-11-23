@@ -312,7 +312,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(errors="replace")  # type: ignore[attr-defined]
+            # UTF-8 also when redirected: Windows would otherwise use the legacy code page ("GÉNESIS" -> "G?NESIS").
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
         except (AttributeError, ValueError):
             pass
     args = build_parser().parse_args(argv)

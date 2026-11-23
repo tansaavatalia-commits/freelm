@@ -1,13 +1,13 @@
-name: genesis-ci
+name: genesis-core-ci
 
 # GÉNESIS core: lint + tests on Linux and on Windows (the owner's PC runs Windows 10).
 # Standard runners are free on public repositories. Path-filtered: freelm-only
 # changes do not run it, and it never touches freelm's own workflows.
 on:
   push:
-    paths: ["GENESIS/**", ".github/workflows/genesis-ci.yml"]
+    paths: ["GENESIS/**", ".github/workflows/genesis-core-ci.yml"]
   pull_request:
-    paths: ["GENESIS/**", ".github/workflows/genesis-ci.yml"]
+    paths: ["GENESIS/**", ".github/workflows/genesis-core-ci.yml"]
   workflow_dispatch:
 
 permissions:

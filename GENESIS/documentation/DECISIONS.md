@@ -13,5 +13,5 @@
 | D-09 | Audit a catena di hash con trigger append-only | manomissioni rilevabili senza servizi esterni | adottata |
 | D-10 | L'importazione funziona solo in un database vuoto | impossibile sovrascrivere dati per errore | adottata |
 | D-11 | Un profilo richiesto oltre le capacità dell'hardware viene ignorato | i motori pesanti restano spenti sui PC piccoli | adottata |
-| D-12 | CI su Linux e Windows (`genesis-ci.yml`), filtrata su `GENESIS/**` | verifica reale su Windows a costo zero (repo pubblico) | adottata |
+| D-12 | CI su Linux e Windows (`genesis-core-ci.yml`), filtrata su `GENESIS/**` | verifica reale su Windows a costo zero (repo pubblico) | adottata |
 | D-13 | Lo script di avvio dell'ambiente cloud (pacchetti npm non verificati) è stato rimosso | rischio di supply chain; non serviva | eseguita con approvazione |
