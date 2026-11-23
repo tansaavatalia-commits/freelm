@@ -14,7 +14,10 @@
    - deja el bot funcionando en **papel** (dinero simulado), con velas de 5 minutos,
      y hace que **arranque solo** cada vez que inicias sesión;
    - te ofrece evitar que el PC se suspenda mientras está enchufado (si se suspende, el bot se para);
-   - crea dos accesos en el escritorio: **Panel** (este menú) e **Informe**.
+   - programa la **prueba diaria del momentum en papel** (01:30, o al encender el PC si estaba
+     apagado): procesa el día, registra las señales para medir cuánto aciertan y regenera el panel;
+   - crea tres accesos en el escritorio: **Panel** (este menú), **Informe** y **Resultados**
+     (el panel HTML con el momentum y la tarjeta de aciertos).
 
 ## Uso diario
 
@@ -27,6 +30,23 @@
   el Bloc de notas).
 - Toda la memoria del bot (aprendizaje, configuración campeona, cartera simulada)
   está en `%USERPROFILE%\freelm-bot-datos`. Actualizar o reinstalar el bot no la borra.
+
+## Momentum en papel, tarjeta de aciertos y panel — opciones 14 a 19
+
+| Opción | Qué hace |
+|---|---|
+| **14** Procesar hoy | Procesa el último día cerrado en papel, registra las señales y regenera el panel (lo mismo que la tarea diaria). |
+| **15** Ver el panel | Abre `freelm-bot-datos\panel.html` en el navegador: capital frente a la cesta, posiciones, **cuánto acierta cada señal en vivo**, señales de los últimos días y avisos. |
+| **16** Tarjeta de aciertos | Mide cada señal con ~8 años de historia: acierto frente a la tasa base y ventaja, con su intervalo del 95 %. |
+| **17** Supabase (opcional) | Guía paso a paso: crear un proyecto gratis, pegar el esquema (se copia solo al portapapeles), guardar la URL y la clave secreta y subir los datos. Así los resultados están también en la nube. |
+| **18** Avisos por email (opcional) | Guarda la URL de un webhook (p. ej. Zapier «Catch Hook» → Gmail) y envía un aviso de prueba. |
+| **19** Programar la prueba diaria | Vuelve a crear la tarea `FreelmMomentumDiario` (01:30). |
+
+La misma prueba corre a la vez en GitHub (`momentum-paper.yml`). En GitHub, el panel
+se guarda en la rama `momentum-state` y como archivo descargable de cada ejecución
+(Actions → «momentum (papel, 20 días)» → Artifacts → `panel`). Las claves de Supabase
+o del webhook se añaden allí como *secrets* (`SUPABASE_URL`, `SUPABASE_KEY`,
+`FREELM_WEBHOOK_URL`). El asistente de la opción 17 abre esa página.
 
 ## Probar en la testnet de Binance (cuenta demo) — opción 11
 
@@ -76,4 +96,6 @@ y si puedes, restringidas a tu IP.
 | Python se instaló pero «no se encuentra» | Cierra el asistente y ábrelo otra vez (Windows actualiza el PATH al abrir una ventana nueva). |
 | No hay `winget` | Instala Python desde python.org marcando **Add python.exe to PATH** y vuelve a la opción 1. |
 | El bot no opera nunca | Es lo esperado mientras ninguna señal tenga un 77 % de acierto **verificado**: lo verás en el informe («probabilidad no verificada»). |
+| La tarea diaria no se ejecutó | Si el PC estaba apagado a las 01:30, se ejecuta al encenderlo. Registro: `freelm-bot-datos\registros\diario-AAAAMMDD.log`. |
+| Supabase da error 401 | Has pegado la clave *publishable*: hace falta la **secret key** (o *service_role*). Opción 17 otra vez. |
 | El PC se apaga o suspende | El bot se para y vuelve a arrancar solo al iniciar sesión. Para que funcione 24/7 sin tu PC, usa el servidor gratuito de Oracle (ver el README principal). |

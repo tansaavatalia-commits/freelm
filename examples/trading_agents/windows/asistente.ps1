@@ -8,7 +8,8 @@
     3. guarda tus claves (opcionales) en un archivo solo legible por tu usuario;
     4. hace la primera optimización con datos reales;
     5. deja el bot funcionando en PAPEL (dinero simulado) y arrancando solo al iniciar sesión;
-    6. crea accesos directos en el escritorio.
+    6. programa la prueba diaria del momentum en papel + la tarjeta de aciertos + el panel;
+    7. crea accesos directos en el escritorio (panel, informe, asistente).
   El dinero real queda BLOQUEADO hasta que el bot supere la prueba de 20 días ("gate").
 #>
 param([string]$Accion = "")
@@ -28,6 +29,9 @@ $ModeFile = Join-Path $DataDir "modo.txt"
 $LogDir   = Join-Path $DataDir "registros"
 $Starter  = Join-Path $PSScriptRoot "iniciar-bot.ps1"
 $TaskName = "FreelmTradingBot"
+$DailyTask = "FreelmMomentumDiario"
+$PanelFile = Join-Path $DataDir "panel.html"
+$SqlFile  = Join-Path $BotDir "deploy\supabase.sql"
 $RepoZip  = "https://github.com/tansaavatalia-commits/freelm/archive/refs/heads/main.zip"
 
 # ---------------------------------------------------------------- utilidades
@@ -87,6 +91,98 @@ function Ejecutar-Bot([string[]]$argumentos, [switch]$Testnet) {
     if ($Testnet) { Entorno-Testnet }
     & $Py $Bot @argumentos | Out-Host   # a la pantalla, no al valor de retorno
     return $LASTEXITCODE
+}
+
+# ---------------------------------------------------------------- momentum diario, aciertos, panel, nube
+function Momentum-Hoy {
+    Titulo "Momentum en papel: procesar el último día cerrado"
+    Ejecutar-Bot @("momentum") | Out-Null
+    Ejecutar-Bot @("senales", "--record", "--no-history", "--limit", "260") | Out-Null
+    Ejecutar-Bot @("panel") | Out-Null
+    Ejecutar-Bot @("sync", "--soft") | Out-Null
+}
+
+function Diario-Silencioso {
+    # lo que ejecuta la tarea programada cada día (sin preguntas, con registro)
+    New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+    $log = Join-Path $LogDir ("diario-" + (Get-Date -Format "yyyyMMdd") + ".log")
+    Start-Transcript -Path $log -Append | Out-Null
+    try { Momentum-Hoy } finally { Stop-Transcript | Out-Null }
+}
+
+function Paso-Diario {
+    Titulo "Prueba diaria del momentum (papel) + tarjeta de aciertos + panel"
+    Write-Host "  Cada día a las 01:30 (o al encender el PC si estaba apagado) el bot procesa el día cerrado,"
+    Write-Host "  registra las señales para medir cuánto aciertan y regenera el panel. Nunca usa dinero real."
+    $accion = New-ScheduledTaskAction -Execute "powershell.exe" `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -Accion diario"
+    $disparo = New-ScheduledTaskTrigger -Daily -At "01:30"
+    $ajustes = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+    Register-ScheduledTask -TaskName $DailyTask -Action $accion -Trigger $disparo -Settings $ajustes `
+        -Description "Momentum en papel + tarjeta de aciertos (freelm)" -Force | Out-Null
+    Ok "Tarea diaria '$DailyTask' programada."
+    if (SiNo "¿Procesar ya el día de hoy?") { Momentum-Hoy }
+    return $true
+}
+
+function Ver-Panel {
+    Ejecutar-Bot @("panel") | Out-Null
+    if (Test-Path $PanelFile) { Start-Process $PanelFile; Ok "Panel abierto en el navegador: $PanelFile" }
+    else { Aviso "Todavía no hay datos: usa la opción 14 (procesar hoy) o espera a la tarea diaria." }
+}
+
+function Tarjeta-Aciertos {
+    Titulo "Tarjeta de aciertos de las señales (historia + en vivo)"
+    Write-Host "  Descarga ~8 años de velas diarias de Binance (1-2 min) y mide cuánto acierta cada señal."
+    Ejecutar-Bot @("senales", "--record") | Out-Null
+}
+
+function Configurar-Supabase {
+    Titulo "Base de datos en la nube (Supabase, gratis) - opcional"
+    Write-Host "  Sirve para ver los resultados desde cualquier sitio y guardarlos fuera del PC."
+    Write-Host "  1. Se abrirá supabase.com: entra (con GitHub o email) y crea un proyecto GRATIS"
+    Write-Host "     (nombre: freelm-trading-bot, región: Central EU / Frankfurt). Espera 1-2 minutos."
+    Pausa "Pulsa Enter para abrir Supabase"
+    Start-Process "https://supabase.com/dashboard/new"
+    Pausa "Cuando el proyecto esté listo, pulsa Enter"
+    Write-Host "  2. En el proyecto: SQL Editor > New query. He copiado el esquema al portapapeles:"
+    Write-Host "     pégalo (Ctrl+V) y pulsa Run. Debe decir 'Success'."
+    try { Get-Content $SqlFile -Raw | Set-Clipboard; Ok "Esquema copiado ($SqlFile)." }
+    catch { Aviso "No pude copiarlo: abre $SqlFile, cópialo entero y pégalo."; Start-Process notepad.exe $SqlFile }
+    Pausa "Cuando diga Success, pulsa Enter"
+    Write-Host "  3. Project Settings > API (o 'Connect'): copia la Project URL y la clave SECRETA"
+    Write-Host "     (secret key / service_role). La clave publishable NO sirve para escribir."
+    $url = (Read-Host "  Project URL (https://xxxx.supabase.co)").Trim()
+    if ($url -notmatch "^https://[a-z0-9-]+\.supabase\.co/?$") { Aviso "Esa URL no parece de Supabase; no se guarda nada."; return }
+    $key = Leer-Secreto "Clave secreta de Supabase"
+    if ($key -eq "") { Aviso "Sin clave no se guarda nada."; return }
+    Guardar-Clave "SUPABASE_URL" $url
+    Guardar-Clave "SUPABASE_KEY" $key
+    Ok "Guardadas en $EnvFile (solo legible por tu usuario)."
+    Ejecutar-Bot @("sync") | Out-Null
+    Write-Host ""
+    Write-Host "  4. (Opcional) Para que GitHub también suba los resultados cada día: en GitHub,"
+    Write-Host "     Settings > Secrets and variables > Actions > New repository secret, crea"
+    Write-Host "     SUPABASE_URL y SUPABASE_KEY con esos mismos valores."
+    if (SiNo "¿Abrir esa página de GitHub ahora?" $false) {
+        Start-Process "https://github.com/tansaavatalia-commits/freelm/settings/secrets/actions"
+    }
+}
+
+function Configurar-Avisos {
+    Titulo "Avisos diarios (Telegram o email vía webhook)"
+    Write-Host "  Opción A, Telegram: opción 3 del menú (token + chat id)."
+    Write-Host "  Opción B, email/Gmail con Zapier (gratis): en zapier.com crea un Zap con disparador"
+    Write-Host "  'Webhooks by Zapier > Catch Hook' y acción 'Gmail > Send Email' (cuerpo: el campo 'text')."
+    Write-Host "  Copia la URL del webhook (https://hooks.zapier.com/...) y pégala aquí."
+    $u = Leer-Secreto "URL del webhook"
+    if ($u -eq "") { Aviso "Sin cambios."; return }
+    if (-not $u.StartsWith("https://")) { Aviso "La URL debe empezar por https://"; return }
+    Guardar-Clave "FREELM_WEBHOOK_URL" $u
+    Ok "Webhook guardado."
+    Ejecutar-Bot @("notificar") | Out-Null
+    Write-Host "  Para recibirlo también desde GitHub: crea el secret FREELM_WEBHOOK_URL en el repositorio."
 }
 
 # ---------------------------------------------------------------- testnet (cuenta demo de Binance)
@@ -201,7 +297,7 @@ function Informe-Testnet {
 
 # ---------------------------------------------------------------- pasos
 function Paso-Python {
-    Titulo "1/6 Python"
+    Titulo "1/7 Python"
     $py = Buscar-Python
     if ($py) { Ok ("Python encontrado: " + ($py -join " ")); return $true }
     Aviso "No hay Python 3.9 o superior."
@@ -221,7 +317,7 @@ function Paso-Python {
 }
 
 function Paso-Dependencias {
-    Titulo "2/6 Entorno e instalación del bot"
+    Titulo "2/7 Entorno e instalación del bot"
     $py = Buscar-Python
     if (-not $py) { Fallo "Falta Python (paso 1)."; return $false }
     $extra = @()
@@ -248,7 +344,7 @@ function Leer-Secreto([string]$texto) {
 }
 
 function Paso-Claves {
-    Titulo "3/6 Claves (todas opcionales)"
+    Titulo "3/7 Claves (todas opcionales)"
     Write-Host "  Se guardan en $EnvFile, legible solo por tu usuario de Windows."
     Write-Host "  - IA gratuita: https://aistudio.google.com/apikey (Gemini) o https://console.groq.com/keys (Groq)"
     Write-Host "  - Telegram: habla con @BotFather, /newbot -> token; luego escribe a tu bot y mira tu chat id en"
@@ -266,6 +362,7 @@ function Paso-Claves {
         "TELEGRAM_BOT_TOKEN" = "Token del bot de Telegram"
         "TELEGRAM_CHAT_ID"   = "Tu chat id de Telegram"
     }
+    # SUPABASE_* y FREELM_WEBHOOK_URL tienen su propia opción del menú (17 y 18) y se conservan aquí
     foreach ($k in $campos.Keys) {
         $v = Leer-Secreto $campos[$k]
         if ($v -ne "") { $valores[$k] = $v }
@@ -285,7 +382,7 @@ function Paso-Claves {
 }
 
 function Paso-Optimizar {
-    Titulo "4/6 Primera optimización con datos reales de Binance (10-20 min)"
+    Titulo "4/7 Primera optimización con datos reales de Binance (10-20 min)"
     if (-not (SiNo "¿Hacerla ahora? Mejora la configuración inicial; se puede saltar.")) { return $true }
     $rc = Ejecutar-Bot @("optimize", "--source", "binance", "--limit", "5000", "--population", "12", "--generations", "5")
     if ($rc -ne 0) { Aviso "La optimización no terminó bien; el bot usará la configuración por defecto." }
@@ -300,7 +397,7 @@ function Paso-Energia {
 }
 
 function Paso-Arranque {
-    Titulo "5/6 Arranque automático (papel, velas de 5 min)"
+    Titulo "5/7 Arranque automático (papel, velas de 5 min)"
     if (-not (Test-Path $ModeFile)) { Set-Content -Path $ModeFile -Value "papel" -Encoding ASCII }
     $accion = New-ScheduledTaskAction -Execute "powershell.exe" `
         -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Starter`""
@@ -316,7 +413,7 @@ function Paso-Arranque {
 }
 
 function Paso-Accesos {
-    Titulo "6/6 Accesos directos en el escritorio"
+    Titulo "7/7 Accesos directos en el escritorio"
     $ws = New-Object -ComObject WScript.Shell
     $escritorio = [Environment]::GetFolderPath("Desktop")
     $bat = Join-Path $PSScriptRoot "Instalar-Bot.bat"
@@ -326,7 +423,11 @@ function Paso-Accesos {
     $b.TargetPath = "powershell.exe"
     $b.Arguments = "-NoProfile -ExecutionPolicy Bypass -NoExit -File `"$PSCommandPath`" -Accion informe"
     $b.WorkingDirectory = $PSScriptRoot; $b.Save()
-    Ok "Accesos 'Bot de trading - Panel' e 'Informe' creados."
+    $c = $ws.CreateShortcut((Join-Path $escritorio "Bot de trading - Resultados.lnk"))
+    $c.TargetPath = "powershell.exe"
+    $c.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -Accion panel"
+    $c.WorkingDirectory = $PSScriptRoot; $c.Save()
+    Ok "Accesos 'Bot de trading - Panel', 'Informe' y 'Resultados' creados."
     return $true
 }
 
@@ -336,9 +437,13 @@ function Instalacion-Completa {
     Paso-Claves | Out-Null
     Paso-Optimizar | Out-Null
     Paso-Arranque | Out-Null
+    Titulo "6/7 Prueba diaria del momentum y tarjeta de aciertos"
+    Paso-Diario | Out-Null
     Paso-Accesos | Out-Null
     Titulo "Listo"
     Write-Host "  El bot funciona en PAPEL (dinero simulado). Revisa el informe cuando quieras (acceso 'Informe')."
+    Write-Host "  Los resultados del momentum y cuánto aciertan las señales: acceso 'Resultados' (panel)."
+    Write-Host "  Opcional: opción 17 (base de datos Supabase) y 18 (avisos por email)."
     Write-Host "  Dentro de 20 días, la opción 'Puerta del dinero real' te dirá si es apto. Si no lo es, no metas dinero."
 }
 
@@ -433,6 +538,13 @@ function Menu {
         Write-Host "  11  Probar en la TESTNET de Binance (cuenta demo), paso a paso"
         Write-Host "  12  Parar el bot de testnet"
         Write-Host "  13  Informe de la testnet"
+        Write-Host "  -- Momentum en papel y aciertos --"
+        Write-Host "  14  Procesar hoy (papel + señales + panel)"
+        Write-Host "  15  Ver el panel de resultados"
+        Write-Host "  16  Tarjeta de aciertos (historia completa)"
+        Write-Host "  17  Configurar base de datos Supabase (opcional)"
+        Write-Host "  18  Configurar avisos por email (webhook) y probarlos"
+        Write-Host "  19  Programar la prueba diaria (01:30)"
         Write-Host "   0  Salir"
         $op = Read-Host "  Elige"
         try {
@@ -455,6 +567,12 @@ function Menu {
                 "11" { Probar-Testnet }
                 "12" { Parar-Testnet; Ok "Bot de testnet parado." }
                 "13" { Informe-Testnet }
+                "14" { Momentum-Hoy }
+                "15" { Ver-Panel }
+                "16" { Tarjeta-Aciertos }
+                "17" { Configurar-Supabase }
+                "18" { Configurar-Avisos }
+                "19" { Paso-Diario | Out-Null }
                 "0"  { return }
                 default { Aviso "Opción no válida." }
             }
@@ -466,6 +584,8 @@ function Menu {
 
 switch ($Accion) {
     "informe"  { Ver-Informe }
+    "diario"   { Diario-Silencioso }
+    "panel"    { Ver-Panel }
     "instalar" { Instalacion-Completa }
     default    { Menu }
 }
