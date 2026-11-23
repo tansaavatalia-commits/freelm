@@ -1,0 +1,42 @@
+name: genesis-ci
+
+# GÉNESIS core: lint + tests on Linux and on Windows (the owner's PC runs Windows 10).
+# Standard runners are free on public repositories. Path-filtered: freelm-only
+# changes do not run it, and it never touches freelm's own workflows.
+on:
+  push:
+    paths: ["GENESIS/**", ".github/workflows/genesis-ci.yml"]
+  pull_request:
+    paths: ["GENESIS/**", ".github/workflows/genesis-ci.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: GENESIS
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          activate-environment: true
+      - name: Install test tools (GENESIS itself has no runtime dependencies)
+        run: uv pip install "pytest>=7" "ruff>=0.4"
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: python -m pytest
+      - name: Smoke test with real hardware detection
+        run: python -m genesis --home "$RUNNER_TEMP/genesis-home" doctor
