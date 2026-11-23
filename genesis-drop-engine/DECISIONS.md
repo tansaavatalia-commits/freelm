@@ -27,7 +27,7 @@ richiede l'operatore) · contesto · decisione · conseguenze.
 
 | ID | Questione | Raccomandazione dell'architetto |
 |----|-----------|---------------------------------|
-| **D-001** | Spostare il progetto in un repository GitHub **privato** dedicato `genesis-drop-engine`? (la sessione attuale non può creare repository) | Sì: l'operatore crea il repo vuoto privato e lo aggiunge alla sessione; la cronologia di questa cartella viene trasferita |
+| **D-001** | Spostare il progetto in un repository GitHub **privato** dedicato `genesis-drop-engine`? | ✅ Decisa il 2026-11-20: **per ora resta in `freelm/genesis-drop-engine/`**; spostamento rinviato |
 | **D-002** | Paese di registrazione dell'impresa e forma giuridica | Decisione legale/fiscale con un commercialista; il sistema resta parametrico. Un soggetto UE con OSS/IOSS semplifica IVA e idoneità ai marketplace |
 | **D-003** | Approvazione dello stack tecnologico (T-001…T-013) | ✅ **APPROVATA** dall'operatore il 2026-11-20 |
 | **D-004** | Primo canale di vendita | Allegro (sandbox gratuita), poi Kaufland — dopo verifica ufficiale |
@@ -37,7 +37,8 @@ richiede l'operatore) · contesto · decisione · conseguenze.
 | **D-008** | Destinazione dei backup esterni | Da scegliere (disco esterno o cloud già posseduto) |
 | **D-009** | Pacchetti multipack da valutare (default 1, 2, 3, 5, 10) | Approvare |
 | **D-010** | **Fattibilità economica**: con dazio UE €3 e costi realistici, la singola unità a €6–7 con €3 netti è quasi irrealizzabile da Cina (vedi `BUSINESS_RULES.md` §5). Confermare che il sistema privilegi multipack e fornitori con magazzino UE, e che un prezzo per unità superiore a €6–7 (es. ~€8,50 nei multipack) sia accettabile | ✅ **APPROVATA** dall'operatore il 2026-11-20: multipack privilegiati, regole €1 e €3 invariate |
-| **D-011** | **Capitale zero vs fornitori prepagati**: i primi ordini saranno bloccati finché non esiste un saldo disponibile. Accettare questo comportamento, oppure autorizzare esplicitamente un fondo operativo iniziale con importo massimo? | Il sistema funziona in entrambi i casi; un eventuale fondo va registrato come approvazione con tetto e tracciato nel ledger |
+| **D-011** | **Capitale zero vs fornitori prepagati**: i primi ordini saranno bloccati finché non esiste un saldo disponibile. Accettare questo comportamento, oppure autorizzare esplicitamente un fondo operativo iniziale con importo massimo? | ✅ **APPROVATA** il 2026-11-20: fondo operativo dell'operatore con **tetto massimo €100**, registrato nel ledger come apporto separato (`RuleSet.operator_funding_cap`) |
+| **D-013** | Usare connettori MCP (AnythingMCP: CJ Dropshipping, AliExpress Dropshipping; Google Drive) per la ricerca e la validazione | Sì, in **sola lettura** e solo come strumento di sviluppo/ricerca: non sostituiscono i connettori nel codice dell'app |
 | **D-012** | Approvazione di eventuali servizi a pagamento futuri (BigBuy, canoni marketplace, VPS) | Nessuno necessario per la Fase 2 |
 
 ## Chiarimenti dell'operatore

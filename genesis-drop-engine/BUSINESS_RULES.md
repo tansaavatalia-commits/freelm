@@ -178,6 +178,15 @@ Esiti possibili (`FundingDecision`): `APPROVED_FUNDED`, `APPROVED_SUPPLIER_TERMS
 - Nessun ordine che non possa essere finanziato in modo sicuro.
 - Nessuna automazione può aggirare questi controlli (il controllo è nel servizio di dominio, non nell'interfaccia).
 
+### 7.4-bis Fondo operativo approvato (D-011)
+
+L'operatore ha autorizzato un fondo operativo con **tetto massimo di €100**. Regole:
+- è registrato nel ledger come apporto dell'operatore, separato dagli incassi;
+- lo Zero-Advance Engine può usarlo solo per ordini che superano tutti gli altri controlli
+  (profitto, conformità, riserve);
+- l'esposizione totale non rientrata non può mai superare €100; alzare il tetto richiede una nuova approvazione;
+- il rientro avviene dai payout effettivamente `AVAILABLE`.
+
 ### 7.5 Conflitto strutturale da conoscere subito
 
 I marketplace trattengono i fondi (cicli di payout tipici: da pochi giorni a settimane, con riserve per

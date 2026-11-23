@@ -2,8 +2,8 @@
 
 ## 1. Stato attuale
 
-**Nessun test eseguito**: in Fase 1 non esiste codice applicativo. Questa sezione verrà aggiornata con
-risultati reali (comando, data, esito) a ogni sessione in cui si eseguono test.
+Primi test reali eseguiti il 2026-11-23 (vedi registro). Copertura attuale 87% complessiva: sotto l'obiettivo
+del 95% per i moduli critici, da completare in M2.0.
 
 ## 2. Livelli di test
 
@@ -49,3 +49,5 @@ Ogni regola ha almeno un test positivo, uno negativo e uno di confine:
 | Data | Comando | Esito | Note |
 |------|---------|-------|------|
 | 2026-11-20 | — | Nessun test (Fase 1, solo documentazione) | — |
+| 2026-11-23 | `pytest --cov=genesis` | **36 passati, 0 falliti**; copertura 87% | Unità (Money, RuleSet, Profit) + property test (hypothesis) |
+| 2026-11-23 | `ruff check src tests` · `mypy` (strict) · `lint-imports` | Tutti superati | Confini architetturali: 2 contratti rispettati |

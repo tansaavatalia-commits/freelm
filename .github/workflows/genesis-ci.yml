@@ -1,0 +1,40 @@
+name: GENESIS CI
+
+on:
+  push:
+    paths: ["genesis-drop-engine/**", ".github/workflows/genesis-ci.yml"]
+  pull_request:
+    paths: ["genesis-drop-engine/**", ".github/workflows/genesis-ci.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: genesis-drop-engine
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check src tests
+      - name: Types
+        run: mypy
+      - name: Architecture boundaries
+        run: lint-imports
+      - name: Tests
+        run: pytest --cov=genesis --cov-report=term-missing
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

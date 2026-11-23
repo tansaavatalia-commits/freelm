@@ -1,17 +1,18 @@
 # NEXT_TASK — Prossimo compito
 
-## In attesa
+## Completare M2.0 Fondamenta
 
-Approvazione dell'operatore sulla Fase 1 e risposta alle decisioni in `DECISIONS.md`, in particolare:
-D-001 (repository dedicato), D-003 (stack), D-010 (fattibilità economica), D-011 (capitale zero).
+1. Modelli SQLAlchemy + prima migrazione Alembic: `rule_sets`, `audit_log` (append-only, catena di hash),
+   `profit_snapshots`.
+2. `platform/audit.py` (catena di hash + verifica) con test di integrazione su PostgreSQL locale.
+3. Persistenza degli snapshot del Profit Engine.
+4. Portare la copertura di `modules/profit` e `core` al 95% (oggi 87%); test per `Clock`.
 
-## Dopo l'approvazione: M2.0 Fondamenta
+## Poi
 
-1. (Se D-001 approvata) trasferire questa cartella nel repository privato `genesis-drop-engine`.
-2. Creare `pyproject.toml`, struttura `src/genesis/` e `tests/` come da `ARCHITECTURE.md` §4.
-3. `docker-compose.yml` con PostgreSQL 16; `.env.example` senza segreti.
-4. Strumenti: ruff, mypy, pytest, hypothesis, testcontainers, import-linter, pre-commit, gitleaks; CI GitHub Actions.
-5. `core/money.py` (centesimi + valuta, arrotondamento esplicito) con test completi.
-6. `policy/rule_set.py` con parametri BR-001/010/011 versionati.
-7. `platform/audit.py` con catena di hash + prima migrazione Alembic.
-8. Aggiornare `PROJECT_STATUS.md`, `TESTING.md` (risultati reali), `CHANGELOG.md`.
+M2.2 Compliance Engine → M2.3 Ledger + Cashflow Guardian → M2.4 Zero-Advance (con fondo €100).
+
+## Opzionale, se l'operatore lo approva
+
+Collegare il connettore CJ Dropshipping (AnythingMCP) in sola lettura per validare il Profit Engine con
+prezzi e spedizioni reali (vedi `DECISIONS.md`, D-013).
