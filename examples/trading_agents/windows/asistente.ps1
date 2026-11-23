@@ -114,12 +114,12 @@ function Paso-Diario {
     Titulo "Prueba diaria del momentum (papel) + tarjeta de aciertos + panel"
     Write-Host "  Cada día a las 01:30 (o al encender el PC si estaba apagado) el bot procesa el día cerrado,"
     Write-Host "  registra las señales para medir cuánto aciertan y regenera el panel. Nunca usa dinero real."
-    $accion = New-ScheduledTaskAction -Execute "powershell.exe" `
+    $tareaAccion = New-ScheduledTaskAction -Execute "powershell.exe" `
         -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -Accion diario"
     $disparo = New-ScheduledTaskTrigger -Daily -At "01:30"
     $ajustes = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
-    Register-ScheduledTask -TaskName $DailyTask -Action $accion -Trigger $disparo -Settings $ajustes `
+    Register-ScheduledTask -TaskName $DailyTask -Action $tareaAccion -Trigger $disparo -Settings $ajustes `
         -Description "Momentum en papel + tarjeta de aciertos (freelm)" -Force | Out-Null
     Ok "Tarea diaria '$DailyTask' programada."
     if (SiNo "¿Procesar ya el día de hoy?") { Momentum-Hoy }
@@ -298,15 +298,15 @@ function Informe-Testnet {
 # ---------------------------------------------------------------- pasos
 function Paso-Python {
     Titulo "1/7 Python"
-    $py = Buscar-Python
-    if ($py) { Ok ("Python encontrado: " + ($py -join " ")); return $true }
+    $pyCmd = Buscar-Python
+    if ($pyCmd) { Ok ("Python encontrado: " + ($pyCmd -join " ")); return $true }
     Aviso "No hay Python 3.9 o superior."
     if (Tiene "winget") {
         if (SiNo "¿Instalar Python 3.12 ahora con winget (gratis, oficial, sin administrador)?") {
             winget install -e --id Python.Python.3.12 --scope user --accept-package-agreements --accept-source-agreements | Out-Host
             Refrescar-Path
-            $py = Buscar-Python
-            if ($py) { Ok "Python instalado."; return $true }
+            $pyCmd = Buscar-Python
+            if ($pyCmd) { Ok "Python instalado."; return $true }
             Aviso "Python se instaló, pero esta ventana aún no lo ve. Cierra el asistente y ábrelo de nuevo."
             return $false
         }
@@ -318,12 +318,12 @@ function Paso-Python {
 
 function Paso-Dependencias {
     Titulo "2/7 Entorno e instalación del bot"
-    $py = Buscar-Python
-    if (-not $py) { Fallo "Falta Python (paso 1)."; return $false }
+    $pyCmd = Buscar-Python
+    if (-not $pyCmd) { Fallo "Falta Python (paso 1)."; return $false }
     $extra = @()
-    if ($py.Count -gt 1) { $extra = $py[1..($py.Count - 1)] }
+    if ($pyCmd.Count -gt 1) { $extra = $pyCmd[1..($pyCmd.Count - 1)] }
     if (-not (Test-Path $Py)) {
-        & $py[0] @extra -m venv $Venv | Out-Host
+        & $pyCmd[0] @extra -m venv $Venv | Out-Host
         if ($LASTEXITCODE -ne 0) { Fallo "No se pudo crear el entorno."; return $false }
     }
     & $Py -m pip install --upgrade pip --quiet | Out-Host
@@ -399,12 +399,12 @@ function Paso-Energia {
 function Paso-Arranque {
     Titulo "5/7 Arranque automático (papel, velas de 5 min)"
     if (-not (Test-Path $ModeFile)) { Set-Content -Path $ModeFile -Value "papel" -Encoding ASCII }
-    $accion = New-ScheduledTaskAction -Execute "powershell.exe" `
+    $tareaAccion = New-ScheduledTaskAction -Execute "powershell.exe" `
         -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Starter`""
     $disparo = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
     $ajustes = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1)
-    Register-ScheduledTask -TaskName $TaskName -Action $accion -Trigger $disparo -Settings $ajustes `
+    Register-ScheduledTask -TaskName $TaskName -Action $tareaAccion -Trigger $disparo -Settings $ajustes `
         -Description "Bot de trading (freelm) en modo papel" -Force | Out-Null
     Start-ScheduledTask -TaskName $TaskName
     Ok "El bot arranca solo al iniciar sesión, y ya está en marcha. Registros: $LogDir"

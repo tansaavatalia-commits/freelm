@@ -828,6 +828,21 @@ def test_windows_assistant_scripts_are_well_formed():
     assert (win / "Instalar-Bot.bat").read_bytes().isascii()
 
 
+def test_windows_scripts_have_no_case_only_variable_clashes():
+    """PowerShell no distingue mayúsculas en las variables: $py pisaría a $Py (el Python del bot) y
+    $modo al parámetro $Modo. Dos grafías de la misma variable en un script son un error latente."""
+    import re
+    from pathlib import Path
+    win = Path(__file__).resolve().parent.parent / "examples" / "trading_agents" / "windows"
+    for name in ("asistente.ps1", "iniciar-bot.ps1"):
+        code = (win / name).read_text(encoding="utf-8-sig")
+        groups = {}
+        for v in set(re.findall(r"\$([A-Za-z_][A-Za-z0-9_]*)", code)):
+            groups.setdefault(v.lower(), set()).add(v)
+        clashes = {k: g for k, g in groups.items() if len(g) > 1}
+        assert not clashes, f"{name}: variables que solo difieren en mayúsculas: {clashes}"
+
+
 def test_windows_assistant_only_uses_existing_bot_commands():
     """Cada orden que lanza el asistente debe ser válida para bot.py (si cambian las opciones,
     este test avisa antes de que se rompa en el PC del usuario)."""

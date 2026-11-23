@@ -1,5 +1,7 @@
 # Instalar el bot en Windows (10 y 11)
 
+> Guida rapida in italiano: [GUIDA-RAPIDA.md](GUIDA-RAPIDA.md)
+
 1. **Descarga el bot**: en GitHub, botón verde **Code → Download ZIP**.
 2. **Descomprímelo** en una carpeta tuya, por ejemplo `Documentos\freelm`.
    No uses una carpeta sincronizada con OneDrive.
