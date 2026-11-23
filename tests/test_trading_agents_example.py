@@ -853,6 +853,7 @@ def test_windows_assistant_only_uses_existing_bot_commands():
         ["sync"],
         ["sync", "--soft"],
         ["notificar"],
+        ["dashboard-data", "--dir", "state", "--out", "state/dashboard", "--limit", "3000"],
     ):
         p.parse_args(argv)  # SystemExit si alguna opción no existe
 
@@ -1358,3 +1359,16 @@ def test_notifier_webhook_and_notificar_command(monkeypatch, capsys):
     monkeypatch.delenv("FREELM_WEBHOOK_URL", raising=False)
     assert bot.main(["notificar"]) == 1 and "No hay avisos" in capsys.readouterr().out
     assert bot.main(["sync"]) == 0
+
+
+def test_dashboard_data_builds_six_datasets(tmp_path):
+    import dashboard_data
+    d = _paper_dir(tmp_path)
+    raw = {s: _daily(_rw(i, 400)) for i, s in enumerate(["AUSDT", "BUSDT", "CUSDT"])}
+    data = dashboard_data.build(str(d), raw, list(raw))
+    assert set(data) == {"paper", "radar", "scorecard_history", "scorecard_live", "backtest", "strategies"}
+    assert data["paper"][-1]["equity"] == 101.0 and data["paper"][-1]["bot_pct"] == pytest.approx(0.01)
+    assert {r["symbol"] for r in data["radar"]} == {"A", "B", "C"} and all(0 <= r["votes"] <= 10 for r in data["radar"])
+    assert data["backtest"][0]["bot"] == pytest.approx(1.0) and any(r["strategy"] == "conjunto" for r in data["strategies"])
+    paths = dashboard_data.write(str(tmp_path / "out"), data)
+    assert len(paths) == 6 and all(os.path.getsize(p) > 1 for p in paths)

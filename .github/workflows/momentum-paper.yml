@@ -58,6 +58,10 @@ jobs:
       - name: Panel HTML
         if: always()
         run: python "$BOT" panel --dir state
+      # datos del cuadro de mando de claude.ai (Momentum Bot Monitor): 6 JSON en la rama momentum-state
+      - name: Datos del cuadro de mando
+        if: always()
+        run: python "$BOT" dashboard-data --dir state --out state/dashboard --limit 3000
       - name: Subir a Supabase (si está configurado)
         if: always()
         run: python "$BOT" sync --dir state --soft

@@ -709,6 +709,22 @@ def cmd_sync(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dashboard_data(args: argparse.Namespace) -> int:
+    """Escribe los seis JSON del cuadro de mando (Momentum Bot Monitor)."""
+    import dashboard_data
+    import momentum_paper as mp_
+    raw = load_raw(args)
+    if args.source == "binance":
+        now_ms = int(time.time() * 1000)
+        raw = {s: mp_.closed_daily(cs, now_ms) for s, cs in raw.items()}
+    if not raw:
+        raise SystemExit("sin datos")
+    data = dashboard_data.build(args.dir or STATE_DIR, raw, list(raw))
+    for path in dashboard_data.write(args.out, data):
+        print(path)
+    return 0
+
+
 def cmd_notificar(args: argparse.Namespace) -> int:
     """Envía un aviso de prueba por los canales configurados (Telegram y/o webhook)."""
     n = Notifier()
@@ -1169,6 +1185,12 @@ def parser() -> argparse.ArgumentParser:
     sy.add_argument("--dir", help=f"carpeta de memoria (por defecto {STATE_DIR})")
     sy.add_argument("--soft", action="store_true", help="un error de red no hace fallar el comando")
     sy.set_defaults(func=cmd_sync)
+
+    dd = sub.add_parser("dashboard-data", help="datos del cuadro de mando (6 JSON) a partir de la prueba en papel")
+    common(dd, source_default="binance", limit=3000)
+    dd.set_defaults(interval="1d")
+    dd.add_argument("--out", required=True, help="carpeta donde escribir los JSON")
+    dd.set_defaults(func=cmd_dashboard_data)
 
     nt = sub.add_parser("notificar", help="enviar un aviso de prueba (Telegram / webhook)")
     nt.add_argument("--texto", default="freelm: aviso de prueba. Si lo lees, los avisos funcionan.")

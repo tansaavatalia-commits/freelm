@@ -344,6 +344,12 @@ Para los 105 agentes técnicos de `live`, la medida equivalente es su IC en vivo
 - `FREELM_WEBHOOK_URL` envía los avisos a un webhook (p. ej. Zapier → Gmail),
   además o en lugar de Telegram. `python bot.py notificar` envía un aviso de prueba.
 - El asistente de Windows guía todo esto: opciones 14–19 y la tarea diaria a las 01:30.
+- **Momentum Bot Monitor** es el cuadro de mando en claude.ai: resumen, capital frente
+  a la cesta, radar de las 8 monedas, aciertos de cada señal con sus intervalos e
+  historia 2019–2026 con la validación. `python bot.py dashboard-data --dir <estado>
+  --out <carpeta>` escribe sus 6 JSON. `momentum-paper.yml` los deja cada día en
+  `momentum-state/dashboard/`, y una tarea programada de Claude los sube al cuadro.
+  El código de la página está en `deploy/dashboard.html`.
 
 ## Mejora automática (`optimize`)
 
