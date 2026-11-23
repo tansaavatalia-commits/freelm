@@ -8,6 +8,8 @@
     python bot.py classic                       # lo mismo con momentum clásico (velas diarias)
     python bot.py momentum                      # momentum combinado en papel, 20 días (1 vez al día)
     python bot.py senales                       # cuánto acierta cada señal (historia + en vivo)
+    python bot.py panel --open                  # panel HTML con todo lo anterior
+    python bot.py sync                          # subir resultados a Supabase (opcional)
     python bot.py live                          # tiempo real, en papel (por defecto)
     python bot.py live --exchange testnet       # órdenes en el testnet del exchange
     python bot.py gate                          # ¿listo para dinero real? (20 días)
@@ -549,6 +551,8 @@ def cmd_momentum(args: argparse.Namespace) -> int:
     notifier = Notifier()
     if state.get("restarted"):
         print(f"[aviso] prueba en papel reiniciada: {state['restarted']}")
+        DecisionJournal(p(args, "diario")).write(int(time.time() * 1000), {
+            "tipo": "reinicio", "estrategia": "momentum", "motivo": "prueba reiniciada: " + state["restarted"]})
         notifier.send(f"freelm momentum: prueba en papel reiniciada ({state['restarted']})")
         if os.path.exists(tp):
             os.replace(tp, tp + ".anterior")
@@ -611,7 +615,8 @@ def cmd_momentum(args: argparse.Namespace) -> int:
         journal.write(rep["day"], {"tipo": "orden_papel", "estrategia": "momentum", "simbolo": s, "lado": side,
                                    "peso": round(w, 4)})
     track.append({"t": rep["day"] / 1000, "equity": state["equity"], "basket": rep.get("basket", 0.0),
-                  "mode": "momentum"})
+                  "mode": "momentum", "weights": {s: round(w, 6) for s, w in state["weights"].items()},
+                  "halted": bool(state["halted"])})
     record = track[-1]
     with open(tp, "a") as fh:
         fh.write(json.dumps(record) + "\n")
@@ -675,6 +680,60 @@ def cmd_senales(args: argparse.Namespace) -> int:
     elif args.live_only:
         print("Sin señales registradas todavía (usa --record una vez al día).")
     return 0
+
+
+def cmd_panel(args: argparse.Namespace) -> int:
+    """Genera el panel HTML (papel + tarjeta de aciertos) a partir de los datos guardados."""
+    import panel
+    out = args.out or p(args, "panel.html")
+    panel.write(args.dir or STATE_DIR, out)
+    print(f"Panel generado: {out}")
+    if args.open:
+        import webbrowser
+        webbrowser.open("file://" + os.path.abspath(out))
+    return 0
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    """Sube los resultados (papel, señales, aciertos) a Supabase si está configurado."""
+    import cloud
+    if not cloud.configured():
+        print("Supabase no configurado (faltan SUPABASE_URL / SUPABASE_KEY): no se sube nada.")
+        return 0
+    try:
+        sent = cloud.sync(args.dir or STATE_DIR)
+    except Exception as e:  # noqa: BLE001 - la nube es opcional: nunca tumba la prueba
+        print(f"[aviso] Supabase: {type(e).__name__}: {e}", file=sys.stderr)
+        return 0 if args.soft else 1
+    print("Supabase: " + ", ".join(f"{t} {n} filas" for t, n in sent.items()))
+    return 0
+
+
+def cmd_dashboard_data(args: argparse.Namespace) -> int:
+    """Escribe los seis JSON del cuadro de mando (Momentum Bot Monitor)."""
+    import dashboard_data
+    import momentum_paper as mp_
+    raw = load_raw(args)
+    if args.source == "binance":
+        now_ms = int(time.time() * 1000)
+        raw = {s: mp_.closed_daily(cs, now_ms) for s, cs in raw.items()}
+    if not raw:
+        raise SystemExit("sin datos")
+    data = dashboard_data.build(args.dir or STATE_DIR, raw, list(raw))
+    for path in dashboard_data.write(args.out, data):
+        print(path)
+    return 0
+
+
+def cmd_notificar(args: argparse.Namespace) -> int:
+    """Envía un aviso de prueba por los canales configurados (Telegram y/o webhook)."""
+    n = Notifier()
+    if not n.enabled:
+        print("No hay avisos configurados (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID o FREELM_WEBHOOK_URL).")
+        return 1
+    ok = n.send(args.texto)
+    print("Aviso enviado." if ok else "No se pudo enviar el aviso (revisa el token, el chat id o la URL).")
+    return 0 if ok else 1
 
 
 def cmd_bench(args: argparse.Namespace) -> int:
@@ -1115,6 +1174,27 @@ def parser() -> argparse.ArgumentParser:
     se.add_argument("--no-history", action="store_true", help="no calcular la tarjeta con la historia")
     se.add_argument("--live-only", action="store_true", help="solo la tarjeta en vivo (sin descargar nada)")
     se.set_defaults(func=cmd_senales)
+
+    pn = sub.add_parser("panel", help="generar el panel HTML (papel + tarjeta de aciertos)")
+    pn.add_argument("--dir", help=f"carpeta de memoria (por defecto {STATE_DIR})")
+    pn.add_argument("--out", help="archivo HTML de salida (por defecto <dir>/panel.html)")
+    pn.add_argument("--open", action="store_true", help="abrirlo en el navegador")
+    pn.set_defaults(func=cmd_panel)
+
+    sy = sub.add_parser("sync", help="subir resultados a Supabase (si SUPABASE_URL/SUPABASE_KEY existen)")
+    sy.add_argument("--dir", help=f"carpeta de memoria (por defecto {STATE_DIR})")
+    sy.add_argument("--soft", action="store_true", help="un error de red no hace fallar el comando")
+    sy.set_defaults(func=cmd_sync)
+
+    dd = sub.add_parser("dashboard-data", help="datos del cuadro de mando (6 JSON) a partir de la prueba en papel")
+    common(dd, source_default="binance", limit=3000)
+    dd.set_defaults(interval="1d")
+    dd.add_argument("--out", required=True, help="carpeta donde escribir los JSON")
+    dd.set_defaults(func=cmd_dashboard_data)
+
+    nt = sub.add_parser("notificar", help="enviar un aviso de prueba (Telegram / webhook)")
+    nt.add_argument("--texto", default="freelm: aviso de prueba. Si lo lees, los avisos funcionan.")
+    nt.set_defaults(func=cmd_notificar)
 
     be = sub.add_parser("bench", help="medir señales por segundo")
     common(be)

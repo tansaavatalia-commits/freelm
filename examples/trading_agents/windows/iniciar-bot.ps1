@@ -42,16 +42,16 @@ if ($Modo -eq "testnet") {
 }
 
 while ($true) {
-    $modo = "papel"
-    if ($Modo -eq "testnet") { $modo = "testnet" }
-    elseif (Test-Path $ModeFile) { $modo = (Get-Content $ModeFile -Raw).Trim() }
-    $argumentos = @($Bot, "live", "--interval", "5m", "--exchange", $modo, "--auto-optimize",
+    $modoActual = "papel"
+    if ($Modo -eq "testnet") { $modoActual = "testnet" }
+    elseif (Test-Path $ModeFile) { $modoActual = (Get-Content $ModeFile -Raw).Trim() }
+    $argumentos = @($Bot, "live", "--interval", "5m", "--exchange", $modoActual, "--auto-optimize",
                     "--optimize-limit", "8000", "--llm")
-    if ($modo -eq "testnet") { $argumentos += @("--entry-mode", "limit") }   # probar también las órdenes límite
-    if ($modo -eq "real") { $argumentos += @("--confirm-real-money", "--max-capital", "100") }
+    if ($modoActual -eq "testnet") { $argumentos += @("--entry-mode", "limit") }   # probar también las órdenes límite
+    if ($modoActual -eq "real") { $argumentos += @("--confirm-real-money", "--max-capital", "100") }
     $log = Join-Path $LogDir ($prefijo + (Get-Date -Format "yyyyMMdd") + ".log")
     # todo el registro en UTF-8 (en PowerShell 5.1, «>>» escribiría UTF-16 y mezclaría codificaciones)
-    Add-Content -Path $log -Encoding UTF8 -Value ("==== " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + " arranque en modo " + $modo)
+    Add-Content -Path $log -Encoding UTF8 -Value ("==== " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + " arranque en modo " + $modoActual)
     & $Py @argumentos 2>&1 | ForEach-Object { "$_" } | Out-File -FilePath $log -Append -Encoding utf8
     $codigo = $LASTEXITCODE
     Add-Content -Path $log -Encoding UTF8 -Value ("==== salida con código " + $codigo + "; reinicio en 30 s")

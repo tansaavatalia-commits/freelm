@@ -828,6 +828,21 @@ def test_windows_assistant_scripts_are_well_formed():
     assert (win / "Instalar-Bot.bat").read_bytes().isascii()
 
 
+def test_windows_scripts_have_no_case_only_variable_clashes():
+    """PowerShell no distingue mayúsculas en las variables: $py pisaría a $Py (el Python del bot) y
+    $modo al parámetro $Modo. Dos grafías de la misma variable en un script son un error latente."""
+    import re
+    from pathlib import Path
+    win = Path(__file__).resolve().parent.parent / "examples" / "trading_agents" / "windows"
+    for name in ("asistente.ps1", "iniciar-bot.ps1"):
+        code = (win / name).read_text(encoding="utf-8-sig")
+        groups = {}
+        for v in set(re.findall(r"\$([A-Za-z_][A-Za-z0-9_]*)", code)):
+            groups.setdefault(v.lower(), set()).add(v)
+        clashes = {k: g for k, g in groups.items() if len(g) > 1}
+        assert not clashes, f"{name}: variables que solo difieren en mayúsculas: {clashes}"
+
+
 def test_windows_assistant_only_uses_existing_bot_commands():
     """Cada orden que lanza el asistente debe ser válida para bot.py (si cambian las opciones,
     este test avisa antes de que se rompa en el PC del usuario)."""
@@ -846,6 +861,14 @@ def test_windows_assistant_only_uses_existing_bot_commands():
         ["live", "--interval", "5m", "--exchange", "testnet", "--entry-mode", "limit", "--llm"],
         ["live", "--interval", "5m", "--exchange", "testnet", "--auto-optimize", "--optimize-limit", "8000", "--llm",
          "--entry-mode", "limit"],
+        ["momentum"],
+        ["senales", "--record", "--no-history", "--limit", "260"],
+        ["senales", "--record"],
+        ["panel"],
+        ["sync"],
+        ["sync", "--soft"],
+        ["notificar"],
+        ["dashboard-data", "--dir", "state", "--out", "state/dashboard", "--limit", "3000"],
     ):
         p.parse_args(argv)  # SystemExit si alguna opción no existe
 
@@ -1277,3 +1300,90 @@ def test_senales_command_offline(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0 and "Tarjeta de aciertos con la HISTORIA" in out and "registradas" in out
     assert bot.main(["senales", "--live-only", "--dir", str(tmp_path)]) == 0
+
+
+import cloud  # noqa: E402
+import panel as panel_mod  # noqa: E402
+
+
+def _paper_dir(tmp_path):
+    import json
+    d = tmp_path / "st"
+    d.mkdir()
+    (d / "momentum_track.jsonl").write_text(
+        json.dumps({"t": 0, "equity": 100.0, "basket": 0.0, "weights": {}, "halted": False}) + "\n"
+        + json.dumps({"t": 86400, "equity": 101.0, "basket": -0.02, "weights": {"BTCUSDT": 0.2}, "halted": False})
+        + "\n")
+    (d / "momentum_state.json").write_text(json.dumps({"cash0": 100.0, "equity": 101.0, "days": 1, "start_day": 0,
+                                                       "weights": {"BTCUSDT": 0.2}, "halted": False}))
+    sgn.record(str(d / "senales.jsonl"), 0, {"v": ["BTCUSDT", "<b>X</b>"]}, {"BTCUSDT": 100.0, "<b>X</b>": 1.0})
+    sgn.record(str(d / "senales.jsonl"), 86_400_000, {"v": []}, {"BTCUSDT": 105.0, "<b>X</b>": 1.0})
+    return d
+
+
+def test_cloud_sync_upserts_rows_without_leaking_the_key(tmp_path):
+    d = _paper_dir(tmp_path)
+    rows = cloud.rows_from_state(str(d))
+    assert len(rows["paper_days"]) == 2 and rows["paper_days"][1]["positions"] == {"BTCUSDT": 0.2}
+    assert len(rows["signals"]) == 4 and rows["scorecard"][0]["id"] == "live"
+    calls = []
+
+    class Http:
+        def post(self, url, headers, content, timeout):
+            calls.append((url, headers))
+            return SimpleNamespace(status_code=201, text="")
+
+    assert cloud.sync(str(d), env={}) == {}  # sin configurar: no hace nada
+    env = {"SUPABASE_URL": "https://abc.supabase.co", "SUPABASE_KEY": "sekret"}
+    sent = cloud.sync(str(d), env=env, http=Http())
+    assert sent == {"paper_days": 2, "signals": 4, "scorecard": 1}
+    assert calls[0][0].startswith("https://abc.supabase.co/rest/v1/paper_days?on_conflict=day")
+    assert "merge-duplicates" in calls[0][1]["Prefer"]
+
+    class Bad:
+        def post(self, *a, **k):
+            return SimpleNamespace(status_code=401, text="invalid key")
+
+    with pytest.raises(RuntimeError) as e:
+        cloud.sync(str(d), env=env, http=Bad())
+    assert "sekret" not in str(e.value) and "401" in str(e.value)
+
+
+def test_panel_is_self_contained_and_escapes_data(tmp_path):
+    d = _paper_dir(tmp_path)
+    page = panel_mod.build(str(d))
+    assert page.startswith("<!doctype html>") and "<script" not in page and "http" not in page.split("<body>")[1]
+    assert "<b>X</b>" not in page and "&lt;b&gt;X&lt;/b&gt;" in page
+    assert "1/20" in page and "101.00" in page and "<svg" in page
+    rc = bot.main(["panel", "--dir", str(d)])
+    assert rc == 0 and (d / "panel.html").exists()
+
+
+def test_notifier_webhook_and_notificar_command(monkeypatch, capsys):
+    sent = []
+
+    class Http:
+        def post(self, url, json, timeout):
+            sent.append((url, json))
+            return SimpleNamespace(status_code=200)
+
+    n = Notifier(token="", chat_id="", http=Http(), webhook="https://hooks.example/x")
+    assert n.enabled and n.send("hola") and sent[0][1]["text"] == "hola"
+    assert not Notifier(token="", chat_id="", http=Http(), webhook="http://inseguro").send("x")
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("FREELM_WEBHOOK_URL", raising=False)
+    assert bot.main(["notificar"]) == 1 and "No hay avisos" in capsys.readouterr().out
+    assert bot.main(["sync"]) == 0
+
+
+def test_dashboard_data_builds_six_datasets(tmp_path):
+    import dashboard_data
+    d = _paper_dir(tmp_path)
+    raw = {s: _daily(_rw(i, 400)) for i, s in enumerate(["AUSDT", "BUSDT", "CUSDT"])}
+    data = dashboard_data.build(str(d), raw, list(raw))
+    assert set(data) == {"paper", "radar", "scorecard_history", "scorecard_live", "backtest", "strategies"}
+    assert data["paper"][-1]["equity"] == 101.0 and data["paper"][-1]["bot_pct"] == pytest.approx(0.01)
+    assert {r["symbol"] for r in data["radar"]} == {"A", "B", "C"} and all(0 <= r["votes"] <= 10 for r in data["radar"])
+    assert data["backtest"][0]["bot"] == pytest.approx(1.0) and any(r["strategy"] == "conjunto" for r in data["strategies"])
+    paths = dashboard_data.write(str(tmp_path / "out"), data)
+    assert len(paths) == 6 and all(os.path.getsize(p) > 1 for p in paths)

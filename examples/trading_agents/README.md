@@ -324,6 +324,33 @@ bajistas. Por eso esta familia nunca puede cumplir una regla de «acierto ≥ 77
 Para los 105 agentes técnicos de `live`, la medida equivalente es su IC en vivo:
 `python bot.py status --all-agents`.
 
+### Panel, Supabase y avisos (`panel`, `sync`, `notificar`)
+
+- `python bot.py panel --open` genera **un solo archivo HTML**, sin internet ni
+  librerías, con:
+  - el capital en papel frente a la cesta y las posiciones;
+  - la tarjeta de aciertos **en vivo**;
+  - las señales de los últimos días y los avisos del diario.
+
+  GitHub Actions lo regenera cada día: queda en la rama `momentum-state` y como
+  archivo descargable de la ejecución.
+- `python bot.py sync` sube a **Supabase** los días en papel, las señales y la
+  tarjeta de aciertos.
+  - Solo actúa si existen `SUPABASE_URL` y `SUPABASE_KEY` (la clave secreta, que
+    se lee del entorno y nunca se escribe ni se muestra).
+  - El esquema, con lectura pública de solo lectura por RLS, está en
+    `deploy/supabase.sql`.
+  - Cada subida es un *upsert*: repetirla no duplica filas.
+- `FREELM_WEBHOOK_URL` envía los avisos a un webhook (p. ej. Zapier → Gmail),
+  además o en lugar de Telegram. `python bot.py notificar` envía un aviso de prueba.
+- El asistente de Windows guía todo esto: opciones 14–19 y la tarea diaria a las 01:30.
+- **Momentum Bot Monitor** es el cuadro de mando en claude.ai: resumen, capital frente
+  a la cesta, radar de las 8 monedas, aciertos de cada señal con sus intervalos e
+  historia 2019–2026 con la validación. `python bot.py dashboard-data --dir <estado>
+  --out <carpeta>` escribe sus 6 JSON. `momentum-paper.yml` los deja cada día en
+  `momentum-state/dashboard/`, y una tarea programada de Claude los sube al cuadro.
+  El código de la página está en `deploy/dashboard.html`.
+
 ## Mejora automática (`optimize`)
 
 Un optimizador evolutivo cruza y muta configuraciones: umbrales, riesgo, stops,

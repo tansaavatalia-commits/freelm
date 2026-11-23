@@ -1,0 +1,458 @@
+<meta name="dash-one-writer">
+<style>
+/* Layout: una columna de lectura; resumen arriba, después prueba en papel, radar, aciertos e historia */
+.mb { --mb-gap: var(--cds-gap-lg); display: grid; gap: calc(var(--cds-gap-xl) * 1.4); font-family: var(--font-anthropic-sans); color: var(--color-fg); }
+.mb h1 { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+.mb h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; text-wrap: balance; }
+.mb p { margin: 0; max-width: 68ch; }
+.mb .lede { font-size: var(--cds-font-size-body); color: var(--color-fg); line-height: 1.55; }
+.mb .muted, .mb .note { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.mb .head { display: grid; gap: var(--cds-gap-sm); }
+.mb .eyebrow { font-size: var(--cds-font-size-caption); letter-spacing: .06em; text-transform: uppercase; color: var(--color-fg-muted); }
+.mb .sec { display: grid; gap: var(--cds-gap-md); min-width: 0; }
+.mb .sec-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--cds-gap-sm); }
+.mb .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--cds-gap-md); }
+.mb .tile { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: 2px; min-width: 0; }
+.mb .tile .k { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.mb .tile .v { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: 30px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.mb .tile .s { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-variant-numeric: tabular-nums; }
+.mb .good { color: var(--color-ok); } .mb .bad { color: var(--color-bad); } .mb .warn { color: var(--color-warn); }
+.mb .chart { position: relative; min-height: 240px; min-width: 0; }
+.mb .chart.tall { min-height: 300px; }
+.mb .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.mb .axis text, .mb .lbl { fill: var(--cds-text-secondary); font-size: var(--cds-font-size-caption); font-family: var(--font-anthropic-sans); }
+.mb .axis path, .mb .axis line { stroke: var(--cds-chart-axis); }
+.mb .grid line { stroke: var(--cds-chart-grid); }
+.mb .grid path { display: none; }
+.mb .legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-md); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.mb .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.mb .tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); box-shadow: var(--cds-shadow-popover); border-radius: var(--cds-radius); padding: 8px 10px; font-size: var(--cds-font-size-caption); line-height: 1.45; white-space: nowrap; z-index: 2; font-variant-numeric: tabular-nums; }
+.mb .tip b { font-weight: var(--cds-font-weight-medium); }
+.mb .seg { display: inline-flex; border: 1px solid var(--color-border-line); border-radius: 999px; padding: 2px; gap: 2px; }
+.mb .seg button { font: inherit; font-size: var(--cds-font-size-caption); border: 0; background: transparent; color: var(--color-fg-muted); padding: 4px 12px; border-radius: 999px; cursor: pointer; }
+.mb .seg button[aria-pressed="true"] { background: var(--color-panel); color: var(--color-fg); box-shadow: 0 0 0 1px var(--color-border-line); }
+.mb .seg button:focus-visible { outline: 2px solid var(--cds-chart-reference); outline-offset: 1px; }
+.mb .twocol { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--cds-gap-lg); }
+.mb .scroll { overflow-x: auto; min-width: 0; }
+.mb table { border-collapse: collapse; width: 100%; font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.mb th, .mb td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--color-border-line); white-space: nowrap; }
+.mb th:first-child, .mb td:first-child { text-align: left; }
+.mb thead th { color: var(--color-fg-muted); font-weight: var(--cds-font-weight-medium); }
+.mb .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; border: 1px solid currentColor; }
+.mb details { border-top: 1px solid var(--color-border-line); padding-top: var(--cds-pad-md); }
+.mb summary { cursor: pointer; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.mb details ul { margin: var(--cds-gap-sm) 0 0; padding-left: 18px; display: grid; gap: 6px; max-width: 70ch; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.mb .fail { min-height: 0; color: var(--color-bad); font-size: var(--cds-font-size-caption); }
+@media print { .mb .seg { display: none; } }
+</style>
+
+<div class="mb" lang="es">
+  <header class="head" id="resumen">
+    <span class="eyebrow">Prueba en papel · 100 € simulados · nunca dinero real</span>
+    <h1>Momentum Bot Monitor</h1>
+    <p class="lede" data-read lang="es">
+      <span data-draw="lede-sentence"></span>
+      <span data-draw="lede-cash" hidden>Hoy el bot está <b>en liquidez</b>: ninguna de las 8 monedas cumple la regla de entrada, todas están por debajo de su media de 50 días.</span>
+      <span data-draw="lede-long" hidden>Hoy <b data-draw="lede-nlong">—</b> de las 8 monedas tienen al menos una variante en «compra».</span>
+    </p>
+  </header>
+
+  <section class="tiles" id="cifras" aria-label="Cifras clave">
+    <div class="tile"><span class="k">Capital en papel</span><span class="v" data-draw="t-equity" data-source="paper_now" data-field="equity" data-row="0">—</span><span class="s" data-draw="t-equity-sub">—</span></div>
+    <div class="tile"><span class="k">Ventaja frente a la cesta</span><span class="v" data-draw="t-gap" data-source="paper_now" data-field="gap" data-row="0">—</span><span class="s">bot menos comprar y mantener las 8</span></div>
+    <div class="tile"><span class="k">Caída máxima</span><span class="v" data-draw="t-dd" data-source="paper_now" data-field="max_drawdown" data-row="0">—</span><span class="s">límite acordado: 10 %</span></div>
+    <div class="tile"><span class="k">Días de prueba</span><span class="v" data-draw="t-days" data-source="paper_now" data-field="day" data-row="0">—</span><span class="s">de 20 · desde el <span data-draw="t-start" data-source="paper_now" data-field="start" data-row="0">—</span></span></div>
+  </section>
+
+  <section class="sec" id="papel">
+    <div class="sec-head"><h2>Capital en papel frente a la cesta</h2><span class="note">rendimiento acumulado desde el día 0</span></div>
+    <div class="chart" data-draw="paper-chart" data-source="paper"></div>
+    <div class="legend"><span><i style="background:var(--color-fg)"></i>Bot (momentum combinado)</span><span><i style="background:var(--cds-chart-muted)"></i>Cesta: comprar y mantener las 8 monedas</span></div>
+  </section>
+
+  <section class="sec" id="radar">
+    <div class="sec-head"><h2>Radar: qué falta para que el bot compre</h2><span class="note">último cierre diario</span></div>
+    <p class="note">La variante de tendencia más rápida compra una moneda cuando su precio supera su media de 50 días (la línea vertical). Cuanto más a la izquierda, más lejos está la señal.</p>
+    <div class="chart" data-draw="radar-chart" data-source="radar"></div>
+    <div class="scroll">
+      <table data-source="radar" data-row-key="symbol" aria-label="Estado de cada moneda">
+        <thead><tr><th data-field="symbol">Moneda</th><th data-field="price">Precio (USDT)</th><th data-field="votes">Variantes en «compra»</th><th data-field="vs_sma50">Frente a media 50 d</th><th data-field="vs_sma200">Frente a media 200 d</th><th data-field="ret_7d">7 días</th><th data-field="ret_28d">28 días</th><th data-field="vol_30d">Volatilidad anual</th></tr></thead>
+        <tbody data-draw="radar-table"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="sec" id="aciertos">
+    <div class="sec-head">
+      <h2>¿Cuánto aciertan las señales?</h2>
+      <div class="seg" role="group" aria-label="Plazo">
+        <button type="button" data-h="1" aria-pressed="false">1 día</button>
+        <button type="button" data-h="7" aria-pressed="true">7 días</button>
+        <button type="button" data-h="30" aria-pressed="false">30 días</button>
+      </div>
+    </div>
+    <p class="note">Historia 2019–2026 con reglas fijas. Izquierda: % de veces que la moneda subió tras «compra» (punto) frente a cuánto sube de todas formas (marca gris). Derecha: cuánto más rinde tras «compra» que tras «fuera», con su intervalo del 95 %; en color si no cruza el cero.</p>
+    <div class="twocol">
+      <div class="chart tall" data-draw="hit-chart" data-source="card_hist"></div>
+      <div class="chart tall" data-draw="edge-chart" data-source="card_hist"></div>
+    </div>
+    <p class="lede" data-read lang="es"><span data-draw="card-sentence">—</span></p>
+    <h2 id="aciertos-vivo" style="font-size:var(--cds-font-size-body)">En vivo, con señales registradas cada día</h2>
+    <p class="note" data-draw="live-note">—</p>
+    <div class="scroll">
+      <table data-source="card_live" data-row-key="signal,horizon_days" aria-label="Aciertos en vivo">
+        <thead><tr><th data-field="signal">Señal</th><th data-field="horizon_days">Plazo (días)</th><th data-field="n">Señales</th><th data-field="hit">Acierto</th><th data-field="base">Sube igualmente</th><th data-field="edge">Ventaja</th></tr></thead>
+        <tbody data-draw="live-table"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="sec" id="historia">
+    <div class="sec-head"><h2>Lo que dice la historia (2019–2026)</h2><span class="note">la misma estrategia que corre en papel</span></div>
+    <p class="lede" data-read lang="es">El conjunto ganó un <b data-source="strategies" data-field="annual" data-where="strategy=conjunto" data-draw="h-annual">—</b> al año con una caída máxima del <b data-source="strategies" data-field="max_drawdown" data-where="strategy=conjunto" data-draw="h-dd">—</b>. La cesta subió mucho más, pero con caídas de hasta el <b data-draw="h-bdd" data-source="bt_stats" data-field="basket_max_drawdown" data-row="0">—</b>: el bot renuncia a la mayor parte de las subidas para no sufrir esas caídas.</p>
+    <div class="chart tall" data-draw="bt-chart" data-source="backtest"></div>
+    <div class="legend"><span><i style="background:var(--color-fg)"></i>Bot (escala logarítmica)</span><span><i style="background:var(--cds-chart-muted)"></i>Cesta de las monedas que ya cotizaban en 2019</span><span><i style="background:var(--cds-chart-status-critical)"></i>Caída del bot desde su máximo</span></div>
+    <div class="scroll">
+      <table data-source="strategies" data-row-key="strategy" aria-label="Resultados por variante">
+        <thead><tr><th data-field="strategy">Variante</th><th data-field="annual">Al año</th><th data-field="total">Total</th><th data-field="max_drawdown">Caída máx.</th><th data-field="trades">Operaciones</th><th data-field="win_rate">Acierto</th><th data-field="dsr">Deflated Sharpe</th><th data-field="passes_all_tests">Todas las pruebas</th></tr></thead>
+        <tbody data-draw="strat-table"></tbody>
+      </table>
+    </div>
+    <p class="note">«Todas las pruebas» con estos datos y un único día de inicio. Repetidas con 7 días de inicio distintos, ninguna variante pasa en todos (la probabilidad de sobreajuste de la familia va del 17 % al 43 %): la estrategia es la candidata más sólida, no una ventaja demostrada.</p>
+  </section>
+
+  <details id="notas">
+    <summary>Qué significa cada cosa y qué no dicen estos números</summary>
+    <ul>
+      <li><b>Momentum combinado</b>: 10 variantes a partes iguales (5 de tendencia con medias de 20 a 200 días, 5 relativas que compran las que más subieron), solo spot, como mucho 4 monedas, exposición ajustada a una volatilidad del 5 % anual.</li>
+      <li><b>Acierto</b>: % de señales «compra» tras las que la moneda subió en ese plazo. <b>Sube igualmente</b> (tasa base): % de veces que sube sin mirar la señal. Una señal solo aporta si supera la tasa base.</li>
+      <li><b>Ventaja</b>: retorno medio tras «compra» menos retorno medio tras «fuera». El intervalo del 95 % cuenta los retornos solapados (n/h muestras efectivas).</li>
+      <li><b>Deflated Sharpe</b>: probabilidad de que el resultado no sea suerte tras descontar las 106 pruebas hechas en la investigación. Se exige 0,95.</li>
+      <li>El universo son las 8 monedas grandes de hoy: las que desaparecieron (LUNA, FTT…) no están, así que la historia puede estar inflada por sesgo de supervivencia.</li>
+      <li>Los datos de papel y señales salen de la prueba diaria en GitHub; los precios, de la API pública de Binance.</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+// ---------- formato y utilidades compartidas
+(function () {
+  const L = d3.formatLocale({ decimal: ",", thousands: ".", grouping: [3], currency: ["", " €"], percent: " %" });
+  const pct = L.format("+.1%"), pct0 = L.format(".0%"), pct1 = L.format(".1%"), eur = L.format(",.2f"), num = L.format(",");
+  const price = (v) => (v >= 100 ? L.format(",.0f")(v) : v >= 1 ? L.format(",.2f")(v) : L.format(",.4f")(v));
+  const date = d3.utcFormat("%d %b %Y"), shortDate = d3.utcFormat("%d/%m");
+  const parse = d3.utcParse("%Y-%m-%d");
+  window.MB = { L, pct, pct0, pct1, eur, num, price, date, shortDate, parse,
+    hz: 7,
+    ok: (id) => dash.data(id).status === "ok",
+    failed: (id) => ["error", "declined", "connect"].includes(dash.data(id).status),
+    // tooltip dentro de la caja de la gráfica
+    tip(el) {
+      let t = el.querySelector(":scope > .tip");
+      if (!t) { t = document.createElement("div"); t.className = "tip"; t.hidden = true; el.appendChild(t); }
+      return {
+        show(html, x, y) {
+          t.replaceChildren(); html.forEach((line) => { const d = document.createElement("div"); line.forEach(([txt, b]) => { const s = document.createElement(b ? "b" : "span"); s.textContent = txt; d.appendChild(s); }); t.appendChild(d); });
+          t.hidden = false; const w = el.clientWidth, tw = t.offsetWidth;
+          t.style.left = Math.max(0, Math.min(w - tw, x + 12)) + "px"; t.style.top = Math.max(0, y - 10) + "px";
+        },
+        hide() { t.hidden = true; }
+      };
+    },
+    placeholder(el, id, label) {
+      el.replaceChildren();
+      const p = document.createElement("p");
+      p.className = MB.failed(id) ? "fail" : "muted";
+      p.textContent = MB.failed(id) ? "No se pudieron cargar los datos de " + label + "." : "—";
+      el.appendChild(p);
+    }
+  };
+})();
+
+// ---------- cálculos que se ven en la página (los lectores pueden revisarlos en Fuentes)
+dash.calc("paper_now", {
+  inputs: ["paper"],
+  title: "Prueba en papel, último día",
+  description: "Capital, ventaja frente a la cesta y caída máxima a partir de los días de la prueba en papel.",
+  fn: (paper) => {
+    if (!paper.length) return [];
+    const last = paper[paper.length - 1];
+    return [{ day: paper.length - 1, start: paper[0].date, equity: last.equity, bot_pct: last.bot_pct,
+      basket_pct: last.basket_pct, gap: last.bot_pct - last.basket_pct,
+      max_drawdown: d3.max(paper, (r) => r.drawdown) }];
+  }
+});
+dash.calc("bt_stats", {
+  inputs: ["backtest"],
+  title: "Caída máxima de la cesta (historia)",
+  description: "La mayor caída semanal de la cesta comprar y mantener en la historia 2019–2026.",
+  fn: (bt) => {
+    let peak = 0, mdd = 0;
+    bt.forEach((r) => { if (r.basket == null) return; peak = Math.max(peak, r.basket); mdd = Math.max(mdd, 1 - r.basket / peak); });
+    return [{ basket_max_drawdown: mdd }];
+  }
+});
+</script>
+
+<script>
+// ---------- resumen
+dash.draw("lede-sentence", (el) => {
+  const p = dash.data("paper_now"), r = dash.data("radar");
+  const long = r.status === "ok" ? r.data.filter((x) => +x.votes > 0).length : null;
+  document.querySelectorAll('[data-draw="lede-cash"]').forEach((n) => (n.hidden = long !== 0));
+  document.querySelectorAll('[data-draw="lede-long"]').forEach((n) => (n.hidden = !(long > 0)));
+  if (p.status !== "ok" || !p.data.length) { el.textContent = "—"; return; }
+  const d = p.data[0];
+  el.textContent = `Día ${d.day} de 20: el bot conserva ${MB.eur(d.equity)} € mientras la cesta va ${MB.pct(d.basket_pct)}. `;
+});
+dash.draw("lede-nlong", (el) => {
+  const r = dash.data("radar");
+  el.textContent = r.status === "ok" ? String(r.data.filter((x) => +x.votes > 0).length) : "—";
+});
+dash.draw("t-equity", (el) => { const p = dash.data("paper_now"); el.textContent = p.status === "ok" && p.data.length ? MB.eur(p.data[0].equity) + " €" : "—"; });
+dash.draw("t-equity-sub", (el) => {
+  const p = dash.data("paper_now");
+  if (p.status !== "ok" || !p.data.length) { el.textContent = "—"; return; }
+  el.textContent = MB.pct(p.data[0].bot_pct) + " desde el inicio";
+});
+dash.draw("t-gap", (el) => {
+  const p = dash.data("paper_now");
+  if (p.status !== "ok" || !p.data.length) { el.textContent = "—"; el.className = "v"; return; }
+  const g = p.data[0].gap; el.textContent = MB.pct(g); el.className = "v " + (g >= 0 ? "good" : "bad");
+});
+dash.draw("t-dd", (el) => {
+  const p = dash.data("paper_now");
+  if (p.status !== "ok" || !p.data.length) { el.textContent = "—"; el.className = "v"; return; }
+  const v = p.data[0].max_drawdown; el.textContent = MB.pct1(v); el.className = "v " + (v > 0.08 ? "bad" : v > 0.05 ? "warn" : "");
+});
+dash.draw("t-days", (el) => { const p = dash.data("paper_now"); el.textContent = p.status === "ok" && p.data.length ? String(p.data[0].day) : "—"; });
+dash.draw("t-start", (el) => { const p = dash.data("paper_now"); el.textContent = p.status === "ok" && p.data.length ? MB.date(MB.parse(p.data[0].start)) : "—"; });
+</script>
+
+<script>
+// ---------- gráfica: papel frente a la cesta
+dash.draw("paper-chart", (el) => {
+  const ds = dash.data("paper");
+  if (ds.status !== "ok" || ds.data.length < 1) { MB.placeholder(el, "paper", "la prueba en papel"); return; }
+  const rows = ds.data.map((r) => ({ d: MB.parse(r.date), bot: +r.bot_pct, bk: +r.basket_pct }));
+  el.replaceChildren();
+  const W = Math.max(280, el.clientWidth), H = 240, m = { t: 12, r: 16, b: 26, l: 52 };
+  const x = d3.scaleUtc().domain(d3.extent(rows, (r) => r.d)).range([m.l, W - m.r]);
+  if (rows.length === 1) x.domain([d3.utcDay.offset(rows[0].d, -1), d3.utcDay.offset(rows[0].d, 1)]);
+  const lo = Math.min(0, d3.min(rows, (r) => Math.min(r.bot, r.bk))), hi = Math.max(0.01, d3.max(rows, (r) => Math.max(r.bot, r.bk)));
+  const y = d3.scaleLinear().domain([lo * 1.15, hi * 1.15]).nice().range([H - m.b, m.t]);
+  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img")
+    .attr("aria-label", "Rendimiento acumulado del bot en papel frente a la cesta comprar y mantener");
+  svg.append("g").attr("class", "grid").attr("transform", `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W - m.l - m.r)).tickFormat(""));
+  svg.append("g").attr("class", "axis").attr("transform", `translate(${m.l},0)`).call(d3.axisLeft(y).ticks(5).tickFormat(MB.pct0)).call((g) => g.select(".domain").remove());
+  svg.append("g").attr("class", "axis").attr("transform", `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(Math.min(rows.length, Math.floor(W / 90))).tickFormat(MB.shortDate));
+  svg.append("line").attr("x1", m.l).attr("x2", W - m.r).attr("y1", y(0)).attr("y2", y(0)).style("stroke", "var(--cds-chart-reference)");
+  const line = (k) => d3.line().x((r) => x(r.d)).y((r) => y(r[k]));
+  svg.append("path").datum(rows).attr("fill", "none").attr("d", line("bk")).style("stroke", "var(--cds-chart-muted)").style("stroke-width", 2);
+  svg.append("path").datum(rows).attr("fill", "none").attr("d", line("bot")).style("stroke", "var(--color-fg)").style("stroke-width", 2.5);
+  const last = rows[rows.length - 1];
+  svg.append("circle").attr("cx", x(last.d)).attr("cy", y(last.bot)).attr("r", 4).style("fill", "var(--color-fg)");
+  svg.append("circle").attr("cx", x(last.d)).attr("cy", y(last.bk)).attr("r", 4).style("fill", "var(--cds-chart-muted)");
+  const tip = MB.tip(el);
+  const hl = svg.append("line").attr("y1", m.t).attr("y2", H - m.b).style("stroke", "var(--cds-chart-reference)").attr("opacity", 0);
+  svg.append("rect").attr("x", m.l).attr("y", m.t).attr("width", W - m.l - m.r).attr("height", H - m.t - m.b).attr("fill", "transparent")
+    .on("pointermove", (ev) => {
+      const [px, py] = d3.pointer(ev); const i = d3.bisectCenter(rows.map((r) => +r.d), +x.invert(px)); const r = rows[i];
+      hl.attr("x1", x(r.d)).attr("x2", x(r.d)).attr("opacity", 1);
+      tip.show([[[MB.date(r.d), true]], [["Bot: "], [MB.pct(r.bot), true]], [["Cesta: "], [MB.pct(r.bk), true]]], px * el.clientWidth / W, py * el.clientWidth / W);
+    })
+    .on("pointerleave", () => { tip.hide(); hl.attr("opacity", 0); });
+});
+</script>
+
+<script>
+// ---------- radar de monedas
+dash.draw("radar-chart", (el) => {
+  const ds = dash.data("radar");
+  if (ds.status !== "ok" || !ds.data.length) { MB.placeholder(el, "radar", "las monedas"); return; }
+  const rows = ds.data.map((r) => ({ ...r, gap: +r.vs_sma50 })).sort((a, b) => b.gap - a.gap);
+  el.replaceChildren();
+  const W = Math.max(280, el.clientWidth), rowH = 26, m = { t: 22, r: 70, b: 26, l: 52 }, H = m.t + m.b + rows.length * rowH;
+  const ext = d3.extent(rows, (r) => r.gap);
+  const x = d3.scaleLinear().domain([Math.min(-0.05, ext[0] * 1.1), Math.max(0.05, ext[1] * 1.1)]).nice().range([m.l, W - m.r]);
+  const y = d3.scaleBand().domain(rows.map((r) => r.symbol)).range([m.t, H - m.b]).padding(0.35);
+  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img")
+    .attr("aria-label", "Distancia de cada moneda a su media de 50 días; a la derecha de la línea habría señal de compra");
+  svg.append("g").attr("class", "grid").attr("transform", `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(Math.floor(W / 110)).tickSize(-(H - m.t - m.b)).tickFormat(""));
+  svg.append("g").attr("class", "axis").attr("transform", `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(Math.floor(W / 110)).tickFormat(MB.pct0));
+  svg.append("rect").attr("x", x(0)).attr("y", m.t - 4).attr("width", Math.max(0, W - m.r - x(0))).attr("height", H - m.t - m.b + 4).style("fill", "var(--color-ok)").attr("opacity", 0.07);
+  svg.append("line").attr("x1", x(0)).attr("x2", x(0)).attr("y1", m.t - 10).attr("y2", H - m.b).style("stroke", "var(--color-ok)").style("stroke-width", 1.5);
+  svg.append("text").attr("class", "lbl").attr("x", x(0) + 6).attr("y", m.t - 8).text("zona de compra →");
+  svg.append("g").attr("class", "axis").attr("transform", `translate(${m.l},0)`).call(d3.axisLeft(y).tickSize(0)).call((g) => g.select(".domain").remove());
+  const g = svg.append("g").selectAll("g").data(rows).join("g");
+  g.append("line").attr("x1", x(0)).attr("x2", (r) => x(r.gap)).attr("y1", (r) => y(r.symbol) + y.bandwidth() / 2).attr("y2", (r) => y(r.symbol) + y.bandwidth() / 2)
+    .style("stroke", "var(--cds-chart-muted)").style("stroke-width", 2);
+  g.append("circle").attr("cx", (r) => x(r.gap)).attr("cy", (r) => y(r.symbol) + y.bandwidth() / 2).attr("r", 6)
+    .style("fill", (r) => (r.gap > 0 ? "var(--color-ok)" : dash.colors[0]));
+  g.append("text").attr("class", "lbl").attr("x", W - m.r + 8).attr("y", (r) => y(r.symbol) + y.bandwidth() / 2 + 4).text((r) => MB.pct(r.gap));
+  const tip = MB.tip(el);
+  g.append("rect").attr("x", m.l).attr("width", W - m.l).attr("y", (r) => y(r.symbol) - 4).attr("height", y.bandwidth() + 8).attr("fill", "transparent")
+    .on("pointermove", (ev, r) => { const [px, py] = d3.pointer(ev, svg.node()); const k = el.clientWidth / W;
+      tip.show([[[r.symbol + " · " + MB.price(+r.price) + " USDT", true]], [["Frente a media 50 d: "], [MB.pct(+r.vs_sma50), true]], [["Frente a media 200 d: "], [MB.pct(+r.vs_sma200), true]], [["28 días: "], [MB.pct(+r.ret_28d), true]], [["Variantes en «compra»: "], [r.votes + "/10", true]]], px * k, py * k); })
+    .on("pointerleave", () => tip.hide());
+});
+dash.draw("radar-table", (tb) => {
+  const ds = dash.data("radar");
+  tb.replaceChildren();
+  if (ds.status !== "ok") return;
+  const cls = (v) => (v > 0 ? "good" : v < 0 ? "bad" : "");
+  [...ds.data].sort((a, b) => b.vs_sma50 - a.vs_sma50).forEach((r) => {
+    const tr = tb.insertRow();
+    [[r.symbol, ""], [MB.price(+r.price), ""], [r.votes + "/10", +r.votes > 0 ? "good" : ""], [MB.pct(+r.vs_sma50), cls(+r.vs_sma50)], [MB.pct(+r.vs_sma200), cls(+r.vs_sma200)],
+      [MB.pct(+r.ret_7d), cls(+r.ret_7d)], [MB.pct(+r.ret_28d), cls(+r.ret_28d)], [MB.pct0(+r.vol_30d), ""]].forEach(([t, c], i) => {
+      const td = i ? tr.insertCell() : tr.appendChild(document.createElement("td")); td.textContent = t; if (c) td.className = c; });
+  });
+});
+</script>
+
+<script>
+// ---------- aciertos: selector de plazo y gráficas
+document.querySelectorAll(".mb .seg button").forEach((b) => b.addEventListener("click", () => {
+  MB.hz = +b.dataset.h;
+  document.querySelectorAll(".mb .seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  ["hit-chart", "edge-chart", "card-sentence"].forEach((n) => dash.draw(n));
+}));
+const ORDER = ["conjunto", "tsmom·20", "tsmom·50", "tsmom·100", "tsmom·150", "tsmom·200", "xsmom·7", "xsmom·14", "xsmom·28", "xsmom·56", "xsmom·90"];
+const LABEL = (s) => s === "conjunto" ? "Conjunto" : s.replace("tsmom·", "Tendencia ").replace("xsmom·", "Relativo ") + " d";
+function cardRows(id) {
+  const ds = dash.data(id);
+  if (ds.status !== "ok") return null;
+  return ds.data.filter((r) => +r.horizon_days === MB.hz).sort((a, b) => ORDER.indexOf(a.signal) - ORDER.indexOf(b.signal));
+}
+function bandChart(el, rows, opts) {
+  el.replaceChildren();
+  const W = Math.max(280, el.clientWidth), rowH = 24, m = { t: 26, r: 14, b: 28, l: 108 }, H = m.t + m.b + rows.length * rowH;
+  const x = d3.scaleLinear().domain(opts.domain(rows)).nice().range([m.l, W - m.r]);
+  const y = d3.scaleBand().domain(rows.map((r) => r.signal)).range([m.t, H - m.b]).padding(0.3);
+  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img").attr("aria-label", opts.aria);
+  svg.append("text").attr("class", "lbl").attr("x", m.l).attr("y", 12).text(opts.title);
+  svg.append("g").attr("class", "grid").attr("transform", `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((W - m.l) / 80))).tickSize(-(H - m.t - m.b)).tickFormat(""));
+  svg.append("g").attr("class", "axis").attr("transform", `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((W - m.l) / 80))).tickFormat(opts.fmtAxis));
+  svg.append("g").attr("class", "axis").attr("transform", `translate(${m.l},0)`).call(d3.axisLeft(y).tickSize(0).tickFormat(LABEL)).call((g) => g.select(".domain").remove())
+    .selectAll("text").style("font-weight", (s) => (s === "conjunto" ? 600 : null));
+  opts.draw(svg, rows, x, y);
+  const tip = MB.tip(el);
+  svg.append("g").selectAll("rect").data(rows).join("rect").attr("x", 0).attr("width", W).attr("y", (r) => y(r.signal) - 3).attr("height", y.bandwidth() + 6).attr("fill", "transparent")
+    .on("pointermove", (ev, r) => { const [px, py] = d3.pointer(ev, svg.node()); const k = el.clientWidth / W; tip.show(opts.tip(r), px * k, py * k); })
+    .on("pointerleave", () => tip.hide());
+}
+dash.draw("hit-chart", (el) => {
+  const rows = cardRows("card_hist");
+  if (!rows || !rows.length) { MB.placeholder(el, "card_hist", "la historia de señales"); return; }
+  bandChart(el, rows, {
+    title: "Acierto frente a la tasa base", aria: "Porcentaje de aciertos de cada señal frente a la tasa base",
+    domain: (rs) => [Math.min(0.4, d3.min(rs, (r) => Math.min(+r.hit, +r.base)) - 0.03), Math.max(0.6, d3.max(rs, (r) => Math.max(+r.hit, +r.base)) + 0.03)],
+    fmtAxis: MB.pct0,
+    draw: (svg, rs, x, y) => {
+      const c = (r) => y(r.signal) + y.bandwidth() / 2;
+      svg.append("g").selectAll("line").data(rs).join("line").attr("x1", (r) => x(+r.base)).attr("x2", (r) => x(+r.hit)).attr("y1", c).attr("y2", c).style("stroke", "var(--cds-chart-muted)").style("stroke-width", 2);
+      svg.append("g").selectAll("rect").data(rs).join("rect").attr("x", (r) => x(+r.base) - 1.5).attr("width", 3).attr("y", (r) => c(r) - 7).attr("height", 14).style("fill", "var(--cds-chart-muted)");
+      svg.append("g").selectAll("circle").data(rs).join("circle").attr("cx", (r) => x(+r.hit)).attr("cy", c).attr("r", 5.5).style("fill", dash.colors[0]);
+    },
+    tip: (r) => [[[LABEL(r.signal) + " · a " + r.horizon_days + " d", true]], [["Acierto tras «compra»: "], [MB.pct1(+r.hit), true]], [["Sube igualmente: "], [MB.pct1(+r.base), true]], [["Señales: "], [MB.num(+r.n), true]]]
+  });
+});
+dash.draw("edge-chart", (el) => {
+  const rows = cardRows("card_hist");
+  if (!rows || !rows.length) { MB.placeholder(el, "card_hist", "la historia de señales"); return; }
+  bandChart(el, rows, {
+    title: "Ventaja: retorno tras «compra» menos tras «fuera»", aria: "Ventaja de cada señal con su intervalo de confianza del 95 por ciento",
+    domain: (rs) => [Math.min(0, d3.min(rs, (r) => +r.edge_lo)), Math.max(0, d3.max(rs, (r) => +r.edge_hi))],
+    fmtAxis: MB.pct0,
+    draw: (svg, rs, x, y) => {
+      const c = (r) => y(r.signal) + y.bandwidth() / 2;
+      svg.append("line").attr("x1", x(0)).attr("x2", x(0)).attr("y1", y.range()[0]).attr("y2", y.range()[1]).style("stroke", "var(--cds-chart-reference)");
+      svg.append("g").selectAll("line").data(rs).join("line").attr("x1", (r) => x(+r.edge_lo)).attr("x2", (r) => x(+r.edge_hi)).attr("y1", c).attr("y2", c)
+        .style("stroke", (r) => (r.edge_real ? dash.colors[0] : "var(--cds-chart-muted)")).style("stroke-width", 2);
+      svg.append("g").selectAll("circle").data(rs).join("circle").attr("cx", (r) => x(+r.edge)).attr("cy", c).attr("r", 5.5)
+        .style("fill", (r) => (r.edge_real ? dash.colors[0] : "var(--color-bg)")).style("stroke", (r) => (r.edge_real ? dash.colors[0] : "var(--cds-chart-muted)")).style("stroke-width", 2);
+    },
+    tip: (r) => [[[LABEL(r.signal) + " · a " + r.horizon_days + " d", true]], [["Ventaja: "], [MB.pct(+r.edge), true]], [["IC 95 %: "], [MB.pct(+r.edge_lo) + " a " + MB.pct(+r.edge_hi), true]], [[r.edge_real ? "Real con un 95 % de confianza" : "Puede ser ruido (el intervalo cruza el 0)"]]]
+  });
+});
+dash.draw("card-sentence", (el) => {
+  const rows = cardRows("card_hist");
+  if (!rows || !rows.length) { el.textContent = "—"; return; }
+  const all = rows.filter((r) => r.signal !== "conjunto");
+  const real = all.filter((r) => r.edge_real).length, beat = all.filter((r) => +r.hit > +r.base + 0.02).length;
+  const c = rows.find((r) => r.signal === "conjunto");
+  el.textContent = `A ${MB.hz} ${MB.hz === 1 ? "día" : "días"}: ${beat} de ${all.length} variantes aciertan la dirección claramente más que la tasa base, pero ${real} de ${all.length} tienen una ventaja de retorno real. ` +
+    (c ? `El conjunto acierta un ${MB.pct0(+c.hit)} (sube igualmente un ${MB.pct0(+c.base)}) y su ventaja es ${MB.pct(+c.edge)}. ` : "") +
+    "Ganar con esta estrategia viene de cuánto suben las monedas tras «compra», no de acertar más veces.";
+});
+dash.draw("live-note", (el) => {
+  const ds = dash.data("card_live");
+  if (ds.status !== "ok") { el.textContent = MB.failed("card_live") ? "No se pudieron cargar las señales en vivo." : "—"; return; }
+  const n = d3.sum(ds.data, (r) => +r.n);
+  el.textContent = n ? `Señales ya puntuadas con precios posteriores: ${MB.num(n)}. Con tan pocas, ninguna cifra es todavía significativa; las de 7 días empiezan a llegar a la semana de la prueba.`
+    : "Todavía no hay señales puntuadas: hace falta que pase al menos un día desde una señal «compra».";
+});
+dash.draw("live-table", (tb) => {
+  const ds = dash.data("card_live");
+  tb.replaceChildren();
+  if (ds.status !== "ok") return;
+  [...ds.data].sort((a, b) => a.horizon_days - b.horizon_days || ORDER.indexOf(a.signal) - ORDER.indexOf(b.signal)).forEach((r) => {
+    const tr = tb.insertRow(); tr.dataset.key = encodeURIComponent(r.signal) + "," + r.horizon_days;
+    [r.signal, String(r.horizon_days), MB.num(+r.n), MB.pct0(+r.hit), MB.pct0(+r.base), MB.pct(+r.edge)].forEach((t, i) => {
+      const td = i ? tr.insertCell() : tr.appendChild(document.createElement("td")); td.textContent = t; });
+  });
+});
+</script>
+
+<script>
+// ---------- historia: bot frente a la cesta (escala log) y caída
+dash.draw("bt-chart", (el) => {
+  const ds = dash.data("backtest");
+  if (ds.status !== "ok" || !ds.data.length) { MB.placeholder(el, "backtest", "la historia"); return; }
+  const rows = ds.data.map((r) => ({ d: MB.parse(r.date), bot: +r.bot, bk: r.basket == null ? null : +r.basket, dd: +r.drawdown }));
+  el.replaceChildren();
+  const W = Math.max(280, el.clientWidth), H = 340, m = { t: 12, r: 52, b: 26, l: 52 }, ddH = 70, gap = 34;
+  const x = d3.scaleUtc().domain(d3.extent(rows, (r) => r.d)).range([m.l, W - m.r]);
+  const vals = rows.flatMap((r) => [r.bot, r.bk]).filter((v) => v != null && v > 0);
+  const y = d3.scaleLog().domain([d3.min(vals) * 0.9, d3.max(vals) * 1.1]).range([H - m.b - ddH - gap, m.t]);
+  const yd = d3.scaleLinear().domain([0, Math.max(0.1, d3.max(rows, (r) => r.dd))]).range([H - m.b - ddH, H - m.b]);
+  const svg = d3.select(el).append("svg").attr("viewBox", `0 0 ${W} ${H}`).attr("role", "img")
+    .attr("aria-label", "Valor de 1 euro en el bot y en la cesta de 2019 a 2026, en escala logarítmica, y caída del bot desde su máximo");
+  const ticks = [0.5, 1, 2, 5, 10, 20].filter((t) => t >= y.domain()[0] && t <= y.domain()[1]);
+  svg.append("g").attr("class", "grid").attr("transform", `translate(${m.l},0)`).call(d3.axisLeft(y).tickValues(ticks).tickSize(-(W - m.l - m.r)).tickFormat(""));
+  svg.append("g").attr("class", "axis").attr("transform", `translate(${m.l},0)`).call(d3.axisLeft(y).tickValues(ticks).tickFormat((v) => "×" + MB.L.format(",")(v))).call((g) => g.select(".domain").remove());
+  svg.append("g").attr("class", "axis").attr("transform", `translate(0,${H - m.b})`).call(d3.axisBottom(x).ticks(Math.floor(W / 90)).tickFormat(d3.utcFormat("%Y")));
+  svg.append("path").datum(rows.filter((r) => r.bk != null)).attr("fill", "none").style("stroke", "var(--cds-chart-muted)").style("stroke-width", 2).attr("d", d3.line().x((r) => x(r.d)).y((r) => y(r.bk)));
+  svg.append("path").datum(rows).attr("fill", "none").style("stroke", "var(--color-fg)").style("stroke-width", 2.5).attr("d", d3.line().x((r) => x(r.d)).y((r) => y(r.bot)));
+  // caída
+  svg.append("text").attr("class", "lbl").attr("x", m.l).attr("y", H - m.b - ddH - 8).text("Caída del bot desde su máximo");
+  svg.append("path").datum(rows).style("fill", "var(--cds-chart-status-critical)").attr("opacity", 0.35).attr("d", d3.area().x((r) => x(r.d)).y0(yd(0)).y1((r) => yd(r.dd)));
+  svg.append("line").attr("x1", m.l).attr("x2", W - m.r).attr("y1", yd(0.1)).attr("y2", yd(0.1)).style("stroke", "var(--cds-chart-status-critical)").style("stroke-dasharray", "4 3");
+  svg.append("text").attr("class", "lbl").attr("x", W - m.r + 4).attr("y", yd(0.1) + 4).text("−10 %");
+  const last = rows[rows.length - 1];
+  svg.append("text").attr("class", "lbl").attr("x", W - m.r + 4).attr("y", y(last.bot) + 4).text("×" + MB.L.format(",.2f")(last.bot)).style("fill", "var(--color-fg)");
+  if (last.bk != null) svg.append("text").attr("class", "lbl").attr("x", W - m.r + 4).attr("y", y(last.bk) + 4).text("×" + MB.L.format(",.1f")(last.bk));
+  const tip = MB.tip(el);
+  const hl = svg.append("line").attr("y1", m.t).attr("y2", H - m.b).style("stroke", "var(--cds-chart-reference)").attr("opacity", 0);
+  svg.append("rect").attr("x", m.l).attr("y", m.t).attr("width", W - m.l - m.r).attr("height", H - m.t - m.b).attr("fill", "transparent")
+    .on("pointermove", (ev) => { const [px, py] = d3.pointer(ev); const i = d3.bisectCenter(rows.map((r) => +r.d), +x.invert(px)); const r = rows[i]; const k = el.clientWidth / W;
+      hl.attr("x1", x(r.d)).attr("x2", x(r.d)).attr("opacity", 1);
+      tip.show([[[MB.date(r.d), true]], [["1 € en el bot: "], [MB.eur(r.bot) + " €", true]], [["1 € en la cesta: "], [r.bk == null ? "—" : MB.eur(r.bk) + " €", true]], [["Caída del bot: "], [MB.pct1(r.dd), true]]], px * k, py * k); })
+    .on("pointerleave", () => { tip.hide(); hl.attr("opacity", 0); });
+});
+dash.draw("h-annual", (el) => { const s = dash.data("strategies"); const r = s.status === "ok" && s.data.find((x) => x.strategy === "conjunto"); el.textContent = r ? MB.pct(+r.annual) : "—"; });
+dash.draw("h-dd", (el) => { const s = dash.data("strategies"); const r = s.status === "ok" && s.data.find((x) => x.strategy === "conjunto"); el.textContent = r ? MB.pct1(+r.max_drawdown) : "—"; });
+dash.draw("h-bdd", (el) => { const s = dash.data("bt_stats"); el.textContent = s.status === "ok" && s.data.length ? MB.pct0(s.data[0].basket_max_drawdown) : "—"; });
+dash.draw("strat-table", (tb) => {
+  const ds = dash.data("strategies");
+  tb.replaceChildren();
+  if (ds.status !== "ok") return;
+  [...ds.data].sort((a, b) => ORDER.indexOf(a.strategy) - ORDER.indexOf(b.strategy)).forEach((r) => {
+    const tr = tb.insertRow();
+    const cells = [r.strategy, MB.pct(+r.annual), MB.pct(+r.total), MB.pct1(+r.max_drawdown), MB.num(+r.trades), MB.pct0(+r.win_rate), MB.L.format(".2f")(+r.dsr)];
+    cells.forEach((t, i) => { const td = i ? tr.insertCell() : tr.appendChild(document.createElement("td")); td.textContent = t;
+      if (i === 3) td.className = +r.max_drawdown > 0.1 ? "bad" : ""; if (i === 6) td.className = +r.dsr >= 0.95 ? "good" : "warn"; if (i === 0 && r.strategy === "conjunto") td.style.fontWeight = 600; });
+    const td = tr.insertCell(); const p = document.createElement("span"); p.className = "pill " + (r.passes_all_tests ? "good" : "bad"); p.textContent = r.passes_all_tests ? "sí" : "no"; td.appendChild(p);
+  });
+});
+</script>

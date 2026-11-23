@@ -9,7 +9,11 @@
 # La memoria vive en la rama `momentum-state`. Cuando se completan los 20 días,
 # el comando solo informa (no sigue operando en papel).
 #
-# Secrets opcionales: TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID.
+# Secrets opcionales (Settings > Secrets and variables > Actions):
+#   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID -> resumen diario por Telegram
+#   FREELM_WEBHOOK_URL                     -> resumen a un webhook (p. ej. Zapier -> Gmail)
+#   SUPABASE_URL / SUPABASE_KEY            -> resultados en una base de datos Supabase (ver deploy/supabase.sql)
+# El panel HTML (panel.html) se guarda en la rama momentum-state y como archivo de cada ejecución.
 name: momentum (papel, 20 días)
 
 on:
@@ -31,6 +35,9 @@ jobs:
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      FREELM_WEBHOOK_URL: ${{ secrets.FREELM_WEBHOOK_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
       BOT: examples/trading_agents/bot.py
       STATE_BRANCH: momentum-state
     steps:
@@ -48,6 +55,24 @@ jobs:
       # cada señal se registra y se puntúa días después, se opere o no (tarjeta de aciertos)
       - name: Registrar las señales del día
         run: python "$BOT" senales --record --no-history --limit 260 --dir state
+      - name: Panel HTML
+        if: always()
+        run: python "$BOT" panel --dir state
+      # datos del cuadro de mando de claude.ai (Momentum Bot Monitor): 6 JSON en la rama momentum-state
+      - name: Datos del cuadro de mando
+        if: always()
+        run: python "$BOT" dashboard-data --dir state --out state/dashboard --limit 3000
+      - name: Subir a Supabase (si está configurado)
+        if: always()
+        run: python "$BOT" sync --dir state --soft
+      - name: Guardar el panel como archivo de la ejecución
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel
+          path: state/panel.html
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Informe
         if: always()
         run: |
