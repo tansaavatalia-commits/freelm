@@ -1,0 +1,19 @@
+# GÉNESIS keeps all user data OUTSIDE the repository (see documentation/SECURITY.md).
+# These patterns are a second line of defence against committing private data.
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+genesis.toml
+.env
+data/
+logs/
+backups/
+exports/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/

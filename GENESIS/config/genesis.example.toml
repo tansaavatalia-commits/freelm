@@ -1,0 +1,23 @@
+# Esempio di configurazione di GÉNESIS.
+# Copialo come "genesis.toml" nella cartella dati (genesis status mostra quale),
+# non nel repository. Tutte le chiavi sono facoltative.
+
+[general]
+# auto | lite-4gb | standard | gpu
+# Un profilo più potente di quanto supporti l'hardware viene ignorato.
+profile = "auto"
+
+[logging]
+# DEBUG | INFO | WARNING | ERROR
+level = "INFO"
+
+[backup]
+# Quanti backup conservare (predefinito: dipende dal profilo).
+# keep = 7
+
+[permissions.grants]
+# Livello massimo (0-5) per ogni principal. I livelli 4 e 5 richiedono
+# comunque l'approvazione del proprietario per ogni singola azione.
+# owner = 5
+# system = 3
+# researcher = 1   # esempio per gli agenti della Fase 4
