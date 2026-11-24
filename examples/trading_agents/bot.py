@@ -559,6 +559,44 @@ def cmd_momentum(args: argparse.Namespace) -> int:
         state.pop("restarted")
         mp_.save(sp, state)
     track = load_track(tp)
+    xp = p(args, "momentum_exchange_track.jsonl")
+
+    def sync_exchange(data: Dict[str, List[Candle]]) -> int:
+        """Lleva el libro del exchange (testnet) a los pesos del día; una vez por día."""
+        if args.exchange != "testnet" or state.get("last_day") is None:
+            return 0
+        import momentum_exchange as mx
+        book = state.get("book")
+        if book and book.get("last_day") == state["last_day"]:
+            return 0
+        prices = {s: cs[-1].close for s, cs in data.items() if cs and cs[-1].time == state["last_day"]}
+        try:
+            ex = CcxtExecutor(args.exchange_id, testnet=True, max_capital=args.max_capital)
+            if not book:
+                book = mx.new_book(ex.starting_cash())
+                book["mode"] = "testnet"
+                print(f"Libro del exchange creado: {book['cash']:.2f} USDT (tope {args.max_capital:.0f})")
+            weights = {} if state.get("halted") else state["weights"]
+            fills = mx.rebalance(ex, book, weights, prices, state["last_day"], log=lambda m: print("  [testnet] " + m))
+        except SystemExit:
+            raise
+        except Exception as e:  # noqa: BLE001 - sin conexión: no se marca el día, se reintenta después
+            msg = f"testnet: {type(e).__name__}: {str(e)[:200]}"
+            journal.write(int(time.time() * 1000), {"tipo": "aviso", "estrategia": "momentum", "motivo": msg})
+            notifier.send("freelm momentum " + msg + " (se reintentará)")
+            print("[aviso] " + msg + " (se reintentará en la próxima ejecución)", file=sys.stderr)
+            return 1
+        state["book"] = book
+        mp_.save(sp, state)
+        for f in fills:
+            journal.write(state["last_day"], {"tipo": "orden_exchange", "estrategia": "momentum", "modo": "testnet",
+                                              "simbolo": f["symbol"], "lado": f["side"], "cantidad": f["qty"],
+                                              "precio": f["price"]})
+        with open(xp, "a") as fh:
+            fh.write(json.dumps({"t": state["last_day"] / 1000, "equity": mx.book_equity(book, prices),
+                                 "mode": "testnet"}) + "\n")
+        print(f"  [testnet] {len(fills)} órdenes; libro {mx.book_equity(book, prices):.2f} USDT")
+        return 0
 
     def show(final: bool = False) -> str:
         sm = mp_.summary(state, track)
@@ -569,6 +607,13 @@ def cmd_momentum(args: argparse.Namespace) -> int:
                  "  posiciones: " + (", ".join(f"{s} {w:.0%}" for s, w in sorted(sm["weights"].items(),
                                                                              key=lambda kv: -kv[1]))
                                      or "ninguna (liquidez)")]
+        bk = state.get("book")
+        if bk:
+            xt = load_track(xp)
+            eq_x = xt[-1]["equity"] if xt else bk["cash"]
+            lines.append(f"  EXCHANGE ({bk.get('mode', 'testnet')}): {eq_x:.2f} USDT de {bk['cash0']:.2f} "
+                         f"({eq_x / bk['cash0'] - 1:+.2%}) · posiciones: "
+                         + (", ".join(f"{s} {q:.6g}" for s, q in sorted(bk['qty'].items())) or "ninguna"))
         if sm["halted"]:
             lines.append("  DETENIDO: la caída superó el 10 %; todo en liquidez.")
         if sm["done"]:
@@ -581,7 +626,7 @@ def cmd_momentum(args: argparse.Namespace) -> int:
     if args.report:
         print(show())
         return 0
-    if state["days"] >= mp_.PAPER_DAYS and not args.continue_after:
+    if state["days"] >= mp_.PAPER_DAYS and not args.continue_after and args.exchange != "testnet":
         print(show())
         print("  (la prueba ya terminó; --continue-after para seguir en papel)")
         return 0
@@ -609,8 +654,9 @@ def cmd_momentum(args: argparse.Namespace) -> int:
     state, rep = mp_.step(state, data, fam)
     if rep["skipped"] and not rep["skipped"].startswith("detenido"):
         print(f"{mp_.utc(rep['day'])}: {rep['skipped']}")
+        rc = sync_exchange(data)
         print(show())
-        return 0
+        return rc
     for s, side, w in rep["trades"]:
         journal.write(rep["day"], {"tipo": "orden_papel", "estrategia": "momentum", "simbolo": s, "lado": side,
                                    "peso": round(w, 4)})
@@ -624,12 +670,13 @@ def cmd_momentum(args: argparse.Namespace) -> int:
     journal.write(rep["day"], {"tipo": "cartera", "estrategia": "momentum", "capital": round(state["equity"], 6),
                                "pesos": {s: round(w, 4) for s, w in state["weights"].items()},
                                "evento": rep["skipped"]})
+    rc = sync_exchange(data)
     text = show()
     print(f"{mp_.utc(rep['day'])}: " + (f"{len(rep['trades'])} cambios de cartera" if rep["trades"] else
                                        "sin cambios") + (f" · {rep['skipped']}" if rep["skipped"] else ""))
     print(text)
     notifier.send("freelm " + text)
-    return 0
+    return rc
 
 
 def cmd_senales(args: argparse.Namespace) -> int:
@@ -1163,6 +1210,11 @@ def parser() -> argparse.ArgumentParser:
     mo.add_argument("--bnb", action="store_true", help="comisiones con descuento BNB")
     mo.add_argument("--report", action="store_true", help="solo mostrar cómo va")
     mo.add_argument("--continue-after", action="store_true", help="seguir en papel después de los 20 días")
+    mo.add_argument("--exchange", default="papel", choices=["papel", "testnet"],
+                    help="testnet: además ejecuta los pesos con órdenes en la testnet del exchange (dinero ficticio)")
+    mo.add_argument("--exchange-id", default="binance")
+    mo.add_argument("--max-capital", type=float, default=1000.0,
+                    help="capital del libro en el exchange (tope duro; el bot nunca usa más)")
     mo.set_defaults(func=cmd_momentum)
 
     se = sub.add_parser("senales", help="tarjeta de aciertos de cada señal (historia y registro en vivo)")

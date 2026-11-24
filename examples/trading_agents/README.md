@@ -290,6 +290,14 @@ configuración, la prueba se reinicia sola y lo avisa, para no mezclar resultado
   La memoria se guarda en la rama `momentum-state` y avisa por Telegram si está
   configurado.
 - El diario de decisiones (`diario/`) registra cada orden en papel y la cartera.
+- `python bot.py momentum --exchange testnet` ejecuta además los pesos del día con
+  **órdenes reales en la testnet** del exchange (dinero ficticio). Usa un libro propio
+  (`--max-capital`, 1000 USDT por defecto), porque la cuenta de la testnet trae saldos
+  ficticios de muchas monedas. Primero vende y luego compra. No opera diferencias
+  menores de 6 USDT, y los ids de orden por moneda y día evitan duplicados si hay que
+  reintentar. Si la conexión falla, el día no se marca y se reintenta. En la testnet
+  sigue funcionando después de los 20 días. El asistente de Windows lo programa con
+  la opción 11 (`momentum_exchange.py`).
 - A los 20 días da el resultado y deja de operar. **20 días son pocos para
   demostrar una ventaja.** Pasar a dinero real sigue necesitando una validación
   estadística aprobada y tu autorización expresa.
