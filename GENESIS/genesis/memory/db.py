@@ -19,7 +19,8 @@ from ..errors import GenesisError, MigrationError
 from . import migrations
 
 EXPORT_FORMAT = "genesis-export"
-EXPORT_TABLES = ("projects", "tasks", "approvals", "audit_log", "agent_runs")  # FK-safe insertion order
+EXPORT_TABLES = ("projects", "tasks", "approvals", "audit_log", "agent_runs", "datasets", "experiments",
+                 "experiment_results")  # FK-safe insertion order
 BACKUP_GLOB = "genesis-*.db"
 
 

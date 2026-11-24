@@ -161,3 +161,19 @@ def test_fallback_page_when_ui_is_not_built(home, tmp_path):
         assert status == 200 and "non è stata compilata" in html
     finally:
         srv.shutdown()
+
+
+def test_lab_endpoints(server):
+    _, task, _ = call(server, "POST", "/api/tasks", {"kind": "lab.run", "payload": {"dataset": "classify-it",
+                                                                                    "subject": "classifier"}})
+    exp_id = wait_for(server, task["id"])["result"]["experiment_id"]
+    _, base_task, _ = call(server, "POST", "/api/tasks", {"kind": "lab.run", "payload": {
+        "dataset": "classify-it", "subject": "baseline:majority"}})
+    base_id = wait_for(server, base_task["id"])["result"]["experiment_id"]
+    assert len(call(server, "GET", "/api/lab/datasets")[1]) == 3
+    assert "classifier" in call(server, "GET", "/api/lab/subjects")[1]
+    assert call(server, "GET", "/api/lab/experiments")[1][0]["id"] in (exp_id, base_id)
+    detail = call(server, "GET", f"/api/lab/experiments/{exp_id}")[1]
+    assert detail["experiment"]["metrics"]["correct"] == 27 and len(detail["results"]) == 30
+    cmp = call(server, "GET", f"/api/lab/compare?a={base_id}&b={exp_id}")[1]
+    assert cmp["significant"] and call(server, "GET", "/api/lab/compare?a=x")[0] == 400

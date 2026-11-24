@@ -29,6 +29,7 @@ from .intelligence.local import LocalEngine
 from .intelligence.online import FreelmProvider
 from .intelligence.router import Router
 from .memory.db import Database, list_backups
+from .research.lab import ResearchLab
 from .security.audit import AuditLog
 from .security.permissions import OWNER, Level, PermissionManager
 from .tools.registry import ToolRegistry
@@ -67,6 +68,7 @@ class Genesis:
                                       internet_enabled=self.config.internet_enabled, mcp_servers=self.config.mcp_servers)
             self.agents = AgentRunner(self.db, self.permissions, self.router, load_agents(self.config.home), now=now,
                                       tools=self.tools)
+            self.lab = ResearchLab(self, now=now)
             self._register_builtin_tasks()
         except BaseException:
             self.close()
@@ -116,6 +118,10 @@ class Genesis:
             cancelled=ctx.cancelled), Level.READ, 'Usa uno strumento: {"tool": "files.list", "params": {}} (livello dello strumento).')
         register("agents.research", lambda ctx: self.agents.research(_s(ctx, "url"), _s(ctx, "question"), _b(ctx)),
                  Level.READ, 'Il Researcher legge una pagina web: {"url": "https://...", "question": "..."}.')
+        register("lab.run", self._lab_task, Level.READ,
+                 'Esperimento: {"dataset": "classify-it", "subject": "classifier", "seed": 0}.')
+        register("lab.reproduce", lambda ctx: self.lab.reproduce(_s(ctx, "experiment_id")), Level.READ,
+                 'Riproduce un esperimento: {"experiment_id": "..."}.')
         register("memory.backup", lambda ctx: {"path": str(self._backup())}, Level.WORKSPACE_WRITE,
                  "Crea un backup verificato del database.")
 
@@ -125,6 +131,23 @@ class Genesis:
         if not isinstance(prompt, str) or not isinstance(private, bool) or not isinstance(task_type, (str, type(None))):
             raise ValueError('payload atteso: {"prompt": "testo", "task_type": null, "private": false}')
         return self.router.route(Request(prompt, task_type, private))
+
+    def _lab_task(self, ctx: Any) -> dict[str, Any]:
+        p = ctx.payload
+        allowed = {"dataset", "subject", "seed", "sample", "allow_remote", "name", "objective", "hypothesis",
+                   "baseline_id"}
+        if set(p) - allowed:
+            raise ValueError(f"chiavi non ammesse: {', '.join(sorted(set(p) - allowed))}")
+        types = {"seed": int, "sample": (int, type(None)), "allow_remote": bool, "name": (str, type(None)),
+                 "objective": str, "hypothesis": str, "baseline_id": (str, type(None))}
+        for key, kind in types.items():
+            if key in p and (not isinstance(p[key], kind) or (kind is int and isinstance(p[key], bool))):
+                raise ValueError(f"tipo non valido per {key}")
+        exp = self.lab.run(dataset=_s(ctx, "dataset"), subject=_s(ctx, "subject"), seed=p.get("seed", 0),
+                           sample=p.get("sample"), allow_remote=p.get("allow_remote", False), name=p.get("name"),
+                           objective=p.get("objective", ""), hypothesis=p.get("hypothesis", ""),
+                           baseline_id=p.get("baseline_id"))
+        return {"experiment_id": exp["id"], "metrics": exp["metrics"], "evaluation": exp["evaluation"]}
 
     # -- memory operations ------------------------------------------------------
 

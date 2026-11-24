@@ -84,6 +84,10 @@ class Config:
         return self.data_dir / "genesis.db"
 
     @property
+    def reports_dir(self) -> Path:
+        return self.home / "reports"
+
+    @property
     def workspace_dir(self) -> Path:
         return self.home / "workspace"
 

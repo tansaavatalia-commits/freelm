@@ -222,6 +222,11 @@ class ApiServer:
             ("GET", r"/api/engines", self._engines),
             ("GET", r"/api/agents", self._agents),
             ("GET", r"/api/tools", self._tools),
+            ("GET", r"/api/lab/datasets", self._lab_datasets),
+            ("GET", r"/api/lab/subjects", self._lab_subjects),
+            ("GET", r"/api/lab/experiments", self._lab_experiments),
+            ("GET", rf"/api/lab/experiments/(?P<exp_id>{HEX_ID})", self._lab_experiment),
+            ("GET", r"/api/lab/compare", self._lab_compare),
             ("GET", r"/api/agent-runs", self._agent_runs),
         ]
         return [(m, re.compile(p), fn) for m, p, fn in table]
@@ -345,6 +350,26 @@ class ApiServer:
 
     def _engines(self, **_: Any) -> tuple[int, Any]:
         return 200, self.core.run(lambda g: g.router.describe())
+
+    def _lab_datasets(self, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: g.lab.datasets.list())
+
+    def _lab_subjects(self, **_: Any) -> tuple[int, Any]:
+        from ..research.subjects import available
+        return 200, self.core.run(available)
+
+    def _lab_experiments(self, query: dict[str, list[str]], **_: Any) -> tuple[int, Any]:
+        limit = _int_param(query, "limit", 50, 1, 200)
+        return 200, self.core.run(lambda g: g.lab.list(limit))
+
+    def _lab_experiment(self, exp_id: str, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: {"experiment": g.lab.get(exp_id), "results": g.lab.results(exp_id)})
+
+    def _lab_compare(self, query: dict[str, list[str]], **_: Any) -> tuple[int, Any]:
+        a, b = _param(query, "a"), _param(query, "b")
+        if not a or not b:
+            raise ApiError(400, "servono i parametri a e b")
+        return 200, self.core.run(lambda g: g.lab.compare(a, b))
 
     def _tools(self, **_: Any) -> tuple[int, Any]:
         return 200, self.core.run(lambda g: [s.manifest() for s in g.tools.specs()])

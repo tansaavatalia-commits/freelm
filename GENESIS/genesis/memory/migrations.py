@@ -91,6 +91,60 @@ CREATE TABLE agent_runs (
 CREATE INDEX idx_agent_runs_created ON agent_runs (created_at);
 """,
     ),
+    (
+        3,
+        "research lab: datasets, experiments, per-item results (Phase 6)",
+        """
+CREATE TABLE datasets (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    version     TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    hash        TEXT NOT NULL,
+    items       TEXT NOT NULL,
+    builtin     INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL,
+    UNIQUE (name, version)
+);
+CREATE TABLE experiments (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    objective       TEXT NOT NULL DEFAULT '',
+    hypothesis      TEXT NOT NULL DEFAULT '',
+    dataset_id      TEXT NOT NULL REFERENCES datasets (id),
+    dataset_hash    TEXT NOT NULL,
+    subject         TEXT NOT NULL,
+    subject_version TEXT NOT NULL,
+    deterministic   INTEGER NOT NULL,
+    config          TEXT NOT NULL,
+    config_hash     TEXT NOT NULL,
+    seed            INTEGER NOT NULL,
+    environment     TEXT NOT NULL,
+    status          TEXT NOT NULL CHECK (status IN ('running', 'completed', 'failed', 'interrupted')),
+    metrics         TEXT,
+    resources       TEXT,
+    errors          TEXT,
+    evaluation      TEXT,
+    baseline_id     TEXT,
+    reproduced_from TEXT,
+    created_at      TEXT NOT NULL,
+    finished_at     TEXT
+);
+CREATE INDEX idx_experiments_created ON experiments (created_at);
+CREATE TABLE experiment_results (
+    experiment_id TEXT NOT NULL REFERENCES experiments (id) ON DELETE CASCADE,
+    item_idx      INTEGER NOT NULL,
+    input         TEXT NOT NULL,
+    expected      TEXT NOT NULL,
+    output        TEXT,
+    correct       INTEGER NOT NULL,
+    latency_ms    REAL NOT NULL,
+    engine        TEXT,
+    error         TEXT,
+    PRIMARY KEY (experiment_id, item_idx)
+);
+""",
+    ),
 )
 
 

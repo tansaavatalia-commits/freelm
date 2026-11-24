@@ -259,6 +259,57 @@ def cmd_tools(g: Genesis, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_lab(g: Genesis, args: argparse.Namespace) -> int:
+    lab = g.lab
+    if args.action == "datasets":
+        for d in lab.datasets.list():
+            print(f"{d['ref']:<18} {d['items']:>4} elementi  sha256 {d['hash'][:12]}  {d['description']}")
+        return 0
+    if args.action == "import":
+        info = lab.datasets.import_file(args.path)
+        print(f"Dataset importato: {info['ref']} ({info['items']} elementi, sha256 {info['hash'][:12]})")
+        return 0
+    if args.action == "list":
+        for e in lab.list(args.limit):
+            m = e["metrics"] or {}
+            acc = f"{m.get('correct', '?')}/{m.get('n', '?')}" if m else "—"
+            print(f"{e['id'][:8]}  {e['status']:<11} {e['subject']:<18} {e['dataset']:<16} {acc:>7}  {e['created_at'][:19]}")
+        return 0
+    if args.action == "show":
+        _json(lab.get(args.id))
+        return 0
+    if args.action == "compare":
+        c = lab.compare(args.a, args.b)
+        print(c["verdict"])
+        if c["comparable"]:
+            print(f"A {c['a_subject']}: {c['accuracy_a']:.1%} · B {c['b_subject']}: {c['accuracy_b']:.1%} · "
+                  f"{c['paired_items']} elementi appaiati · solo A {c['only_a_correct']} · solo B {c['only_b_correct']} · "
+                  f"IC95% {c['diff_ci95']}")
+        return 0
+    if args.action == "report":
+        print(f"Rapporto scritto: {lab.report(args.id, args.compare)}")
+        return 0
+    if args.action == "reproduce":
+        payload, kind = {"experiment_id": lab.resolve(args.id)}, "lab.reproduce"
+    else:
+        payload = {"dataset": args.dataset, "subject": args.subject, "seed": args.seed, "sample": args.sample,
+                   "allow_remote": args.allow_remote, "name": args.name, "objective": args.objective,
+                   "hypothesis": args.hypothesis, "baseline_id": args.baseline}
+        kind = "lab.run"
+    task = g.tasks.submit(kind, payload, principal=OWNER)
+    try:
+        _, done = TaskWorker(g).run_once()
+    except GenesisError as exc:  # a running 'genesis serve' will execute it
+        print(f"Esperimento in coda ({task['id']}): {exc}")
+        return 0
+    finished = next((t for t in done if t["id"] == task["id"]), g.tasks.get(task["id"]))
+    if finished["status"] != "succeeded":
+        print(f"errore: {finished['error']}", file=sys.stderr)
+        return 1
+    _json(finished["result"])
+    return 0
+
+
 def cmd_backup_create(g: Genesis, args: argparse.Namespace) -> int:
     print(f"Backup creato e verificato: {g.create_backup()}")
     return 0
@@ -415,6 +466,39 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--params", default="{}", help="oggetto JSON")
     s.add_argument("--approval", help="id di un'approvazione (strumenti di livello 4-5)")
     s.set_defaults(func=cmd_tools)
+
+    lab = sub.add_parser("lab", help="Research Lab: dataset, esperimenti, confronti").add_subparsers(
+        dest="action", required=True)
+    lab.add_parser("datasets", help="dataset disponibili").set_defaults(func=cmd_lab)
+    s = lab.add_parser("import", help="importa un dataset JSON")
+    s.add_argument("path", type=Path)
+    s.set_defaults(func=cmd_lab)
+    s = lab.add_parser("run", help="esegue un esperimento")
+    s.add_argument("--dataset", required=True)
+    s.add_argument("--subject", required=True, help="classifier, baseline:majority, local.math, router, council, agent:<id>")
+    s.add_argument("--seed", type=int, default=0)
+    s.add_argument("--sample", type=int)
+    s.add_argument("--allow-remote", action="store_true", help="consente il motore online (consuma quota gratuita)")
+    s.add_argument("--name")
+    s.add_argument("--objective", default="")
+    s.add_argument("--hypothesis", default="")
+    s.add_argument("--baseline", help="id dell'esperimento di riferimento da confrontare")
+    s.set_defaults(func=cmd_lab)
+    s = lab.add_parser("list", help="ultimi esperimenti")
+    s.add_argument("--limit", type=int, default=20)
+    s.set_defaults(func=cmd_lab)
+    for name in ("show", "reproduce"):
+        s = lab.add_parser(name, help="dettagli" if name == "show" else "riesegue con stessa configurazione e seed")
+        s.add_argument("id")
+        s.set_defaults(func=cmd_lab)
+    s = lab.add_parser("compare", help="confronto appaiato A contro B")
+    s.add_argument("a")
+    s.add_argument("b")
+    s.set_defaults(func=cmd_lab)
+    s = lab.add_parser("report", help="rapporto Markdown in <home>/reports")
+    s.add_argument("id")
+    s.add_argument("--compare", help="id dell'esperimento di riferimento")
+    s.set_defaults(func=cmd_lab)
 
     s = sub.add_parser("online", help="accende o spegne il motore online (OpenRouter gratuito)")
     s.add_argument("action", choices=["enable", "disable"])

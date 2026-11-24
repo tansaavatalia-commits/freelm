@@ -261,11 +261,26 @@ def process_memory_mb() -> float | None:
             return None
         return None
     if platform.system() == "Windows":
-        return _win_process_memory()
+        counters = _win_process_memory()
+        return counters[0] if counters else None
     return None
 
 
-def _win_process_memory() -> float | None:
+def process_peak_memory_mb() -> float | None:
+    """Peak resident memory of this process since it started (MB)."""
+    if platform.system() == "Windows":
+        counters = _win_process_memory()
+        return counters[1] if counters else None
+    try:
+        import resource
+
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    except (ImportError, OSError):
+        return None
+    return round(peak / (1024 * 1024 if platform.system() == "Darwin" else 1024), 1)
+
+
+def _win_process_memory() -> tuple[float, float] | None:
     import ctypes
     from ctypes import wintypes
 
@@ -295,7 +310,7 @@ def _win_process_memory() -> float | None:
             return None
     except (AttributeError, OSError):
         return None
-    return round(counters.WorkingSetSize / MB, 1)
+    return round(counters.WorkingSetSize / MB, 1), round(counters.PeakWorkingSetSize / MB, 1)
 
 
 # -- macOS -----------------------------------------------------------------------
