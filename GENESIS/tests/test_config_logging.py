@@ -15,7 +15,8 @@ from .conftest import write_config
 def test_defaults_without_file(home):
     cfg = load_config(home)
     assert cfg.profile == "auto" and cfg.log_level == "INFO" and cfg.backup_keep is None
-    assert dict(cfg.grants) == {"owner": 5, "system": 3}
+    assert cfg.grants["owner"] == 5 and cfg.grants["system"] == 3 and cfg.grants["agent.analyst"] == 1
+    assert max(v for k, v in cfg.grants.items() if k.startswith("agent.")) == 1
     assert cfg.db_path == home / "data" / "genesis.db"
 
 

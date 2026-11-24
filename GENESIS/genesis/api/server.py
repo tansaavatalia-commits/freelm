@@ -220,6 +220,8 @@ class ApiServer:
             ("GET", r"/api/audit", self._audit),
             ("GET", r"/api/backups", self._backups),
             ("GET", r"/api/engines", self._engines),
+            ("GET", r"/api/agents", self._agents),
+            ("GET", r"/api/agent-runs", self._agent_runs),
         ]
         return [(m, re.compile(p), fn) for m, p, fn in table]
 
@@ -342,6 +344,13 @@ class ApiServer:
 
     def _engines(self, **_: Any) -> tuple[int, Any]:
         return 200, self.core.run(lambda g: g.router.describe())
+
+    def _agents(self, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: g.agents.describe())
+
+    def _agent_runs(self, query: dict[str, list[str]], **_: Any) -> tuple[int, Any]:
+        limit = _int_param(query, "limit", 20, 1, 200)
+        return 200, self.core.run(lambda g: g.agents.runs(limit))
 
     def _backups(self, **_: Any) -> tuple[int, Any]:
         def collect(g: Genesis) -> list[dict[str, Any]]:

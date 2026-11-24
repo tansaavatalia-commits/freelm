@@ -20,7 +20,7 @@ def run(home, *args):
 def test_status_and_doctor(home, capsys):
     assert run(home, "status", "--json") == 0
     status = json.loads(capsys.readouterr().out)
-    assert status["schema_version"] == 1 and status["audit_chain_ok"] and [e["id"] for e in status["engines"]] == ["local", "freelm"]
+    assert status["schema_version"] >= 2 and status["audit_chain_ok"] and [e["id"] for e in status["engines"]] == ["local", "freelm"]
     assert run(home, "doctor") == 0
     out = capsys.readouterr().out
     assert "Profilo:" in out and "[OK] Integrità del database" in out

@@ -21,7 +21,9 @@ from ..errors import ConfigError
 CONFIG_FILENAME = "genesis.toml"
 PROFILE_CHOICES = ("auto", "lite-4gb", "standard", "gpu")
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
-DEFAULT_GRANTS: Mapping[str, int] = MappingProxyType({"owner": 5, "system": 3})
+# Built-in agents may only read/analyse (level 1). Agents defined by the owner start at 0.
+DEFAULT_GRANTS: Mapping[str, int] = MappingProxyType({"owner": 5, "system": 3, **{f"agent.{a}": 1 for a in (
+    "director", "researcher", "developer", "analyst", "creator", "manager", "verifier", "security")}})
 PRINCIPAL_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
 _KNOWN_KEYS = {
     "general": {"profile"},

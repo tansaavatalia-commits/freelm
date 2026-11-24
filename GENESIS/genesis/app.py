@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .agents.catalog import load_agents
+from .agents.runtime import AgentRunner
 from .core.clock import Now, file_stamp, utcnow
 from .core.config import Config, load_config
 from .core.events import EventBus
@@ -60,6 +62,7 @@ class Genesis:
             self.tasks = TaskManager(self.db, self.bus, self.permissions, self.log.getChild("tasks"), now=now)
             self.router = Router([LocalEngine(), FreelmProvider()], remote_enabled=self.config.remote_enabled,
                                  remote_free_verified=self.config.remote_free_verified, audit=self.audit)
+            self.agents = AgentRunner(self.db, self.permissions, self.router, load_agents(self.config.home), now=now)
             self._register_builtin_tasks()
         except BaseException:
             self.close()
@@ -98,6 +101,12 @@ class Genesis:
                  "Controlla l'integrità del database.")
         register("intelligence.ask", self._ask_task, Level.READ,
                  "Chiede al router dei motori: payload {\"prompt\": \"...\", \"private\": false}.")
+        register("agents.run", lambda ctx: self.agents.run(_s(ctx, "agent"), _s(ctx, "goal"), _b(ctx)), Level.READ,
+                 'Esegue un agente: {"agent": "analyst", "goal": "..."}.')
+        register("agents.direct", lambda ctx: self.agents.direct(_s(ctx, "goal"), _b(ctx)), Level.READ,
+                 'Il Director scompone e delega: {"goal": "1. ... 2. ..."}.')
+        register("agents.council", lambda ctx: self.agents.council(_s(ctx, "question"), ctx.payload.get("members"), _b(ctx)),
+                 Level.READ, 'Consiglio di specialisti: {"question": "..."}.')
         register("memory.backup", lambda ctx: {"path": str(self._backup())}, Level.WORKSPACE_WRITE,
                  "Crea un backup verificato del database.")
 
@@ -185,6 +194,20 @@ class Genesis:
             "non rilevata: uso il profilo prudente" if self.hardware.ram_total_mb is None
             else f"{self.hardware.ram_total_mb} MB", warn_only=True)
         return checks
+
+
+def _s(ctx: Any, key: str) -> str:
+    value = ctx.payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"payload: '{key}' deve essere un testo non vuoto")
+    return value
+
+
+def _b(ctx: Any) -> bool:
+    value = ctx.payload.get("private", False)
+    if not isinstance(value, bool):
+        raise ValueError("payload: 'private' deve essere true o false")
+    return value
 
 
 def import_data(home: Path | str | None, source: Path | str) -> dict[str, int]:

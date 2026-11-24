@@ -72,6 +72,25 @@ CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log
 BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
 """,
     ),
+    (
+        2,
+        "agent runs (Phase 4)",
+        """
+CREATE TABLE agent_runs (
+    id            TEXT PRIMARY KEY,
+    agent_id      TEXT NOT NULL,
+    agent_version TEXT NOT NULL,
+    mode          TEXT NOT NULL CHECK (mode IN ('agent', 'director', 'council')),
+    goal          TEXT NOT NULL,
+    status        TEXT NOT NULL CHECK (status IN ('running', 'succeeded', 'failed')),
+    steps         TEXT,
+    output        TEXT,
+    created_at    TEXT NOT NULL,
+    finished_at   TEXT
+);
+CREATE INDEX idx_agent_runs_created ON agent_runs (created_at);
+""",
+    ),
 )
 
 

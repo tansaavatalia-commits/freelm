@@ -219,6 +219,28 @@ def cmd_online(g: Genesis, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_agents(g: Genesis, args: argparse.Namespace) -> int:
+    if args.action == "list":
+        for a in g.agents.describe():
+            print(f"{a['id']:<12} livello {a['level']}  {a['name']} ({a['role']}) - tipi: {', '.join(a['task_types'])}")
+        return 0
+    if args.action == "runs":
+        for r in g.agents.runs(args.limit):
+            print(f"{r['created_at'][:19]}  {r['mode']:<8} {r['agent_id']:<11} {r['status']:<9} {r['goal'][:60]}")
+        return 0
+    if args.action == "run":
+        result = g.agents.run(args.agent, args.text, args.private)
+    elif args.action == "direct":
+        result = g.agents.direct(args.text, args.private)
+    else:
+        result = g.agents.council(args.text, args.members.split(",") if args.members else None, args.private)
+        c = result["council"]
+        print(f"[consiglio: {c['answered']}/{len(c['members'])} risposte · accordo {c['agreement']} · "
+              f"contraddizioni: {'; '.join(c['contradictions']) or 'nessuna'}]")
+    print(result["output"])
+    return 0 if result["ok"] else 1
+
+
 def cmd_backup_create(g: Genesis, args: argparse.Namespace) -> int:
     print(f"Backup creato e verificato: {g.create_backup()}")
     return 0
@@ -349,6 +371,25 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--type", choices=TASK_TYPES, help="tipo di richiesta (predefinito: classificazione automatica)")
     s.add_argument("--private", action="store_true", help="la richiesta non lascia questo computer")
     s.set_defaults(func=cmd_ask)
+    agents = sub.add_parser("agents", help="agenti: elenco, esecuzione, Director, Consiglio").add_subparsers(
+        dest="action", required=True)
+    agents.add_parser("list", help="agenti disponibili").set_defaults(func=cmd_agents)
+    s = agents.add_parser("runs", help="ultime esecuzioni")
+    s.add_argument("--limit", type=int, default=20)
+    s.set_defaults(func=cmd_agents)
+    s = agents.add_parser("run", help="esegue un agente")
+    s.add_argument("agent")
+    s.add_argument("text")
+    s.add_argument("--private", action="store_true")
+    s.set_defaults(func=cmd_agents)
+    for name, text in (("direct", "il Director scompone l'obiettivo e delega"), ("council", "consiglio di specialisti")):
+        s = agents.add_parser(name, help=text)
+        s.add_argument("text")
+        s.add_argument("--private", action="store_true")
+        if name == "council":
+            s.add_argument("--members", help="es. researcher,analyst,manager")
+        s.set_defaults(func=cmd_agents)
+
     s = sub.add_parser("online", help="accende o spegne il motore online (OpenRouter gratuito)")
     s.add_argument("action", choices=["enable", "disable"])
     s.add_argument("--confirm", action="store_true", help="conferma esplicita del proprietario")

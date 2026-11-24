@@ -30,7 +30,7 @@ def db(tmp_path):
 
 def test_migrate_is_idempotent_and_uses_wal(tmp_path):
     d = Database(tmp_path / "g.db")
-    assert d.migrate() == [1] and d.migrate() == [] and d.schema_version == migrations.latest()
+    assert d.migrate() == list(range(1, migrations.latest() + 1)) and d.migrate() == [] and d.schema_version == migrations.latest()
     assert d.conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert d.integrity_ok()
     d.close()
@@ -45,12 +45,13 @@ def test_newer_schema_is_refused(tmp_path):
 
 
 def test_failed_migration_rolls_back(tmp_path, monkeypatch):
-    bad = migrations.MIGRATIONS + ((2, "broken", "CREATE TABLE extra (x INTEGER); SELECT * FROM missing_table;"),)
+    good = migrations.latest()
+    bad = migrations.MIGRATIONS + ((good + 1, "broken", "CREATE TABLE extra (x INTEGER); SELECT * FROM missing_table;"),)
     monkeypatch.setattr(migrations, "MIGRATIONS", bad)
     d = Database(tmp_path / "g.db")
     with pytest.raises(MigrationError):
         d.migrate()
-    assert d.schema_version == 1  # v1 applied, v2 rolled back entirely
+    assert d.schema_version == good  # real migrations applied, the broken one rolled back entirely
     assert d.conn.execute("SELECT name FROM sqlite_master WHERE name = 'extra'").fetchone() is None
     d.close()
 
@@ -134,7 +135,7 @@ def test_import_rejects_foreign_or_malicious_files(db, tmp_path):
     bad.write_text(json.dumps({"format": "other"}), encoding="utf-8")
     with pytest.raises(GenesisError):
         db.import_json(bad)
-    evil = {"format": "genesis-export", "schema_version": 1,
+    evil = {"format": "genesis-export", "schema_version": migrations.latest(),
             "tables": {"projects": [{"id": "x", "name); DROP TABLE tasks; --": "y"}]}}
     bad.write_text(json.dumps(evil), encoding="utf-8")
     with pytest.raises(GenesisError):
