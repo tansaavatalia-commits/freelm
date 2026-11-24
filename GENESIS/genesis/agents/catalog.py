@@ -30,14 +30,17 @@ class AgentConfig:
     success_criteria: str
     max_steps: int = 1
     builtin: bool = False
+    tools: tuple[str, ...] = ()  # tool allowlist: no agent gets general access
 
     @property
     def principal(self) -> str:
         return f"agent.{self.id}"
 
 
-def _a(id_: str, name: str, role: str, objective: str, instructions: str, types: tuple[str, ...], criteria: str) -> AgentConfig:
-    return AgentConfig(id_, name, "1.0", role, objective, instructions, types, criteria, builtin=True)
+def _a(id_: str, name: str, role: str, objective: str, instructions: str, types: tuple[str, ...], criteria: str,
+       tools: tuple[str, ...] = ()) -> AgentConfig:
+    return AgentConfig(id_, name, "1.1" if tools else "1.0", role, objective, instructions, types, criteria,
+                       builtin=True, tools=tools)
 
 
 BUILTIN: tuple[AgentConfig, ...] = (
@@ -46,13 +49,13 @@ BUILTIN: tuple[AgentConfig, ...] = (
        "ogni sotto-compito ha un responsabile e un esito"),
     _a("researcher", "Researcher", "ricerca", "Raccogliere e riassumere informazioni.",
        "Rispondi in modo fattuale e conciso. Se non sei sicuro, dillo esplicitamente.", ("chat", "reasoning"),
-       "risposta pertinente, con le incertezze dichiarate"),
+       "risposta pertinente, con le incertezze dichiarate", ("web.fetch", "files.list", "files.read", "text.search")),
     _a("developer", "Developer", "sviluppo", "Scrivere e spiegare codice.",
        "Rispondi con codice corretto e minimo, poi una spiegazione breve.", ("code",),
-       "codice sintatticamente valido e spiegato"),
+       "codice sintatticamente valido e spiegato", ("files.list", "files.read", "files.write", "text.search")),
     _a("analyst", "Analyst", "analisi", "Calcoli, numeri e analisi strutturate.",
        "Mostra il ragionamento in passi numerati e dai il risultato finale su una riga.",
-       ("math", "text.stats", "reasoning"), "risultato verificabile"),
+       ("math", "text.stats", "reasoning"), "risultato verificabile", ("files.read", "text.search")),
     _a("creator", "Creator", "creazione", "Testi creativi e proposte.",
        "Scrivi in italiano chiaro, originale, senza copiare opere esistenti.", ("chat",),
        "testo originale e coerente con la richiesta"),
@@ -85,8 +88,11 @@ def parse_agent(path: Path) -> AgentConfig:
     except (OSError, ValueError) as exc:
         raise GenesisError(f"{path}: definizione di agente illeggibile ({exc})") from exc
     required = {"id", "name", "version", "role", "objective", "instructions", "task_types", "success_criteria"}
-    if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - {"max_steps"}:
-        raise GenesisError(f"{path}: campi richiesti {sorted(required)} (facoltativo: max_steps)")
+    if not isinstance(raw, dict) or not required <= set(raw) or set(raw) - required - {"max_steps", "tools"}:
+        raise GenesisError(f"{path}: campi richiesti {sorted(required)} (facoltativi: max_steps, tools)")
+    tools = raw.get("tools", [])
+    if not isinstance(tools, list) or not all(isinstance(t, str) and t for t in tools):
+        raise GenesisError(f"{path}: tools deve essere un elenco di nomi di strumenti")
     if not isinstance(raw["id"], str) or not ID_RE.match(raw["id"]):
         raise GenesisError(f"{path}: id non valido")
     types = raw["task_types"]
@@ -98,4 +104,4 @@ def parse_agent(path: Path) -> AgentConfig:
     text = {k: raw[k] for k in required - {"task_types"}}
     if not all(isinstance(v, str) and v.strip() for v in text.values()):
         raise GenesisError(f"{path}: i campi di testo non possono essere vuoti")
-    return AgentConfig(**text, task_types=tuple(types), max_steps=steps)
+    return AgentConfig(**text, task_types=tuple(types), max_steps=steps, tools=tuple(tools))

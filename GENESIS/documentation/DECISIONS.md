@@ -25,3 +25,5 @@
 | D-21 | Motore online = solo OpenRouter, solo modelli a prezzo zero; verifica della gratuità delegata dal proprietario a Claude e registrata in COST_POLICY | richiesta del proprietario del 2026-11-24 | adottata |
 | D-22 | Agenti predefiniti a livello 1; agenti nuovi a livello 0 finché il proprietario non li abilita | nessun agente può ampliare i propri permessi | adottata |
 | D-23 | Director e Consiglio v0 basati su regole (scomposizione, confronto, accordo), senza modello coordinatore | trasparenti e misurabili; da confrontare con una baseline nel Research Lab | adottata |
+| D-24 | Strumenti in sandbox `<home>/workspace`; internet e MCP spenti finché il proprietario non li attiva | permessi minimi | adottata |
+| D-25 | Server MCP avviati per una sola richiesta, non residenti | RAM limitata (4 GB) e nessun processo dimenticato | adottata |

@@ -241,6 +241,24 @@ def cmd_agents(g: Genesis, args: argparse.Namespace) -> int:
     return 0 if result["ok"] else 1
 
 
+def cmd_tools(g: Genesis, args: argparse.Namespace) -> int:
+    if args.action == "list":
+        for s in g.tools.specs():
+            state = "" if s.enabled else f"  [spento: {s.note}]"
+            print(f"{s.name:<24} livello {s.level}  {s.description}{state}")
+        return 0
+    try:
+        params = json.loads(args.params)
+    except ValueError as exc:
+        print(f"errore: --params non è JSON valido ({exc})", file=sys.stderr)
+        return 2
+    result = g.tools.call(OWNER, args.name, params, approval_id=args.approval)
+    if result["untrusted"]:
+        print("[dati esterni NON FIDATI]")
+    _json(result["result"])
+    return 0
+
+
 def cmd_backup_create(g: Genesis, args: argparse.Namespace) -> int:
     print(f"Backup creato e verificato: {g.create_backup()}")
     return 0
@@ -389,6 +407,14 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "council":
             s.add_argument("--members", help="es. researcher,analyst,manager")
         s.set_defaults(func=cmd_agents)
+
+    tools = sub.add_parser("tools", help="strumenti: elenco ed esecuzione").add_subparsers(dest="action", required=True)
+    tools.add_parser("list", help="strumenti, livelli e stato").set_defaults(func=cmd_tools)
+    s = tools.add_parser("call", help="esegue uno strumento come proprietario")
+    s.add_argument("name")
+    s.add_argument("--params", default="{}", help="oggetto JSON")
+    s.add_argument("--approval", help="id di un'approvazione (strumenti di livello 4-5)")
+    s.set_defaults(func=cmd_tools)
 
     s = sub.add_parser("online", help="accende o spegne il motore online (OpenRouter gratuito)")
     s.add_argument("action", choices=["enable", "disable"])

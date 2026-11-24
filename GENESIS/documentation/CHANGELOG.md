@@ -2,6 +2,19 @@
 
 (Il `CHANGELOG.md` alla radice del repository riguarda `freelm`.)
 
+## 0.5.0 — 2026-11-24 — Fase 5: Strumenti e MCP
+
+- Ogni strumento dichiara nome, descrizione, livello, rischi, costi, parametri, output e annullamento;
+  ogni chiamata passa dall'autorizzazione centrale ed entra nell'audit.
+- Strumenti locali confinati in `<home>/workspace` (anche contro i symlink): `files.list/read/write`,
+  `text.search`; la scrittura è livello 2 e non sovrascrive senza `overwrite`.
+- `web.fetch`: spento di default; solo http(s) pubblici, indirizzi locali/privati rifiutati anche nei
+  redirect, 1 MB / 15 s, testo estratto e segnato come **non fidato**.
+- Client MCP (stdio, JSON-RPC): server dichiarati solo dal proprietario, avviati solo per una richiesta,
+  livello 3 (4-5 con approvazione), timeout con chiusura del processo.
+- Agenti con elenco di strumenti consentiti; `research`: il Researcher legge una pagina come dati
+  non fidati delimitati. `genesis tools list/call`, `GET /api/tools`; 144 test.
+
 ## 0.4.0 — 2026-11-24 — Fase 4: Agenti
 
 - Agent Factory: 8 agenti predefiniti versionati (Director, Researcher, Developer, Analyst, Creator,

@@ -221,6 +221,7 @@ class ApiServer:
             ("GET", r"/api/backups", self._backups),
             ("GET", r"/api/engines", self._engines),
             ("GET", r"/api/agents", self._agents),
+            ("GET", r"/api/tools", self._tools),
             ("GET", r"/api/agent-runs", self._agent_runs),
         ]
         return [(m, re.compile(p), fn) for m, p, fn in table]
@@ -344,6 +345,9 @@ class ApiServer:
 
     def _engines(self, **_: Any) -> tuple[int, Any]:
         return 200, self.core.run(lambda g: g.router.describe())
+
+    def _tools(self, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: [s.manifest() for s in g.tools.specs()])
 
     def _agents(self, **_: Any) -> tuple[int, Any]:
         return 200, self.core.run(lambda g: g.agents.describe())

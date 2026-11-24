@@ -14,13 +14,14 @@ import uuid
 from typing import Any
 
 from ..core.clock import Now, utcnow
-from ..errors import GenesisError
+from ..errors import GenesisError, PermissionDenied
 from ..intelligence.base import Request
 from ..intelligence.local import LocalEngine, classify, evaluate, extract_expression
 from ..intelligence.router import Router
 from ..memory.db import Database
 from ..security.permissions import Level, PermissionManager
 from ..security.redact import redact
+from ..tools.registry import ToolRegistry, untrusted_block
 from .catalog import AgentConfig
 
 MAX_OUTPUT = 20_000
@@ -66,8 +67,9 @@ def _similarity(a: str, b: str) -> float:
 
 class AgentRunner:
     def __init__(self, db: Database, permissions: PermissionManager, router: Router,
-                 agents: dict[str, AgentConfig], now: Now = utcnow) -> None:
+                 agents: dict[str, AgentConfig], now: Now = utcnow, tools: ToolRegistry | None = None) -> None:
         self.db, self.permissions, self.router, self.agents, self._now = db, permissions, router, agents, now
+        self.tools = tools
 
     def get(self, agent_id: str) -> AgentConfig:
         if agent_id not in self.agents:
@@ -77,13 +79,13 @@ class AgentRunner:
     def describe(self) -> list[dict[str, Any]]:
         return [{"id": a.id, "name": a.name, "version": a.version, "role": a.role, "objective": a.objective,
                  "task_types": list(a.task_types), "success_criteria": a.success_criteria, "builtin": a.builtin,
-                 "level": self.permissions.grant_of(a.principal)} for a in self.agents.values()]
+                 "level": self.permissions.grant_of(a.principal), "tools": list(a.tools)} for a in self.agents.values()]
 
     # -- single agent -------------------------------------------------------------
 
-    def step(self, agent: AgentConfig, goal: str, private: bool = False) -> dict[str, Any]:
+    def step(self, agent: AgentConfig, goal: str, private: bool = False, task_type: str | None = None) -> dict[str, Any]:
         """One model call by one agent, plus deterministic checks. Never raises for engine failures."""
-        task_type = classify(goal)
+        task_type = task_type or classify(goal)
         if task_type not in agent.task_types:
             return {"agent": agent.id, "task_type": task_type, "ok": False,
                     "error": f"{agent.name} non gestisce '{task_type}' (gestisce: {', '.join(agent.task_types)})"}
@@ -103,6 +105,28 @@ class AgentRunner:
         agent = self.get(agent_id)
         run_id = self._start(agent, "agent", goal)
         step = self.step(agent, goal, private)
+        return self._finish(run_id, [step], step.get("output") or step.get("error", ""), step["ok"])
+
+    # -- tools --------------------------------------------------------------------
+
+    def use_tool(self, agent_id: str, tool: str, params: dict[str, Any] | None = None,
+                 approval_id: str | None = None) -> dict[str, Any]:
+        """An agent may use only the tools on its allowlist, and only within its own permission level."""
+        agent = self.get(agent_id)
+        if self.tools is None or tool not in agent.tools:
+            raise PermissionDenied(f"{agent.name} non è autorizzato allo strumento {tool}")
+        return self.tools.call(agent.principal, tool, params or {}, approval_id=approval_id)
+
+    def research(self, url: str, question: str, private: bool = False) -> dict[str, Any]:
+        """Researcher reads a web page (untrusted data) and answers a question about it."""
+        researcher = self.get("researcher")
+        run_id = self._start(researcher, "agent", f"{question} [{url}]")
+        try:
+            page = self.use_tool("researcher", "web.fetch", {"url": url})
+        except GenesisError as exc:
+            return self._finish(run_id, [{"agent": "researcher", "ok": False, "error": str(exc)}], str(exc), False)
+        goal = f"{question}\n\n{untrusted_block(page['result']['text'], url)}"
+        step = self.step(researcher, goal, private, task_type="chat")
         return self._finish(run_id, [step], step.get("output") or step.get("error", ""), step["ok"])
 
     # -- Director -----------------------------------------------------------------

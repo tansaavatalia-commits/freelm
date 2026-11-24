@@ -21,3 +21,19 @@ level = "INFO"
 # owner = 5
 # system = 3
 # researcher = 1   # esempio per gli agenti della Fase 4
+
+[intelligence]
+# Motore online: OpenRouter, solo modelli gratuiti. Più semplice: genesis online enable --confirm
+# remote_enabled = true
+# remote_free_verified = true
+
+[tools]
+# Strumento web.fetch (pagine pubbliche; indirizzi locali/privati sempre rifiutati)
+# internet_enabled = true
+
+# Server MCP (stdio). Il programma viene avviato solo per la durata di una richiesta.
+# level: 3 (esecuzione) predefinito; 4-5 richiedono un'approvazione per ogni chiamata.
+# [mcp.servers.esempio]
+# command = ["py", "-3", "C:/percorso/server.py"]
+# level = 3
+# timeout = 30

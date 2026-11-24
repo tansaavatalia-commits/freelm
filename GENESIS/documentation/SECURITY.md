@@ -74,3 +74,16 @@ Per vulnerabilità in `freelm` vale il `SECURITY.md` alla radice del repository.
   backup resta solo da riga di comando con `--confirm`.
 - Su Windows i permessi 0600 del file del token non si applicano: il file è protetto
   dai permessi della cartella utente `%LOCALAPPDATA%`.
+
+## Strumenti (Fase 5)
+
+- Ogni chiamata: autorizzazione centrale (livello dello strumento) + voce `tool.call` nell'audit.
+- Gli agenti usano solo gli strumenti del proprio elenco e solo entro il proprio livello (predefinito 1).
+- File: solo dentro `<home>/workspace`; percorsi assoluti, `..` e symlink verso l'esterno rifiutati.
+  `genesis.toml` e `data/` sono fuori dalla cartella di lavoro, quindi irraggiungibili dagli strumenti.
+- Web: spento di default; indirizzi locali/privati rifiutati (anche nei redirect). Limite noto: il
+  controllo dell'indirizzo e la connessione risolvono il DNS separatamente.
+- I risultati esterni (web, MCP) sono **dati non fidati**: prima di arrivare a un modello vengono
+  racchiusi in delimitatori che non possono essere chiusi dal contenuto.
+- MCP: solo i server scritti dal proprietario in `genesis.toml`; ogni processo vive per una sola
+  richiesta ed è terminato allo scadere del tempo.

@@ -31,6 +31,7 @@ from .intelligence.router import Router
 from .memory.db import Database, list_backups
 from .security.audit import AuditLog
 from .security.permissions import OWNER, Level, PermissionManager
+from .tools.registry import ToolRegistry
 
 MIN_FREE_DISK_GB = 2.0
 
@@ -62,7 +63,10 @@ class Genesis:
             self.tasks = TaskManager(self.db, self.bus, self.permissions, self.log.getChild("tasks"), now=now)
             self.router = Router([LocalEngine(), FreelmProvider()], remote_enabled=self.config.remote_enabled,
                                  remote_free_verified=self.config.remote_free_verified, audit=self.audit)
-            self.agents = AgentRunner(self.db, self.permissions, self.router, load_agents(self.config.home), now=now)
+            self.tools = ToolRegistry(self.permissions, self.audit, self.config.workspace_dir,
+                                      internet_enabled=self.config.internet_enabled, mcp_servers=self.config.mcp_servers)
+            self.agents = AgentRunner(self.db, self.permissions, self.router, load_agents(self.config.home), now=now,
+                                      tools=self.tools)
             self._register_builtin_tasks()
         except BaseException:
             self.close()
@@ -107,6 +111,11 @@ class Genesis:
                  'Il Director scompone e delega: {"goal": "1. ... 2. ..."}.')
         register("agents.council", lambda ctx: self.agents.council(_s(ctx, "question"), ctx.payload.get("members"), _b(ctx)),
                  Level.READ, 'Consiglio di specialisti: {"question": "..."}.')
+        register("tools.call", lambda ctx: self.tools.call(
+            ctx.task["principal"], _s(ctx, "tool"), ctx.payload.get("params") or {}, approval_id=ctx.payload.get("approval_id"),
+            cancelled=ctx.cancelled), Level.READ, 'Usa uno strumento: {"tool": "files.list", "params": {}} (livello dello strumento).')
+        register("agents.research", lambda ctx: self.agents.research(_s(ctx, "url"), _s(ctx, "question"), _b(ctx)),
+                 Level.READ, 'Il Researcher legge una pagina web: {"url": "https://...", "question": "..."}.')
         register("memory.backup", lambda ctx: {"path": str(self._backup())}, Level.WORKSPACE_WRITE,
                  "Crea un backup verificato del database.")
 

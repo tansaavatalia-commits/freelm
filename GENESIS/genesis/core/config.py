@@ -31,7 +31,10 @@ _KNOWN_KEYS = {
     "backup": {"keep"},
     "permissions": {"grants"},
     "intelligence": {"remote_enabled", "remote_free_verified"},
+    "tools": {"internet_enabled"},
+    "mcp": {"servers"},
 }
+MCP_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
 
 def default_home() -> Path:
@@ -57,6 +60,8 @@ class Config:
     grants: Mapping[str, int] = field(default_factory=lambda: DEFAULT_GRANTS)
     remote_enabled: bool = False  # online engines allowed at all
     remote_free_verified: bool = False  # owner checked their free terms (COST_POLICY.md)
+    internet_enabled: bool = False  # web.fetch tool
+    mcp_servers: Mapping[str, Mapping[str, Any]] = field(default_factory=lambda: MappingProxyType({}))
 
     @property
     def data_dir(self) -> Path:
@@ -77,6 +82,10 @@ class Config:
     @property
     def db_path(self) -> Path:
         return self.data_dir / "genesis.db"
+
+    @property
+    def workspace_dir(self) -> Path:
+        return self.home / "workspace"
 
     @property
     def config_path(self) -> Path:
@@ -171,5 +180,24 @@ def _build(home: Path, raw: Mapping[str, Any], source: Path) -> Config:
             raise ConfigError(f"{source}: [intelligence] {key} deve essere true o false")
         flags[key] = value
 
+    internet = raw.get("tools", {}).get("internet_enabled", False)
+    if not isinstance(internet, bool):
+        raise ConfigError(f"{source}: [tools] internet_enabled deve essere true o false")
+    servers = {}
+    declared = raw.get("mcp", {}).get("servers", {})
+    if not isinstance(declared, Mapping):
+        raise ConfigError(f"{source}: [mcp] servers deve essere una tabella")
+    for name, cfg in declared.items():
+        where = f"{source}: [mcp.servers.{name}]"
+        if not MCP_NAME_RE.match(name) or not isinstance(cfg, Mapping) or set(cfg) - {"command", "level", "timeout"}:
+            raise ConfigError(f"{where}: nome o chiavi non validi (ammesse: command, level, timeout)")
+        command = cfg.get("command")
+        if not (isinstance(command, list) and command and all(isinstance(x, str) and x for x in command)):
+            raise ConfigError(f"{where}: command deve essere un elenco di testi, es. [\"py\", \"-3\", \"server.py\"]")
+        lvl, timeout = cfg.get("level", 3), cfg.get("timeout", 30)
+        if not (_is_int(lvl) and 3 <= lvl <= 5) or not (_is_int(timeout) and 1 <= timeout <= 300):
+            raise ConfigError(f"{where}: level 3-5, timeout 1-300 secondi")
+        servers[name] = MappingProxyType({"command": tuple(command), "level": lvl, "timeout": timeout})
+
     return Config(home=home, profile=profile, log_level=level, backup_keep=keep, grants=MappingProxyType(grants),
-                  **flags)
+                  internet_enabled=internet, mcp_servers=MappingProxyType(servers), **flags)

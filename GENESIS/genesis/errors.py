@@ -45,3 +45,7 @@ class TaskCancelled(GenesisError):
 
 class WorkerBusy(GenesisError):
     """Another process already holds the task-worker lock of this data folder."""
+
+
+class ToolError(GenesisError):
+    """A tool refused or failed an operation."""
