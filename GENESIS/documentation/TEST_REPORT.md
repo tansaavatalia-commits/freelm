@@ -1,5 +1,36 @@
 # Rapporto dei test
 
+## 2026-11-24 — Fase 2a (versione 0.2.0)
+
+| Controllo | Dove | Esito |
+|---|---|---|
+| Lint Python (`ruff check .`) | cloud + CI | passato |
+| Test Python (88: core + API + esecutore) | cloud Linux, Python 3.13 | **88 passati** |
+| Test Python | CI: Ubuntu 3.11/3.13, Windows 3.11/3.13 (esecuzione 45330785522) | **4 job su 4 passati** |
+| Controllo dei tipi TypeScript + build | cloud + CI (job `frontend`) | passati |
+| Build nel repository uguale ai sorgenti (`git diff --exit-code`) | CI | passato |
+| Test end-to-end nel browser (`desktop/frontend/e2e/smoke.cjs`, Chromium) | cloud | **passato** |
+
+Il test end-to-end avvia `genesis serve` e usa l'interfaccia come un utente:
+Dashboard, creazione di un progetto, compito messo in coda ed eseguito
+dall'esecutore in background, dettagli e risultato, JSON non valido bloccato dal
+modulo, backup dalla Dashboard, Diagnostica (controlli, catena di audit, backup),
+Approvazioni, larghezza da telefono senza scorrimento orizzontale, arresto pulito
+con Ctrl+C. Fallisce se il browser registra un qualsiasi errore, comprese le
+violazioni della Content-Security-Policy.
+
+Nuovi test Python: sicurezza dell'API (token, Host contro il DNS rebinding,
+Origin, assenza di CORS, path traversal, limite di 64 KB), tutti gli endpoint,
+errori 400/404/405/409/413, esecutore unico (anche dopo un processo ucciso),
+ripristino rifiutato con un esecutore attivo, handler di log condiviso, letture
+della RAM dal vivo.
+
+Difetti trovati dal test end-to-end e corretti: voci del menu senza nome
+accessibile su telefono; riquadri dei compiti che uscivano dalla card; sfondo
+della barra laterale interrotto nelle pagine lunghe.
+
+Misura: processo `genesis serve` ≈ **28 MB di RAM** (Linux). Sul PC Windows: PENDENTE.
+
 ## 2026-11-23 — Fase 1 (core 0.1.0)
 
 ### Eseguiti nel container cloud (Linux x86_64, 4 vCPU, 15 GB RAM)

@@ -16,3 +16,7 @@
 | D-12 | CI su Linux e Windows (`genesis-core-ci.yml`), filtrata su `GENESIS/**` | verifica reale su Windows a costo zero (repo pubblico) | adottata |
 | D-13 | Lo script di avvio dell'ambiente cloud (pacchetti npm non verificati) è stato rimosso | rischio di supply chain; non serviva | eseguita con approvazione |
 | D-14 | `GENESIS/` (questo progetto) e `genesis-drop-engine/` (branch `claude/eloquent-newton-uke0z7`) sono **due progetti diversi**: restano separati | confermato dal proprietario il 2026-11-24; workflow già con nomi diversi. Entrambi usano il nome di pacchetto Python `genesis`: non installarli nello stesso ambiente | adottata |
+| D-15 | L'interfaccia compilata (`genesis/api/static`) è nel repository; la CI verifica che corrisponda ai sorgenti | sul PC basta Python, niente Node né build | adottata |
+| D-16 | React 19.2.9 + Vite 7.3.8 + TypeScript 6.0.3 (MIT/Apache-2.0), senza il plugin React di Vite | una dipendenza in meno; Vite compila JSX da solo | adottata |
+| D-17 | Un solo esecutore di compiti per cartella dati, garantito da un lock del sistema operativo | rilasciato automaticamente se il processo muore; nessun compito eseguito due volte | adottata |
+| D-18 | L'API ascolta solo su 127.0.0.1, con token, controllo di Host/Origin e CSP | protezione da altre pagine web e da DNS rebinding | adottata |

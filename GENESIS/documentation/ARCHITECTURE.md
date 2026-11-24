@@ -64,3 +64,25 @@ esecuzione → `succeeded` / nuovo tentativo / `failed` / `cancelled`. All'avvio
 
 - Fase 2: API HTTP locale (solo 127.0.0.1, con token) davanti a `Genesis`, poi la UI.
 - Fase 3: interfaccia Provider propria; `freelm` sarà un adattatore tra gli altri.
+
+## Fase 2a — `genesis serve`
+
+```
+browser (127.0.0.1:8765)
+   │  pagina + /api/* con X-Genesis-Token
+   ▼
+genesis/api/server.py   ThreadingHTTPServer (solo 127.0.0.1)
+   ├─ thread "core"     unica istanza Genesis per l'API (una connessione SQLite)
+   └─ thread "worker"   seconda istanza Genesis + TaskWorker (lock data/worker.lock)
+genesis/api/static/     interfaccia compilata (React + TS), sorgenti in desktop/frontend/
+```
+
+- **Endpoint:** `GET /api/status`, `/api/doctor`, `/api/projects`, `/api/tasks`,
+  `/api/tasks/{id}`, `/api/task-kinds`, `/api/approvals`, `/api/audit`, `/api/backups`;
+  `POST /api/projects`, `/api/projects/{ref}/archive`, `/api/tasks`,
+  `/api/tasks/{id}/cancel`, `/api/approvals/{id}/approve|deny`.
+- **Errori:** 400 dati non validi · 401 token · 403 permesso/host/origine ·
+  404 · 405 · 409 serve un'approvazione (`approval_id`) · 413 richiesta troppo grande.
+- **Esecutore unico:** `core/worker.py` prende un lock esclusivo del sistema
+  operativo; `task run` da CLI e `serve` non possono eseguire compiti insieme, e il
+  ripristino di un backup è rifiutato mentre un esecutore è attivo.

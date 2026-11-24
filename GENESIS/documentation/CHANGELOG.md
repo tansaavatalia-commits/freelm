@@ -2,6 +2,18 @@
 
 (Il `CHANGELOG.md` alla radice del repository riguarda `freelm`.)
 
+## 0.2.0 — 2026-11-24 — Fase 2a: interfaccia nel browser
+
+- `genesis serve`: API HTTP locale (solo 127.0.0.1) con token per installazione,
+  controllo di Host e Origin, Content-Security-Policy rigorosa.
+- Interfaccia React + TypeScript (Vite): Dashboard, Progetti, Compiti,
+  Approvazioni, Diagnostica; tema scuro/chiaro automatico; adatta al telefono.
+- La build compilata è inclusa nel pacchetto: sul PC non serve Node.
+- Un solo esecutore di compiti per cartella dati (lock del sistema operativo);
+  i compiti interrotti vengono ripresi solo da chi ottiene il lock.
+- Misura dal vivo della RAM del processo e della RAM libera.
+- Test: 88 in Python + test end-to-end nel browser; CI che verifica la build.
+
 ## 0.1.0 — 2026-11-23 — Fase 1: Core
 
 - Configurazione TOML con validazione rigorosa e permessi immutabili a runtime.

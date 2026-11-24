@@ -57,3 +57,20 @@
 ## Segnalazioni
 
 Per vulnerabilità in `freelm` vale il `SECURITY.md` alla radice del repository.
+
+## API locale (Fase 2a)
+
+- Ascolta **solo su 127.0.0.1**; una richiesta con un `Host` diverso viene
+  rifiutata (difesa dal DNS rebinding).
+- Ogni chiamata `/api` richiede il token dell'installazione (`data/api_token`,
+  generato con `secrets`, confronto a tempo costante). Il token è inserito solo
+  nella pagina servita dalla stessa origine; non vengono mai inviate intestazioni
+  CORS, e le richieste con `Origin` di un altro sito sono rifiutate.
+- La pagina gira con una Content-Security-Policy rigorosa (nessuno script inline,
+  nessun host esterno, nessun frame) e `X-Frame-Options: DENY`.
+- Corpi delle richieste limitati a 64 KB; file statici confinati nella cartella
+  dell'interfaccia (test di path traversal).
+- Chi usa l'interfaccia è il proprietario (come per la CLI). Il ripristino dei
+  backup resta solo da riga di comando con `--confirm`.
+- Su Windows i permessi 0600 del file del token non si applicano: il file è protetto
+  dai permessi della cartella utente `%LOCALAPPDATA%`.
