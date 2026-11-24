@@ -16,6 +16,8 @@ from ..security.redact import redact
 from .base import EngineError, Provider, ProviderSpec, Request
 
 STATUS_TTL = 60.0
+# Only services whose free terms were verified (COST_POLICY.md) and whose freelm guard is free-only.
+ALLOWED_SERVICES = ("openrouter",)
 
 
 class FreelmProvider(Provider):
@@ -29,11 +31,11 @@ class FreelmProvider(Provider):
     def spec(self) -> ProviderSpec:  # type: ignore[override]
         module = _freelm()
         return ProviderSpec(
-            id="freelm", name="freelm: livelli gratuiti (OpenRouter :free, Gemini, Groq, …)",
+            id="freelm", name="OpenRouter, solo modelli gratuiti :free (tramite freelm)",
             version=getattr(module, "__version__", "non installato") if module else "non installato",
             kind="remote", capabilities=frozenset({"chat", "code", "reasoning", "math", "text.stats"}),
             cost="free", quality=3, method="modello esterno",
-            requirements="libreria freelm (pip install freelm) e chiavi API gratuite nelle variabili d'ambiente",
+            requirements="libreria freelm e variabile d'ambiente OPENROUTER_API_KEY (chiave gratuita)",
         )
 
     def status(self) -> tuple[bool, str]:
@@ -49,12 +51,12 @@ class FreelmProvider(Provider):
         if module is None:
             return False, "libreria freelm non installata"
         try:
-            providers = module.providers_from_env(keyless=False)
+            providers = _allowed(module)
         except Exception as exc:
             return False, redact(f"configurazione non valida: {exc}")
         if not providers:
-            return False, "nessuna chiave API nelle variabili d'ambiente"
-        return True, f"{len(providers)} provider con chiave"
+            return False, "nessuna chiave OpenRouter (variabile OPENROUTER_API_KEY)"
+        return True, "OpenRouter pronto (solo modelli gratuiti)"
 
     def run(self, request: Request, task_type: str) -> str:
         module = _freelm()
@@ -62,13 +64,27 @@ class FreelmProvider(Provider):
             raise EngineError("libreria freelm non installata")
         try:
             if self._client is None:
-                self._client = self._factory() if self._factory else module.FreeLLM.from_env(keyless=False)
+                if self._factory:
+                    self._client = self._factory()
+                else:
+                    providers = _allowed(module)
+                    if not providers:
+                        raise EngineError("nessuna chiave OpenRouter (variabile OPENROUTER_API_KEY)")
+                    self._client = module.FreeLLM(providers=providers)
             text = self._client.text(request.prompt)
+        except EngineError:
+            raise
         except Exception as exc:
             raise EngineError(redact(f"{type(exc).__name__}: {exc}")) from exc
         if not isinstance(text, str) or not text.strip():
             raise EngineError("risposta vuota")
         return text.strip()
+
+
+def _allowed(module: ModuleType) -> list[Any]:
+    """Providers from the environment, restricted to verified services with freelm's free-only guard on."""
+    return [p for p in module.providers_from_env(keyless=False)
+            if getattr(p, "name", "") in ALLOWED_SERVICES and getattr(p, "free_only", False)]
 
 
 def _freelm() -> ModuleType | None:

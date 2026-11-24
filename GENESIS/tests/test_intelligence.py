@@ -101,7 +101,9 @@ def test_fallback_and_audit_of_remote_calls(tmp_path):
 def test_freelm_adapter_with_fake_library(monkeypatch):
     fake = types.ModuleType("freelm")
     fake.__version__ = "9.9"
-    fake.providers_from_env = lambda keyless=None: ["p1"] if keyless is False else pytest.fail("keyless must be off")
+    fake.providers_from_env = lambda keyless=None: (
+        [types.SimpleNamespace(name="openrouter", free_only=True), types.SimpleNamespace(name="groq", free_only=False)]
+        if keyless is False else pytest.fail("keyless must be off"))
 
     class Client:
         def text(self, prompt):
@@ -109,11 +111,12 @@ def test_freelm_adapter_with_fake_library(monkeypatch):
                 raise RuntimeError("bad key sk-or-v1-" + "k" * 40)
             return "  ciao!  "
 
-    fake.FreeLLM = types.SimpleNamespace(from_env=lambda keyless=None: Client())
+    used = []
+    fake.FreeLLM = lambda providers: used.append([p.name for p in providers]) or Client()
     monkeypatch.setitem(sys.modules, "freelm", fake)
     provider = FreelmProvider()
-    assert provider.status() == (True, "1 provider con chiave") and provider.spec.version == "9.9"
-    assert provider.run(Request("ciao"), "chat") == "ciao!"
+    assert provider.status() == (True, "OpenRouter pronto (solo modelli gratuiti)") and provider.spec.version == "9.9"
+    assert provider.run(Request("ciao"), "chat") == "ciao!" and used == [["openrouter"]]  # groq never used
     with pytest.raises(EngineError) as info:
         provider.run(Request("boom"), "chat")
     assert "k" * 40 not in str(info.value)
@@ -141,3 +144,28 @@ def test_task_cli_and_config(home, capsys):
     write_config(home, "[intelligence]\nremote_enabled = 'yes'\n")
     with pytest.raises(ConfigError):
         Genesis(home, hardware=LITE_HW)
+
+
+def test_online_enable_command(home, capsys):
+    assert main(["--home", str(home), "online", "enable"]) == 2  # needs --confirm
+    write_config(home, '[general]\nprofile = "auto"\n')
+    assert main(["--home", str(home), "online", "enable", "--confirm"]) == 0
+    g = Genesis(home, hardware=LITE_HW)
+    try:
+        assert g.config.remote_enabled and g.config.remote_free_verified and g.config.profile == "auto"
+        assert any(r["action"] == "intelligence.online_enable" for r in g.audit.tail(10))
+    finally:
+        g.close()
+    assert main(["--home", str(home), "online", "disable", "--confirm"]) == 0
+    text = (home / "genesis.toml").read_text(encoding="utf-8")
+    assert text.count("[intelligence]") == 1 and "remote_enabled = false" in text
+
+
+def test_real_freelm_library_restricted_to_openrouter(monkeypatch):
+    pytest.importorskip("freelm")  # installed in CI from this repository
+    for var in ("GEMINI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY", "FREELM_KEYLESS"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_" + "x" * 40)
+    assert FreelmProvider().status()[0] is False  # a Groq key alone is not enough
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-" + "y" * 40)
+    assert FreelmProvider().status() == (True, "OpenRouter pronto (solo modelli gratuiti)")

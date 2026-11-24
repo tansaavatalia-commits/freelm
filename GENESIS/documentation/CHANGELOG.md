@@ -2,6 +2,13 @@
 
 (Il `CHANGELOG.md` alla radice del repository riguarda `freelm`.)
 
+## 0.3.1 — 2026-11-24 — Motore online: OpenRouter gratuito
+
+- L'adattatore usa solo OpenRouter con la guardia «solo gratuito» di freelm (Groq, Gemini & co. ignorati).
+- `genesis online enable --confirm` / `disable`: accende/spegne il motore online (approvazione registrata).
+- Prova reale dal cloud fino a OpenRouter: modello `:free` scelto correttamente; risposta 401 perché la
+  chiave dell'ambiente cloud non è disponibile. CI con freelm installato.
+
 ## 0.3.0 — 2026-11-24 — Fase 3: Intelligent Router
 
 - Contratto unico per i motori (`intelligence/base.py`); il router non dipende da nessuna API esterna.

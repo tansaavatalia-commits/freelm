@@ -22,3 +22,4 @@
 | D-18 | L'API ascolta solo su 127.0.0.1, con token, controllo di Host/Origin e CSP | protezione da altre pagine web e da DNS rebinding | adottata |
 | D-19 | Il router usa un motore online solo con `remote_enabled` **e** `remote_free_verified` impostati dal proprietario; mai a pagamento; le richieste private restano locali | budget 0 € e privacy | adottata |
 | D-20 | Classificazione delle richieste a regole (non con un modello) | trasparente, deterministica, senza costi; da misurare nel Research Lab | adottata |
+| D-21 | Motore online = solo OpenRouter, solo modelli a prezzo zero; verifica della gratuità delegata dal proprietario a Claude e registrata in COST_POLICY | richiesta del proprietario del 2026-11-24 | adottata |

@@ -57,6 +57,21 @@ I dati stanno in `%LOCALAPPDATA%\GENESIS` (oppure nella cartella indicata da
 
 Codici di uscita: 0 ok · 1 errore · 2 errore di uso o di configurazione.
 
+## Motore online (OpenRouter gratuito)
+
+```powershell
+cd freelm\GENESIS
+git pull
+py -3 -m pip install --user ..                 # installa freelm dal repository (MIT, gratuito)
+setx OPENROUTER_API_KEY "LA-TUA-CHIAVE"        # chiave gratuita da https://openrouter.ai/keys
+# chiudi e riapri PowerShell, poi:
+py -3 -m genesis online enable --confirm
+py -3 -m genesis ask "Spiegami in una frase cos'è GÉNESIS"
+```
+
+Solo modelli a prezzo zero (`:free`). Non comprare crediti. Le richieste con
+`--private` non lasciano mai il PC. Per spegnerlo: `py -3 -m genesis online disable --confirm`.
+
 ## Migrare su un altro PC
 
 ```powershell

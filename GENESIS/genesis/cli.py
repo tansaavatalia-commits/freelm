@@ -14,9 +14,11 @@ from typing import Any, Sequence
 
 from . import __version__
 from .app import Genesis, import_data
+from .core.config import set_online
 from .core.worker import TaskWorker
 from .errors import ConfigError, GenesisError
 from .intelligence.base import TASK_TYPES, Request
+from .intelligence.online import FreelmProvider
 from .security.permissions import OWNER, Level
 
 DEFAULT_PORT = 8765
@@ -198,6 +200,25 @@ def cmd_providers(g: Genesis, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_online(g: Genesis, args: argparse.Namespace) -> int:
+    enable = args.action == "enable"
+    if enable and not args.confirm:
+        print("Accende il motore online: OpenRouter, solo modelli gratuiti :free (verificati il 2026-11-24).\n"
+              "Le richieste non private lasceranno questo computer; le chiamate sono registrate nell'audit.\n"
+              "Per procedere ripeti il comando aggiungendo --confirm.", file=sys.stderr)
+        return 2
+    action = "intelligence.online_" + args.action
+    approval_id = g.permissions.request_approval(OWNER, action, Level.SYSTEM_CHANGE, {})
+    g.permissions.decide(approval_id, True, decided_by=OWNER)
+    g.permissions.require(OWNER, action, Level.SYSTEM_CHANGE, approval_id=approval_id)
+    path = set_online(g.config.home, enable)
+    print(f"Motore online {'acceso' if enable else 'spento'} ({path}).")
+    if enable:
+        available, reason = FreelmProvider().status()
+        print(f"Stato: {reason}" + ("" if available else " -> vedi README, sezione 'Motore online'"))
+    return 0
+
+
 def cmd_backup_create(g: Genesis, args: argparse.Namespace) -> int:
     print(f"Backup creato e verificato: {g.create_backup()}")
     return 0
@@ -328,6 +349,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--type", choices=TASK_TYPES, help="tipo di richiesta (predefinito: classificazione automatica)")
     s.add_argument("--private", action="store_true", help="la richiesta non lascia questo computer")
     s.set_defaults(func=cmd_ask)
+    s = sub.add_parser("online", help="accende o spegne il motore online (OpenRouter gratuito)")
+    s.add_argument("action", choices=["enable", "disable"])
+    s.add_argument("--confirm", action="store_true", help="conferma esplicita del proprietario")
+    s.set_defaults(func=cmd_online)
     sub.add_parser("providers", help="motori disponibili e perché sono attivi o spenti").set_defaults(func=cmd_providers)
 
     s = sub.add_parser("serve", help="avvia l'interfaccia nel browser e l'esecuzione dei compiti")

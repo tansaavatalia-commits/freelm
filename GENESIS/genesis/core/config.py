@@ -93,6 +93,27 @@ def load_config(home: Path | str | None = None, overrides: Mapping[str, Any] | N
     return _build(root, _merge(raw, dict(overrides or {})), path)
 
 
+def set_online(home: Path | str | None, enabled: bool) -> Path:
+    """Write [intelligence] remote_enabled/remote_free_verified into <home>/genesis.toml (owner action)."""
+    root = Path(home).expanduser() if home is not None else default_home()
+    path = root / CONFIG_FILENAME
+    old = path.read_text(encoding="utf-8") if path.is_file() else ""
+    value = "true" if enabled else "false"
+    section = f"[intelligence]\nremote_enabled = {value}\nremote_free_verified = {value}\n"
+    if re.search(r"^\[intelligence\]", old, re.M):
+        new = re.sub(r"^\[intelligence\][^\[]*", section + "\n", old, count=1, flags=re.M)
+    else:
+        new = (old.rstrip() + "\n\n" if old.strip() else "") + section
+    root.mkdir(parents=True, exist_ok=True)
+    path.write_text(new, encoding="utf-8")
+    try:
+        load_config(root)
+    except ConfigError:
+        path.write_text(old, encoding="utf-8")  # never leave a broken configuration behind
+        raise
+    return path
+
+
 def _merge(base: Mapping[str, Any], extra: Mapping[str, Any]) -> dict[str, Any]:
     out = dict(base)
     for key, value in extra.items():
