@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Aggiornato: 2026-11-24 · Versione: 0.3.0 · Branch: `claude/genesis-phase-0-audit-zrvq7a`
+Aggiornato: 2026-11-24 · Versione: 0.4.0 · Branch: `claude/genesis-phase-0-audit-zrvq7a`
 
 | Fase | Stato |
 |---|---|
@@ -9,7 +9,8 @@ Aggiornato: 2026-11-24 · Versione: 0.3.0 · Branch: `claude/genesis-phase-0-aud
 | 2a — Interfaccia nel browser | IMPLEMENTATA e testata (API + 5 sezioni + test end-to-end in Chromium). Sul PC: PENDENTE |
 | 2b — Finestra desktop Tauri | PENDENTE |
 | 3 — Intelligent Router | IMPLEMENTATA e testata: motore locale attivo; motore online (freelm) pronto ma spento, mai provato dal vivo (chiavi non funzionanti) |
-| 4–10 | PENDENTI |
+| 4 — Agenti | IMPLEMENTATA e testata (v0): 8 agenti, Verifier, Director, Consiglio; risposte libere solo con motore online attivo |
+| 5–10 | PENDENTI |
 
 ## Cosa funziona oggi (IMPLEMENTATO)
 

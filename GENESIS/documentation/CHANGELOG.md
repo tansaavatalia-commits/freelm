@@ -2,6 +2,18 @@
 
 (Il `CHANGELOG.md` alla radice del repository riguarda `freelm`.)
 
+## 0.4.0 — 2026-11-24 — Fase 4: Agenti
+
+- Agent Factory: 8 agenti predefiniti versionati (Director, Researcher, Developer, Analyst, Creator,
+  Manager, Verifier, Security) a livello 1; agenti del proprietario da `<home>/agents/*.json`, che
+  partono senza permessi finché il proprietario non li concede in `genesis.toml`.
+- Ogni chiamata passa dai permessi come `agent.<id>` e poi dal router (gratuito/privato).
+- Verifier deterministico: risposta non vuota, nessun segreto, lunghezza, calcoli ricontrollati in locale.
+- Director: scomposizione a regole e delega; rapporto onesto dei sotto-compiti falliti.
+- Consiglio v0: confronta le risposte, segnala contraddizioni numeriche, misura l'accordo
+  (i membri differiscono per istruzioni e possono usare lo stesso modello).
+- Tabella `agent_runs` (schema v2), `genesis agents …`, API, sezione «Agenti» nell'interfaccia; 130 test.
+
 ## 0.3.1 — 2026-11-24 — Motore online: OpenRouter gratuito
 
 - L'adattatore usa solo OpenRouter con la guardia «solo gratuito» di freelm (Groq, Gemini & co. ignorati).

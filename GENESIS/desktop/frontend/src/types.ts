@@ -140,3 +140,26 @@ export interface Backup {
   name: string;
   size_kb: number;
 }
+
+export interface Agent {
+  id: string;
+  name: string;
+  version: string;
+  role: string;
+  objective: string;
+  task_types: string[];
+  success_criteria: string;
+  builtin: boolean;
+  level: number;
+}
+
+export interface AgentRun {
+  id: string;
+  agent_id: string;
+  agent_version: string;
+  mode: "agent" | "director" | "council";
+  goal: string;
+  status: "running" | "succeeded" | "failed";
+  output: string | null;
+  created_at: string;
+}

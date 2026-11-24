@@ -23,3 +23,5 @@
 | D-19 | Il router usa un motore online solo con `remote_enabled` **e** `remote_free_verified` impostati dal proprietario; mai a pagamento; le richieste private restano locali | budget 0 € e privacy | adottata |
 | D-20 | Classificazione delle richieste a regole (non con un modello) | trasparente, deterministica, senza costi; da misurare nel Research Lab | adottata |
 | D-21 | Motore online = solo OpenRouter, solo modelli a prezzo zero; verifica della gratuità delegata dal proprietario a Claude e registrata in COST_POLICY | richiesta del proprietario del 2026-11-24 | adottata |
+| D-22 | Agenti predefiniti a livello 1; agenti nuovi a livello 0 finché il proprietario non li abilita | nessun agente può ampliare i propri permessi | adottata |
+| D-23 | Director e Consiglio v0 basati su regole (scomposizione, confronto, accordo), senza modello coordinatore | trasparenti e misurabili; da confrontare con una baseline nel Research Lab | adottata |

@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, usePolling } from "./api";
 import { readRoute, type Route } from "./router";
 import type { Status } from "./types";
+import { Agents } from "./views/Agents";
 import { Approvals } from "./views/Approvals";
 import { Dashboard } from "./views/Dashboard";
 import { Diagnostics } from "./views/Diagnostics";
@@ -12,6 +13,7 @@ const NAV: { page: string; label: string; icon: ReactNode }[] = [
   { page: "dashboard", label: "Dashboard", icon: <path d="M4 13h6V4H4zm10 7h6V11h-6zM4 20h6v-5H4zm10-11h6V4h-6z" /> },
   { page: "progetti", label: "Progetti", icon: <path d="M3 7h7l2 2h9v10H3z" /> },
   { page: "compiti", label: "Compiti", icon: <path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" /> },
+  { page: "agenti", label: "Agenti", icon: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8c0-3.3 3.1-6 7-6s7 2.7 7 6" /> },
   { page: "approvazioni", label: "Approvazioni", icon: <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zm-3 9l2 2 4-4" /> },
   { page: "diagnostica", label: "Diagnostica", icon: <path d="M3 12h4l3-7 4 14 3-7h4" /> },
 ];
@@ -35,6 +37,9 @@ export function App() {
       break;
     case "compiti":
       content = <Tasks route={route} />;
+      break;
+    case "agenti":
+      content = <Agents />;
       break;
     case "approvazioni":
       content = <Approvals onChange={status.refresh} />;

@@ -83,6 +83,12 @@ async function main() {
     await page.getByText(/Catena integra/).waitFor();
     await page.locator(".plain-list .mono", { hasText: /^genesis-.*\.db$/ }).first().waitFor({ timeout: 15000 });
 
+    // Agents: the analyst solves a calculation locally
+    await page.getByRole("link", { name: "Agenti", exact: true }).click();
+    await page.getByLabel("Richiesta").fill("quanto fa 12*(3+4)?");
+    await page.getByRole("button", { name: "Invia" }).click();
+    await page.locator(".approval .badge", { hasText: "riuscita" }).first().waitFor({ timeout: 15000 });
+
     // Approvals page renders its empty state
     await page.getByRole("link", { name: "Approvazioni" }).click();
     await page.getByText("Nessuna richiesta in attesa.").waitFor();
@@ -111,7 +117,7 @@ async function main() {
     console.error("E2E FAILED:\n" + problems.join("\n"));
     process.exit(1);
   }
-  console.log("E2E OK: dashboard, progetti, compiti, backup, diagnostica, approvazioni, mobile, nessun errore nel browser");
+  console.log("E2E OK: dashboard, progetti, compiti, agenti, backup, diagnostica, approvazioni, mobile, nessun errore nel browser");
 }
 
 main().catch((err) => {
