@@ -219,6 +219,7 @@ class ApiServer:
             ("POST", rf"/api/approvals/(?P<approval_id>{HEX_ID})/(?P<decision>approve|deny)", self._approval_decide),
             ("GET", r"/api/audit", self._audit),
             ("GET", r"/api/backups", self._backups),
+            ("GET", r"/api/engines", self._engines),
         ]
         return [(m, re.compile(p), fn) for m, p, fn in table]
 
@@ -338,6 +339,9 @@ class ApiServer:
             return {"entries": g.audit.tail(n), "chain_ok": ok, "first_bad_seq": first_bad, "total": g.audit.count()}
 
         return 200, self.core.run(collect)
+
+    def _engines(self, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: g.router.describe())
 
     def _backups(self, **_: Any) -> tuple[int, Any]:
         def collect(g: Genesis) -> list[dict[str, Any]]:

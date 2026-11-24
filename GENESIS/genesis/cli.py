@@ -16,6 +16,7 @@ from . import __version__
 from .app import Genesis, import_data
 from .core.worker import TaskWorker
 from .errors import ConfigError, GenesisError
+from .intelligence.base import TASK_TYPES, Request
 from .security.permissions import OWNER, Level
 
 DEFAULT_PORT = 8765
@@ -181,6 +182,22 @@ def cmd_approvals_decide(g: Genesis, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ask(g: Genesis, args: argparse.Namespace) -> int:
+    result = g.router.route(Request(args.text, args.type, args.private))
+    check = "verificato (algoritmo)" if result["verified"] else "non verificato (modello esterno)"
+    print(result["output"])
+    print(f"[motore: {result['engine']} · tipo: {result['task_type']} · {check}]")
+    return 0
+
+
+def cmd_providers(g: Genesis, args: argparse.Namespace) -> int:
+    for e in g.router.describe():
+        state = "ATTIVO" if e["usable"] else "spento"
+        print(f"{e['id']:<8} {e['kind']:<7} costo {e['cost']:<5} {state:<7} {e['reason']}")
+        print(f"         {e['name']} · capacità: {', '.join(e['capabilities'])}")
+    return 0
+
+
 def cmd_backup_create(g: Genesis, args: argparse.Namespace) -> int:
     print(f"Backup creato e verificato: {g.create_backup()}")
     return 0
@@ -305,6 +322,13 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("import", help="importa un'esportazione in una cartella dati vuota")
     s.add_argument("path", type=Path)
     s.set_defaults(func=None)
+
+    s = sub.add_parser("ask", help="chiede al router dei motori (locale o online gratuito)")
+    s.add_argument("text")
+    s.add_argument("--type", choices=TASK_TYPES, help="tipo di richiesta (predefinito: classificazione automatica)")
+    s.add_argument("--private", action="store_true", help="la richiesta non lascia questo computer")
+    s.set_defaults(func=cmd_ask)
+    sub.add_parser("providers", help="motori disponibili e perché sono attivi o spenti").set_defaults(func=cmd_providers)
 
     s = sub.add_parser("serve", help="avvia l'interfaccia nel browser e l'esecuzione dei compiti")
     s.add_argument("--port", type=int, default=DEFAULT_PORT)

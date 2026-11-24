@@ -20,3 +20,5 @@
 | D-16 | React 19.2.9 + Vite 7.3.8 + TypeScript 6.0.3 (MIT/Apache-2.0), senza il plugin React di Vite | una dipendenza in meno; Vite compila JSX da solo | adottata |
 | D-17 | Un solo esecutore di compiti per cartella dati, garantito da un lock del sistema operativo | rilasciato automaticamente se il processo muore; nessun compito eseguito due volte | adottata |
 | D-18 | L'API ascolta solo su 127.0.0.1, con token, controllo di Host/Origin e CSP | protezione da altre pagine web e da DNS rebinding | adottata |
+| D-19 | Il router usa un motore online solo con `remote_enabled` **e** `remote_free_verified` impostati dal proprietario; mai a pagamento; le richieste private restano locali | budget 0 € e privacy | adottata |
+| D-20 | Classificazione delle richieste a regole (non con un modello) | trasparente, deterministica, senza costi; da misurare nel Research Lab | adottata |

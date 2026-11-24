@@ -2,6 +2,19 @@
 
 (Il `CHANGELOG.md` alla radice del repository riguarda `freelm`.)
 
+## 0.3.0 — 2026-11-24 — Fase 3: Intelligent Router
+
+- Contratto unico per i motori (`intelligence/base.py`); il router non dipende da nessuna API esterna.
+- Motore locale deterministico: calcoli (valutatore AST sicuro, mai `eval`) e statistiche del testo.
+- Adattatore online `freelm` (livelli gratuiti), **disattivato** finché il proprietario non imposta
+  `remote_enabled` e `remote_free_verified`; mai endpoint senza chiave; chiamate esterne nell'audit
+  (senza il testo della richiesta).
+- Router: classificazione a regole → filtro (mai a pagamento, privato = solo locale) → punteggio
+  (qualità, locale prima, affidabilità, latenza) → esecuzione con fallback (max 3) → esito
+  «verificato» solo per gli algoritmi.
+- `genesis ask`, `genesis providers`, compito `intelligence.ask`, `GET /api/engines`, card nella Dashboard.
+- 115 test Python.
+
 ## 0.2.0 — 2026-11-24 — Fase 2a: interfaccia nel browser
 
 - `genesis serve`: API HTTP locale (solo 127.0.0.1) con token per installazione,

@@ -24,6 +24,21 @@ l'approvazione esplicita del proprietario.
 | Kilo / OVHcloud senza chiave | — | — | esclusi: le rotte gratuite possono registrare i prompt |
 | Firma del codice, hosting, domini | — | a pagamento | non usati |
 
+## Come si attiva un motore online (Fase 3)
+
+Nel file `genesis.toml` della cartella dati, **solo dopo** aver verificato e
+registrato qui le condizioni gratuite di ogni provider usato da freelm:
+
+```toml
+[intelligence]
+remote_enabled = true
+remote_free_verified = true
+```
+
+Servono anche la libreria `freelm` (`pip install freelm`, installazione = livello 4)
+e le chiavi gratuite nelle variabili d'ambiente. Gli endpoint senza chiave non
+vengono mai usati.
+
 ## Registro delle verifiche
 
 | Data | Servizio | Esito |

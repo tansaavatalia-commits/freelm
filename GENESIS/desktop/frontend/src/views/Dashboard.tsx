@@ -132,12 +132,18 @@ export function Dashboard({
           ]} />
         </Card>
 
-        <Card title="Intelligenza artificiale">
-          <p className="figure">Nessun provider</p>
-          <p className="note">
-            Il router dei modelli arriva nella Fase 3. Finché un provider non è verificato come gratuito resta
-            disattivato.
-          </p>
+        <Card title="Motori di intelligenza">
+          <ul className="plain-list">
+            {status.engines.map((e) => (
+              <li key={e.id}>
+                <Badge tone={e.usable ? "ok" : "muted"}>{e.usable ? "attivo" : "spento"}</Badge>{" "}
+                <span className="strong">{e.kind === "local" ? "Locale" : "Online"}</span>{" "}
+                <span className="muted">({e.capabilities.join(", ")})</span>
+                <p className="note">{e.reason}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="note">Prova dai Compiti con il tipo intelligence.ask, per esempio {'{"prompt": "12*(3+4)"}'}.</p>
         </Card>
       </div>
     </>

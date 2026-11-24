@@ -17,6 +17,12 @@
 
 ## Per lo sviluppo — passo esatto successivo
 
+Fase 3 fatta (router + motore locale). Restano due strade:
+1. **Prova dal vivo del motore online**, appena una chiave gratuita funziona.
+2. **Fase 4 — Agenti** (Director, Researcher, …) costruiti sopra il router.
+
+### Prima opzione già descritta
+
 **Fase 2b (Tauri)** — da fare solo dopo la prova sul PC, per sapere se WebView2 è
 presente e quanta RAM resta: shell Tauri 2 che avvia `genesis serve --no-browser`
 come processo figlio e apre la stessa interfaccia in una finestra nativa; build

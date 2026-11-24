@@ -28,6 +28,7 @@ _KNOWN_KEYS = {
     "logging": {"level"},
     "backup": {"keep"},
     "permissions": {"grants"},
+    "intelligence": {"remote_enabled", "remote_free_verified"},
 }
 
 
@@ -52,6 +53,8 @@ class Config:
     log_level: str = "INFO"
     backup_keep: int | None = None  # None: use the execution profile's default
     grants: Mapping[str, int] = field(default_factory=lambda: DEFAULT_GRANTS)
+    remote_enabled: bool = False  # online engines allowed at all
+    remote_free_verified: bool = False  # owner checked their free terms (COST_POLICY.md)
 
     @property
     def data_dir(self) -> Path:
@@ -137,4 +140,13 @@ def _build(home: Path, raw: Mapping[str, Any], source: Path) -> Config:
             raise ConfigError(f"{source}: il permesso di {principal!r} deve essere un intero tra 0 e 5")
         grants[principal] = granted
 
-    return Config(home=home, profile=profile, log_level=level, backup_keep=keep, grants=MappingProxyType(grants))
+    intelligence = raw.get("intelligence", {})
+    flags = {}
+    for key in ("remote_enabled", "remote_free_verified"):
+        value = intelligence.get(key, False)
+        if not isinstance(value, bool):
+            raise ConfigError(f"{source}: [intelligence] {key} deve essere true o false")
+        flags[key] = value
+
+    return Config(home=home, profile=profile, log_level=level, backup_keep=keep, grants=MappingProxyType(grants),
+                  **flags)

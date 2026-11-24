@@ -22,6 +22,10 @@ from .core.tasks import TaskManager
 from .core.worker import LOCK_FILENAME, WorkerLock
 from .hardware.detect import HardwareInfo, detect
 from .hardware.profiles import select_profile
+from .intelligence.base import Request
+from .intelligence.local import LocalEngine
+from .intelligence.online import FreelmProvider
+from .intelligence.router import Router
 from .memory.db import Database, list_backups
 from .security.audit import AuditLog
 from .security.permissions import OWNER, Level, PermissionManager
@@ -54,6 +58,8 @@ class Genesis:
             self.permissions = PermissionManager(self.db, self.audit, self.config.grants, now=now)
             self.projects = ProjectStore(self.db, self.permissions, self.bus, now=now)
             self.tasks = TaskManager(self.db, self.bus, self.permissions, self.log.getChild("tasks"), now=now)
+            self.router = Router([LocalEngine(), FreelmProvider()], remote_enabled=self.config.remote_enabled,
+                                 remote_free_verified=self.config.remote_free_verified, audit=self.audit)
             self._register_builtin_tasks()
         except BaseException:
             self.close()
@@ -90,8 +96,17 @@ class Genesis:
                  "Rileva l'hardware in questo momento.")
         register("memory.integrity_check", lambda ctx: {"ok": self.db.integrity_ok()}, Level.READ,
                  "Controlla l'integrità del database.")
+        register("intelligence.ask", self._ask_task, Level.READ,
+                 "Chiede al router dei motori: payload {\"prompt\": \"...\", \"private\": false}.")
         register("memory.backup", lambda ctx: {"path": str(self._backup())}, Level.WORKSPACE_WRITE,
                  "Crea un backup verificato del database.")
+
+    def _ask_task(self, ctx: Any) -> dict[str, Any]:
+        payload = ctx.payload
+        prompt, task_type, private = payload.get("prompt"), payload.get("task_type"), payload.get("private", False)
+        if not isinstance(prompt, str) or not isinstance(private, bool) or not isinstance(task_type, (str, type(None))):
+            raise ValueError('payload atteso: {"prompt": "testo", "task_type": null, "private": false}')
+        return self.router.route(Request(prompt, task_type, private))
 
     # -- memory operations ------------------------------------------------------
 
@@ -147,7 +162,7 @@ class Genesis:
             "audit_chain_ok": chain_ok,
             "audit_first_bad_seq": first_bad,
             "backups": len(self.backups()),
-            "external_providers": [],  # Phase 3
+            "engines": self.router.describe(),
         }
 
     def doctor(self) -> list[dict[str, str]]:

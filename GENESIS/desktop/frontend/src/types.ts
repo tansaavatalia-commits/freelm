@@ -39,12 +39,23 @@ export interface Status {
   audit_chain_ok: boolean;
   audit_first_bad_seq: number | null;
   backups: number;
-  external_providers: string[];
+  engines: Engine[];
   profile_details: { max_workers: number; max_parallel_online: number; local_models: boolean; description: string };
   hardware: Hardware;
   memory: { ram_total_mb: number | null; ram_available_mb: number | null; process_rss_mb: number | null };
   worker_running: boolean;
   recovered_at_start: number;
+}
+
+export interface Engine {
+  id: string;
+  name: string;
+  kind: "local" | "remote";
+  cost: string;
+  method: string;
+  capabilities: string[];
+  usable: boolean;
+  reason: string;
 }
 
 export interface Project {

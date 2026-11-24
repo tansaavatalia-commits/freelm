@@ -45,6 +45,7 @@ I dati stanno in `%LOCALAPPDATA%\GENESIS` (oppure nella cartella indicata da
 | Comando | Cosa fa |
 |---|---|
 | `serve [--port N] [--no-browser]` | interfaccia nel browser su `http://127.0.0.1:8765` + esecuzione dei compiti in background |
+| `ask "testo" [--private]` / `providers` | chiede al router dei motori / mostra i motori e perché sono attivi o spenti |
 | `status [--json]` | stato: profilo, progetti, compiti, approvazioni, audit |
 | `doctor [--json]` | hardware, profilo di esecuzione e controlli di salute |
 | `project add / list / archive` | gestione dei progetti |
