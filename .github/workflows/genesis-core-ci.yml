@@ -40,3 +40,22 @@ jobs:
         run: python -m pytest
       - name: Smoke test with real hardware detection
         run: python -m genesis --home "$RUNNER_TEMP/genesis-home" doctor
+
+  frontend:
+    # The built interface is committed (genesis/api/static) so the owner's PC needs no Node.
+    # This job proves the committed build matches the sources.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: GENESIS/desktop/frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Install (exact versions from package-lock.json)
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck and build
+        run: npm run build
+      - name: Committed build is up to date
+        run: git diff --exit-code -- ../../genesis/api/static || (echo "Run 'npm run build' in GENESIS/desktop/frontend and commit genesis/api/static" && exit 1)

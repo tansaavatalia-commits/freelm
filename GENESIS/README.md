@@ -1,8 +1,8 @@
-# GÉNESIS — core (Fase 1)
+# GÉNESIS — core e interfaccia (Fasi 1–2a)
 
-Piattaforma di intelligenza estensibile. Questa cartella contiene il **Core**:
-funziona da solo, senza interfaccia grafica, senza provider di IA esterni e
-senza dipendenze oltre a Python.
+Piattaforma di intelligenza estensibile. Questa cartella contiene il **Core**
+e la sua **interfaccia web locale**. Funziona senza provider di IA esterni e
+senza dipendenze oltre a Python: l'interfaccia è già compilata dentro il pacchetto.
 
 | Componente | Stato |
 |---|---|
@@ -11,7 +11,8 @@ senza dipendenze oltre a Python.
 | Permessi a 5 livelli, approvazioni del proprietario, audit a catena di hash | IMPLEMENTATO e testato |
 | Coda dei compiti persistente con ripresa dopo un crash | IMPLEMENTATO e testato |
 | Rilevamento hardware e profili di esecuzione (`lite-4gb`, `standard`, `gpu`) | IMPLEMENTATO e testato (Windows: in CI) |
-| Interfaccia desktop, router dei modelli, agenti, strumenti | PENDENTE (Fasi 2–5) |
+| Interfaccia nel browser: Dashboard, Progetti, Compiti, Approvazioni, Diagnostica | IMPLEMENTATO e testato (test end-to-end in Chromium) |
+| Finestra desktop Tauri, router dei modelli, agenti, strumenti | PENDENTE (Fasi 2b–5) |
 
 ## Avvio rapido su Windows
 
@@ -25,7 +26,10 @@ cd freelm\GENESIS
 # 2. Diagnostica: hardware reale del PC, profilo scelto, controlli
 py -3 -m genesis doctor
 
-# 3. Uso di base
+# 3. Interfaccia: si apre nel browser; lascia aperta la finestra di PowerShell, Ctrl+C per fermare
+py -3 -m genesis serve
+
+# 4. Oppure da riga di comando
 py -3 -m genesis status
 py -3 -m genesis project add "Il mio progetto"
 py -3 -m genesis task submit system.hardware_snapshot --project "Il mio progetto"
@@ -40,6 +44,7 @@ I dati stanno in `%LOCALAPPDATA%\GENESIS` (oppure nella cartella indicata da
 
 | Comando | Cosa fa |
 |---|---|
+| `serve [--port N] [--no-browser]` | interfaccia nel browser su `http://127.0.0.1:8765` + esecuzione dei compiti in background |
 | `status [--json]` | stato: profilo, progetti, compiti, approvazioni, audit |
 | `doctor [--json]` | hardware, profilo di esecuzione e controlli di salute |
 | `project add / list / archive` | gestione dei progetti |
@@ -64,6 +69,10 @@ py -3 -m genesis import C:\percorso\genesis-export.json      # sul PC nuovo (car
 cd GENESIS
 python -m pytest          # test (serve solo pytest)
 ruff check .              # lint
+
+cd desktop/frontend       # interfaccia (serve Node >= 20.19, solo per svilupparla)
+npm ci && npm run build   # controllo dei tipi + build dentro genesis/api/static
+node e2e/smoke.cjs python /percorso/cartella-vuota   # test end-to-end (Playwright)
 ```
 
 Documentazione: [`documentation/`](documentation/) — stato, architettura,
