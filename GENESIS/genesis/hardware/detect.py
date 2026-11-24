@@ -237,6 +237,67 @@ def _linux_gpus() -> tuple[GPU, ...] | None:
     return tuple(gpus)
 
 
+# -- live measurements ---------------------------------------------------------------
+
+
+def memory_now() -> tuple[int | None, int | None]:
+    """(total, available) RAM in MB right now; (None, None) where not supported."""
+    system = platform.system()
+    if system == "Windows":
+        return _win_memory()
+    if system == "Linux":
+        return _linux_memory()
+    return None, None
+
+
+def process_memory_mb() -> float | None:
+    """Resident memory (working set) of this process in MB, or None where not supported."""
+    if platform.system() == "Linux":
+        try:
+            for line in Path("/proc/self/status").read_text().splitlines():
+                if line.startswith("VmRSS:"):
+                    return round(int(line.split()[1]) / 1024, 1)
+        except (OSError, ValueError, IndexError):
+            return None
+        return None
+    if platform.system() == "Windows":
+        return _win_process_memory()
+    return None
+
+
+def _win_process_memory() -> float | None:
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD),
+            ("PageFaultCount", wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t),
+            ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t),
+            ("PeakPagefileUsage", ctypes.c_size_t),
+        ]
+
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.K32GetProcessMemoryInfo.argtypes = [
+            wintypes.HANDLE, ctypes.POINTER(PROCESS_MEMORY_COUNTERS), wintypes.DWORD]
+        kernel32.K32GetProcessMemoryInfo.restype = wintypes.BOOL
+        counters = PROCESS_MEMORY_COUNTERS()
+        counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+        if not kernel32.K32GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+            return None
+    except (AttributeError, OSError):
+        return None
+    return round(counters.WorkingSetSize / MB, 1)
+
+
 # -- macOS -----------------------------------------------------------------------
 
 

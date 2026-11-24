@@ -22,6 +22,9 @@ version = { attr = "genesis.__version__" }
 [tool.setuptools.packages.find]
 include = ["genesis*"]
 
+[tool.setuptools.package-data]
+"genesis.api" = ["static/*", "static/**/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

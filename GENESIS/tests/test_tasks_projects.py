@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from genesis.app import Genesis
+from genesis.core.worker import TaskWorker
 from genesis.errors import ApprovalRequired, GenesisError, PermissionDenied, TaskError
 from genesis.security.permissions import OWNER, Level
 
@@ -84,10 +85,11 @@ def test_interrupted_tasks_are_recovered_on_restart(home):
     g.close()
     g = Genesis(home, hardware=LITE_HW)
     try:
-        assert g.recovered_tasks == 2
-        assert g.tasks.get(again["id"])["status"] == "pending"
+        assert g.tasks.get(again["id"])["status"] == "running"  # opening the core never touches tasks
+        recovered, done = TaskWorker(g).run_once()  # the worker that takes the lock recovers them
+        assert recovered == 2
         assert g.tasks.get(exhausted["id"])["status"] == "failed"
-        assert g.tasks.run_next()["status"] == "succeeded"
+        assert [t["id"] for t in done] == [again["id"]] and done[0]["status"] == "succeeded"
     finally:
         g.close()
 

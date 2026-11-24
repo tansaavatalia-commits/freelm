@@ -19,6 +19,7 @@ from .core.events import EventBus
 from .core.logs import close_handler, setup_logging
 from .core.projects import ProjectStore
 from .core.tasks import TaskManager
+from .core.worker import LOCK_FILENAME, WorkerLock
 from .hardware.detect import HardwareInfo, detect
 from .hardware.profiles import select_profile
 from .memory.db import Database, list_backups
@@ -54,14 +55,15 @@ class Genesis:
             self.projects = ProjectStore(self.db, self.permissions, self.bus, now=now)
             self.tasks = TaskManager(self.db, self.bus, self.permissions, self.log.getChild("tasks"), now=now)
             self._register_builtin_tasks()
-            self.recovered_tasks = self.tasks.recover()
         except BaseException:
             self.close()
             raise
+        # Interrupted tasks are recovered by whoever takes the worker lock (see core/worker.py),
+        # never here: a read-only command must not touch tasks a live worker is running.
         self.log.info(
             "core started",
             extra={"fields": {"version": __version__, "profile": self.profile.name,
-                              "migrations": self.migrations_applied, "recovered_tasks": self.recovered_tasks}},
+                              "migrations": self.migrations_applied}},
         )
 
     def __enter__(self) -> Genesis:
@@ -77,6 +79,9 @@ class Genesis:
     @property
     def backup_keep(self) -> int:
         return self.config.backup_keep or self.profile.backup_keep
+
+    def worker_lock(self) -> WorkerLock:
+        return WorkerLock(self.config.data_dir / LOCK_FILENAME)
 
     def _register_builtin_tasks(self) -> None:
         register = self.tasks.register
@@ -107,8 +112,9 @@ class Genesis:
         self.permissions.require(
             principal, "memory.restore", Level.SYSTEM_CHANGE, approval_id=approval_id, details={"source": str(source)}
         )
-        safety = self.db.restore(Path(source), self.config.backups_dir, self.backup_keep)
-        recovered = self.tasks.recover()
+        with self.worker_lock():  # never swap the data under a running worker ('genesis serve')
+            safety = self.db.restore(Path(source), self.config.backups_dir, self.backup_keep)
+            recovered = self.tasks.recover()
         # Written into the restored database, whose chain continues from the backup.
         self.audit.record(
             principal, "memory.restore", "ok", Level.SYSTEM_CHANGE,

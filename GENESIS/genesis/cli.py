@@ -14,8 +14,11 @@ from typing import Any, Sequence
 
 from . import __version__
 from .app import Genesis, import_data
+from .core.worker import TaskWorker
 from .errors import ConfigError, GenesisError
 from .security.permissions import OWNER, Level
+
+DEFAULT_PORT = 8765
 
 MARKS = {"ok": "OK", "warn": "!!", "fail": "KO"}
 
@@ -143,7 +146,9 @@ def cmd_task_show(g: Genesis, args: argparse.Namespace) -> int:
 
 
 def cmd_task_run(g: Genesis, args: argparse.Namespace) -> int:
-    done = g.tasks.run_pending(args.max)
+    recovered, done = TaskWorker(g).run_once(args.max)
+    if recovered:
+        print(f"{recovered} compiti interrotti da un arresto precedente sono stati ripresi.")
     if not done:
         print("Nessun compito in coda.")
     for t in done:
@@ -301,12 +306,41 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("path", type=Path)
     s.set_defaults(func=None)
 
+    s = sub.add_parser("serve", help="avvia l'interfaccia nel browser e l'esecuzione dei compiti")
+    s.add_argument("--port", type=int, default=DEFAULT_PORT)
+    s.add_argument("--no-browser", action="store_true", help="non aprire il browser")
+    s.set_defaults(func=None)
+
     audit = sub.add_parser("audit", help="registro di audit").add_subparsers(dest="action", required=True)
     audit.add_parser("verify", help="verifica la catena di hash").set_defaults(func=cmd_audit_verify)
     s = audit.add_parser("tail", help="ultime voci")
     s.add_argument("-n", type=int, default=20)
     s.set_defaults(func=cmd_audit_tail)
     return parser
+
+
+def _serve(args: argparse.Namespace) -> int:
+    import webbrowser
+
+    from .api.server import ApiServer
+
+    try:
+        server = ApiServer(args.home, port=args.port)
+    except OSError as exc:
+        print(f"errore: impossibile usare la porta {args.port} ({exc}). Prova con --port 8766", file=sys.stderr)
+        return 1
+    print(f"GÉNESIS è in esecuzione: {server.url}")
+    print("Lascia aperta questa finestra. Per fermare GÉNESIS premi Ctrl+C.")
+    if not args.no_browser:
+        webbrowser.open(server.url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nArresto in corso: attendo la fine dell'eventuale compito in esecuzione...")
+    finally:
+        server.shutdown()
+    print("GÉNESIS è stato fermato.")
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -318,6 +352,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             pass
     args = build_parser().parse_args(argv)
     try:
+        if args.command == "serve":
+            return _serve(args)
         if args.command == "import":
             counts = import_data(args.home, args.path)
             with Genesis(args.home) as g:
