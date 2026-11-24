@@ -20,7 +20,7 @@ level = "INFO"
 # comunque l'approvazione del proprietario per ogni singola azione.
 # owner = 5
 # system = 3
-# researcher = 1   # esempio per gli agenti della Fase 4
+# "agent.developer" = 2   # esempio: permette al Developer di scrivere file nella cartella di lavoro
 
 [intelligence]
 # Motore online: OpenRouter, solo modelli gratuiti. Più semplice: genesis online enable --confirm
