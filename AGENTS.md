@@ -32,6 +32,7 @@ same commit, with tests in both.** File mapping is 1:1:
 | `_state.py`             | `state.ts`             |
 | `_cli.py` + `__main__.py` | `cli.ts` (+ `bin/freelm.mjs`) |
 | `server.py`             | `server.ts`            |
+| `protocols.py`          | `protocols.ts`         |
 | `_version.py`           | `version.ts`           |
 | —                       | `runtime.ts` (TS-only: env / Node built-ins without static `node:` imports) |
 
@@ -83,7 +84,9 @@ first (which keys work today), then `examples/e2e_smoke.py` /
   saying the model needs a paid plan is `ModelNotFound(gone=True)`); 429
   `RateLimited` → cool key (an hour when the body says the *daily* quota is
   spent and no retry time is given — `DAILY_QUOTA_RETRY`), or if model-scoped per
-  `rate_limit_scope` (Gemini, Groq, Z.ai, Cohere: per-model quotas) bench just the model;
+  `rate_limit_scope` (Gemini, Groq, Z.ai, Cohere: per-model quotas) bench just the model
+  (with no `Retry-After`, `rate_limit_reset`/`rateLimitReset` reads the
+  `x-ratelimit-reset*` header of every window at zero);
   408/409/425/any 5xx `Transient` → breaker + backoff, or if model-scoped per
   `transient_scope` (Gemini "high demand") bench the model; 404/410 and
   400/422 "decommissioned/no longer..." `ModelNotFound(gone=True)` → bench the
@@ -134,8 +137,11 @@ first (which keys work today), then `examples/e2e_smoke.py` /
   one JSON schema shared by both languages (`provider:sha256(key)[:12]` →
   rpd/cooldown/disabled with wall-clock timestamps). Never write raw keys.
 - **CLI** (`_cli.py`/`cli.ts`): stdlib/zero-dep only (argparse /
-  `util.parseArgs`); commands `chat|models|health|doctor|serve`; config/usage
-  errors exit 2, other freelm errors exit 1. `doctor` sends one tiny chat per
+  `util.parseArgs`); commands `chat|models|health|doctor|serve|run`; config/usage
+  errors exit 2, other freelm errors exit 1. `run <command>` serves on a free
+  port with a one-time key and launches the command with `agent_env`/`agentEnv`
+  (Anthropic + OpenAI base URLs, `ANTHROPIC_API_KEY` blanked), returning its
+  exit code. `doctor` sends one tiny chat per
   key (`/models` returns 200 for dead keys on several providers, so it can't be
   trusted) and prints a fix + signup link per failure; the provider table
   (`PROVIDER_ENV`) lives in `config`. `option_vars`/`optionVars` feed extra
@@ -161,6 +167,17 @@ first (which keys work today), then `examples/e2e_smoke.py` /
   `transient_scope` (who a 429/5xx throttles) and `adapt_payload` (last look at
   the request body — Cloudflare adds `max_tokens`, since many Workers AI models
   stop at 256 tokens by default).
+- **Protocols** (`protocols.py`/`protocols.ts`): pure translation of the
+  Anthropic Messages (`/v1/messages`, `/count_tokens`) and OpenAI Responses
+  (`/v1/responses`) wire formats to and from chat completions — request ->
+  `(messages, params)`, completion -> response object, chunk stream -> SSE
+  events (`AnthropicStream`/`ResponsesStream` over one `_Deltas`/`Deltas`
+  tool-call accumulator, which tells calls apart by `id` when a provider omits
+  or reuses `index`). The server owns routing: `agent_chain`/`agentChain` never
+  sends an agent's model id upstream (vision -> tools -> fast -> fallback).
+  Untranslatable items (server tools, thinking, reasoning) are dropped, not
+  errors; `max_tokens` is capped at `MAX_OUTPUT_TOKENS`. Errors keep each
+  protocol's shape (Anthropic: 503 becomes 529 `overloaded_error`).
 - **`serve`**: zero-dep OpenAI-compatible endpoint. Python: stdlib
   `ThreadingHTTPServer`, every request handed to one `AsyncFreeLLM` on a
   private loop thread (single-loop safety). TS: `node:http` loaded via

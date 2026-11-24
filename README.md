@@ -48,7 +48,8 @@ anonymous tier) and says so. Their limits are low and free routes may log prompt
 
 ## Use free LLMs in any OpenAI-compatible tool
 
-`freelm serve` runs the same router as a local OpenAI-compatible API — streaming, tool calls and failover included:
+`freelm serve` runs the same router as a local API — OpenAI chat completions, OpenAI Responses and Anthropic
+Messages — with streaming, tool calls and failover included:
 
 ```bash
 freelm serve                 # → http://127.0.0.1:4000/v1   (npx freelm serve works too)
@@ -71,6 +72,35 @@ Then point your tool at `http://127.0.0.1:4000/v1` with any API key and model `a
 | **Aider** | `aider --openai-api-base http://127.0.0.1:4000/v1 --openai-api-key freelm --model openai/auto` |
 | **Open WebUI** | Admin → Connections → OpenAI API: `http://host.docker.internal:4000/v1` |
 | **n8n** | OpenAI credential → Base URL `http://127.0.0.1:4000/v1` |
+
+### Claude Code, the Anthropic SDK and the Responses API
+
+The same server also speaks the **Anthropic Messages API** (`/v1/messages`) and the **OpenAI Responses API**
+(`/v1/responses`), streaming and tool calls included, so coding agents run on your free pool:
+
+```bash
+freelm run claude            # Claude Code on free models: starts a private endpoint, points claude at it
+freelm run -- aider --model openai/auto
+freelm run python my_script.py   # anything that reads ANTHROPIC_BASE_URL / OPENAI_BASE_URL
+```
+
+`freelm run` picks a free port, generates a one-time key, sets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`,
+`OPENAI_BASE_URL` and `OPENAI_API_KEY` for the command, and blanks `ANTHROPIC_API_KEY` so the tool cannot fall back
+to a paid account. With a long-running `freelm serve` instead:
+
+| Tool | Setting |
+|------|---------|
+| **Claude Code** | `ANTHROPIC_BASE_URL=http://127.0.0.1:4000 ANTHROPIC_AUTH_TOKEN=freelm claude` |
+| **Anthropic SDK** | `Anthropic(base_url="http://127.0.0.1:4000", api_key="freelm")` |
+| **OpenAI SDK** (Responses API) | `OpenAI(base_url="http://127.0.0.1:4000/v1", api_key="freelm").responses.create(model="auto", input="hi")` |
+| Any other Responses-API client (Codex-style agents) | base URL `http://127.0.0.1:4000/v1`, wire API "responses" |
+
+Claude Code is tested end to end (tool calls included); other Responses-API agents are covered by protocol tests
+only. The agent's own model name (`claude-sonnet-4-5`, `gpt-5-codex`) is never sent upstream: the request goes to a free
+model that fits it — vision-capable if it carries images, tool-calling if it carries tools, a fast one for a
+haiku/mini id — then `auto`. Free models are smaller than the ones these agents were built for: expect them to
+handle focused edits and questions, not long autonomous sessions. Server tools (Anthropic web search, Responses
+built-ins), thinking blocks and `previous_response_id` are not translated.
 
 Or with Docker (image built on each release):
 
@@ -221,6 +251,7 @@ to `True`: paid ids raise `ConfigError` instead of billing you), `cache_ttl`. `l
 freelm chat "explain failover in one line" --model chat:fast --stream
 freelm doctor [--json]          # live-check every key, with fixes
 freelm serve [--port 4000] [--api-key KEY] [--cors]
+freelm run claude               # run a tool on free models (private endpoint + env vars)
 freelm models --provider groq   # live model list
 freelm health                   # this process's key state
 ```

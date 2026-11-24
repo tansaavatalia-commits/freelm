@@ -6,7 +6,11 @@
  *   npx freelm serve                     # http://127.0.0.1:4000/v1
  *
  * Endpoints: POST /v1/chat/completions (JSON, or SSE with stream: true),
- * GET /v1/models (virtual aliases + discovered models), GET /health.
+ * POST /v1/messages (+ /count_tokens; the Anthropic Messages API, for Claude
+ * Code and the Anthropic SDKs), POST /v1/responses (the OpenAI Responses API,
+ * for Codex CLI), GET /v1/models (virtual aliases + discovered models),
+ * GET /health. The last two protocols are translated to chat completions in
+ * protocols.ts, so they share the same failover.
  * Zero dependencies: node:http is loaded at runtime (process.getBuiltinModule),
  * so importing this module never breaks edge/browser bundles. */
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
@@ -14,6 +18,7 @@ import { FreeLLM, FreeLLMOptions } from "./client.js";
 import { providersFromEnv } from "./config.js";
 import { BadRequest, ConfigError, FreeLLMError, NoProvidersAvailable, ProviderError } from "./errors.js";
 import { Provider } from "./providers/base.js";
+import { AnthropicMessages, COUNT_TOKENS_PATHS, hasImages, Protocol, PROTOCOLS } from "./protocols.js";
 import { isVirtual, virtualAliases } from "./registry.js";
 import { builtin } from "./runtime.js";
 import { chunkStamper, completionBody } from "./types.js";
@@ -26,6 +31,7 @@ const DRAIN_LIMIT = 4 * MAX_BODY;
 const CHAT_PATHS = new Set(["/v1/chat/completions", "/chat/completions"]);
 const MODEL_PATHS = new Set(["/v1/models", "/models"]);
 const HEALTH_PATHS = new Set(["/health", "/v1/health", "/healthz"]);
+export const ENDPOINTS = ["/v1/chat/completions", "/v1/messages", "/v1/responses", "/v1/models", "/health"];
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
 const DEFAULT_CORS_HEADERS = "Authorization, Content-Type, X-Api-Key";
 
@@ -141,6 +147,23 @@ export function createServer(llm: FreeLLM, opts: ServeOptions = {}): Server {
     return [requested, fallback];
   };
 
+  /** Model chain for the translated protocols. Agents name models no free tier
+   * has ("claude-sonnet-4-5", "gpt-5-codex"): those are never sent upstream —
+   * the request goes to models that can serve it (vision for images, tool
+   * calling for tools, a fast one for a small-model id), then `fallbackModel`. */
+  const agentChain = (requested: unknown, messages: Record<string, any>[], params: Record<string, any>): string | string[] => {
+    if (!fallback) return modelChain(requested);
+    if (typeof requested === "string" && requested.trim() &&
+        (isVirtual(requested) || llm.providers.some((p: Provider) => p.knowsModel(requested)))) return requested;
+    const name = typeof requested === "string" ? requested.toLowerCase() : "";
+    let first: string;
+    if (hasImages(messages)) first = "vision";
+    else if (params.tools) first = "tools";
+    else if (["haiku", "mini", "nano", "flash"].some((s) => name.includes(s))) first = "fast";
+    else return fallback;
+    return first !== fallback ? [first, fallback] : first;
+  };
+
   let loopbackOnly = false; // set from the bound address once listening
   const cors = (res: ServerResponse, req?: IncomingMessage) => {
     if (!opts.cors) return;
@@ -247,6 +270,72 @@ export function createServer(llm: FreeLLM, opts: ServeOptions = {}): Server {
     }
   };
 
+  /** Serve an Anthropic Messages / OpenAI Responses request through chat(). */
+  const translated = async (
+    req: IncomingMessage, res: ServerResponse, proto: Protocol, body: Record<string, any>,
+    messages: Record<string, any>[], params: Record<string, any>,
+  ) => {
+    const t0 = performance.now();
+    const model = agentChain(body.model, messages, params);
+    const ac = new AbortController();
+    res.on("close", () => {
+      if (!res.writableFinished) ac.abort(); // the client went away: stop pulling tokens upstream
+    });
+    const done = (status: number, what: string) =>
+      log?.(`${req.method} ${req.url?.split("?")[0]} ${status} ${what} ${Math.round(performance.now() - t0)}ms`);
+    const fail = (e: unknown) => {
+      if (ac.signal.aborted) return;
+      const [s, err] = statusFor(e);
+      const [status, out] = proto.error(s, err.error.message);
+      sendJson(res, status, out);
+      done(status, (e as any)?.name ?? "error");
+    };
+
+    if (!body.stream) {
+      try {
+        const r = await llm.chat(messages, { ...params, model, signal: ac.signal });
+        sendJson(res, 200, proto.fromCompletion(completionBody(r), body), {
+          "X-FreeLLM-Provider": r.provider ?? "", "X-FreeLLM-Model": r.model ?? "",
+        });
+        done(200, `${r.provider}/${r.model}`);
+      } catch (e) {
+        fail(e);
+      }
+      return;
+    }
+
+    const it = llm.streamChunks(messages, { ...params, model, signal: ac.signal })[Symbol.asyncIterator]();
+    let r: IteratorResult<Record<string, any>>;
+    try {
+      r = await it.next(); // failover settles before we commit to a 200
+    } catch (e) {
+      fail(e);
+      return;
+    }
+    const enc = proto.stream(body);
+    const emit = (events: [string, Record<string, any>][]) => {
+      if (events.length) res.write(events.map(([name, data]) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`).join(""));
+    };
+    cors(res);
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+    try {
+      while (!r.done) {
+        emit(enc.feed(r.value));
+        r = await it.next();
+      }
+      emit(enc.finish());
+    } catch (e) {
+      if (!ac.signal.aborted) {
+        const [status, err] = statusFor(e);
+        emit(enc.error(status, err.error.message));
+      }
+    }
+    if (!ac.signal.aborted) {
+      res.end();
+      done(200, `stream/${enc.model}`);
+    }
+  };
+
   const server: Server = http.createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const path = (req.url ?? "/").split("?")[0].replace(/\/+$/, "") || "/";
     try {
@@ -266,32 +355,48 @@ export function createServer(llm: FreeLLM, opts: ServeOptions = {}): Server {
         return;
       }
       if (req.method === "GET" && (path === "/" || path === "/v1")) {
-        sendJson(res, 200, { name: "freelm", version: VERSION, endpoints: ["/v1/chat/completions", "/v1/models", "/health"] });
+        sendJson(res, 200, { name: "freelm", version: VERSION, endpoints: ENDPOINTS });
         return;
       }
-      if (req.method !== "POST" || !CHAT_PATHS.has(path)) {
+      const proto = PROTOCOLS[path];
+      const counting = COUNT_TOKENS_PATHS.has(path);
+      if (req.method !== "POST" || (!CHAT_PATHS.has(path) && !proto && !counting)) {
         sendJson(res, 404, errorBody(`no route for ${req.method} ${path}`, "invalid_request_error", "not_found"));
         return;
       }
+      const fail = (status: number, message: string) => {
+        if (proto || counting) {
+          const [s, err] = (proto ?? AnthropicMessages).error(status, message);
+          sendJson(res, s, err);
+        } else sendJson(res, status, errorBody(message, "invalid_request_error"));
+      };
       if (!String(req.headers["content-type"] ?? "").toLowerCase().includes("application/json")) {
         // also what keeps arbitrary web pages out: a cross-origin JSON POST
         // needs a CORS preflight, which is refused unless --cors
         res.setHeader("Connection", "close");
-        sendJson(res, 415, errorBody("Content-Type must be application/json", "invalid_request_error"));
+        fail(415, "Content-Type must be application/json");
         return;
       }
       let body: any;
+      let chatArgs: [Record<string, any>[], Record<string, any>] | null = null;
       try {
         body = JSON.parse(await readBody(req));
-        if (!body || typeof body !== "object" || !Array.isArray(body.messages)) throw new Error("body must be an object with a 'messages' list");
+        if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("body must be a JSON object");
+        if (counting) {
+          sendJson(res, 200, AnthropicMessages.countTokens(body));
+          return;
+        }
+        if (proto) chatArgs = proto.toChat(body);
+        else if (!Array.isArray(body.messages)) throw new Error("body must be an object with a 'messages' list");
       } catch (e: any) {
         if (e?.status) {
           res.setHeader("Connection", "close");
-          sendJson(res, e.status, errorBody(String(e.message), "invalid_request_error"));
-        } else sendJson(res, 400, errorBody(`invalid JSON body: ${e?.message ?? e}`, "invalid_request_error"));
+          fail(e.status, String(e.message));
+        } else fail(400, `invalid JSON body: ${e?.message ?? e}`);
         return;
       }
-      await chat(req, res, body);
+      if (proto && chatArgs) await translated(req, res, proto, body, chatArgs[0], chatArgs[1]);
+      else await chat(req, res, body);
     } catch (e) {
       if (!res.headersSent) {
         const [status, err] = statusFor(e);
@@ -304,6 +409,22 @@ export function createServer(llm: FreeLLM, opts: ServeOptions = {}): Server {
     loopbackOnly = !!addr && typeof addr === "object" && (addr.address === "127.0.0.1" || addr.address === "::1");
   });
   return server;
+}
+
+/** `env` (default: this process's) with the Anthropic and OpenAI SDK variables
+ * pointed at a freelm server on `port` — what `freelm run` gives the tool it
+ * launches. A real ANTHROPIC_API_KEY is blanked so the tool cannot fall back
+ * to a paid account. */
+export function agentEnv(port: number, apiKey: string, env?: Record<string, string | undefined>): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = { ...(env ?? builtin("node:process")?.env ?? {}) };
+  const root = `http://127.0.0.1:${port}`;
+  Object.assign(out, {
+    ANTHROPIC_BASE_URL: root, ANTHROPIC_AUTH_TOKEN: apiKey, ANTHROPIC_API_KEY: "",
+    OPENAI_BASE_URL: `${root}/v1`, OPENAI_API_BASE: `${root}/v1`, OPENAI_API_KEY: apiKey,
+  });
+  // a configured proxy must not swallow the loopback calls
+  for (const v of ["NO_PROXY", "no_proxy"]) out[v] = [out[v], "127.0.0.1,localhost"].filter(Boolean).join(",");
+  return out;
 }
 
 /** Run `freelm serve` in-process (providers default to the environment).

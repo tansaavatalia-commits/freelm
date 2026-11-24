@@ -177,3 +177,34 @@ def test_doctor_shows_cloudflare_error_messages(monkeypatch, capsys):
     assert main(["doctor"]) == 1
     line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.strip().startswith("cloudflare"))
     assert "key rejected (401): Authentication error" in line
+
+
+def test_run_points_a_tool_at_a_private_endpoint(monkeypatch, capfd):
+    import sys
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real")
+    monkeypatch.setenv("NO_PROXY", "example.com")
+    child = (
+        "import json, os, sys, urllib.request\n"
+        "e = os.environ\n"
+        "assert e['OPENAI_BASE_URL'] == e['ANTHROPIC_BASE_URL'] + '/v1' == e['OPENAI_API_BASE']\n"
+        "assert e['ANTHROPIC_API_KEY'] == '' and e['ANTHROPIC_AUTH_TOKEN'] == e['OPENAI_API_KEY']\n"
+        "assert e['NO_PROXY'] == 'example.com,127.0.0.1,localhost'\n"
+        "req = urllib.request.Request(e['OPENAI_BASE_URL'], headers={'Authorization': 'Bearer ' + e['OPENAI_API_KEY']})\n"
+        "print(json.load(urllib.request.urlopen(req))['name'])\n"
+        "try: urllib.request.urlopen(e['OPENAI_BASE_URL'])\n"
+        "except Exception as x: print('nokey', x.code)\n"
+        "sys.exit(7)\n"
+    )
+    assert main(["run", "--", sys.executable, "-c", child]) == 7  # the tool's exit code is ours
+    cap = capfd.readouterr()
+    assert "freelm" in cap.out and "nokey 401" in cap.out  # GET /v1 needs the private key
+    assert "openrouter" in cap.err
+
+
+def test_run_usage_and_missing_command(monkeypatch, capsys):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "k")
+    assert main(["run"]) == 2
+    assert main(["run", "definitely-not-a-real-command-xyz"]) == 127
+    assert "cannot run" in capsys.readouterr().err
