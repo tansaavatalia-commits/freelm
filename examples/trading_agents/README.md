@@ -17,7 +17,17 @@ El bot también muestra siempre el **rendimiento semanal equivalente**, para
 compararlo con la meta del +18 % semanal. Lo mide, pero no arriesga el capital
 para perseguirlo.
 
-## Regla de entrada: probabilidad de acierto ≥ 77 % **verificada**
+## Decisión del usuario (2026-11-24): estrategia principal = momentum diario
+
+Con datos reales, ninguna señal llega al 77 % de acierto verificado, y las
+estrategias que ganan aciertan un 35–50 % de las veces. El usuario eligió **la
+que más rinde**: el **momentum combinado diario** (ver `classic` y `momentum`)
+es la estrategia principal. La regla del 77 % se mantiene solo en el bot
+experimental de 5 minutos (`live`), que el asistente de Windows deja apagado
+por defecto. **Se mantienen** el límite de caída del 10 %, la prueba de 20 días
+en papel y la autorización expresa antes de cualquier dinero real.
+
+## Regla de entrada: probabilidad de acierto ≥ 77 % **verificada** (bot experimental de 5 minutos)
 
 El bot solo abre una posición si se cumple **todo** esto:
 

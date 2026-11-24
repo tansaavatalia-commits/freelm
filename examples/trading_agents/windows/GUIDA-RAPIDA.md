@@ -1,6 +1,7 @@
 # Installazione su Windows: guida rapida (20–40 minuti)
 
-Il bot lavora **solo in carta** (100 € simulati). Non tocca mai soldi veri e non
+La strategia principale è il **momentum giornaliero** (quella che ha reso di più nei
+test). Il bot lavora **solo in carta** (100 € simulati). Non tocca mai soldi veri e non
 chiede mai permessi di prelievo. Tutto ciò che salva resta in
 `C:\Users\<tu>\freelm-bot-datos`.
 
@@ -30,16 +31,16 @@ chiede mai permessi di prelievo. Tutto ciò che salva resta in
 | 2/7 Entorno | Installa il bot e le sue dipendenze (2–5 min) | Niente, aspetta |
 | 3/7 Claves | Chiavi facoltative (IA, Telegram) | Incollale (clic destro) oppure premi solo Invio per saltarle. Alla domanda sulle chiavi dell'exchange rispondi **N** |
 | 4/7 Optimización | Prima ottimizzazione con dati reali (10–20 min) | **S** se hai tempo, altrimenti **n** |
-| 5/7 Arranque | Il bot in carta (velas 5 min) parte a ogni accesso a Windows | Alla domanda sulla sospensione del PC: **S** se il PC resta acceso di notte |
-| 6/7 Prueba diaria | Attività quotidiana delle 01:30: momentum in carta, segnali e pannello | **S** a «¿Procesar ya el día de hoy?» |
+| 5/7 Bot sperimentale | Il bot a 105 agenti a 5 minuti, che quasi non opera mai | **N** (resta spento; se ti serve si attiva con l'opzione 20). Alla domanda sulla sospensione del PC: **S** se il PC resta acceso di notte |
+| 6/7 Prueba diaria | **La strategia principale**: momentum in carta ogni giorno alle 01:30, più segnali e pannello | **S** a «¿Procesar ya el día de hoy?» |
 | 7/7 Accesos | Tre icone sul desktop | Niente |
 
 ## 3. Controlla che funzioni
 
 - Icona **«Bot de trading - Resultados»**: apre il pannello nel browser, con
   capitale, aciertos dei segnali e monete.
-- Icona **«Bot de trading - Informe»**: rapporto del bot in carta (5 minuti) e
-  stato della «puerta» del denaro reale.
+- Icona **«Bot de trading - Informe»**: come va il momentum in carta e quanto
+  azzeccano i segnali dal vivo.
 - Icona **«Bot de trading - Panel»**: riapre questo menu.
 
 ## 4. Facoltativo (anche un altro giorno)
