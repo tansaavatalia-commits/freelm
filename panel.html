@@ -1,0 +1,33 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panel del bot</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--muted:#6b7280;--line:#e3e6eb;--eq:#2563eb;--bk:#9ca3af;--good:#15803d;--warn:#b45309}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1218;--card:#171b23;--fg:#e6e9ef;--muted:#9aa3b2;--line:#2a303b;--eq:#60a5fa;--bk:#6b7280;--good:#4ade80;--warn:#fbbf24}}
+:root[data-theme="dark"]{--bg:#0f1218;--card:#171b23;--fg:#e6e9ef;--muted:#9aa3b2;--line:#2a303b;--eq:#60a5fa;--bk:#6b7280;--good:#4ade80;--warn:#fbbf24}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:900px;margin:0 auto;padding:20px 16px 40px}h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:0 0 10px}
+.muted{color:var(--muted)}section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}.kpi b{display:block;font-size:22px}
+svg{width:100%;height:auto}.equity{stroke:var(--eq)}.basket{stroke:var(--bk)}.zero{stroke:var(--line)}.axis{fill:var(--muted);font-size:13px}
+.legend{font-size:13px;color:var(--muted)}.sw{display:inline-block;width:14px;height:3px;margin:0 6px 3px 10px;vertical-align:middle}
+.sw.equity{background:var(--eq)}.sw.basket{background:var(--bk)}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+tr.total th,tr.total td{font-weight:600}.good{color:var(--good);font-weight:600}.warn{color:var(--warn)}ul{margin:0;padding-left:18px}
+</style></head><body><main>
+<h1>Bot de trading · prueba en papel</h1>
+<p class="muted">Momentum combinado, 100 € simulados. Nunca opera con dinero real. Actualizado 2026-11-24 10:04 UTC.</p>
+<section class="kpis">
+<div class="kpi"><span class="muted">Día</span><b>5/20</b><span class="muted">en marcha</span></div>
+<div class="kpi"><span class="muted">Capital</span><b>100.00 €</b><span class="muted">+0.00%</span></div>
+<div class="kpi"><span class="muted">Cesta (comprar y mantener)</span><b>-2.76%</b></div>
+<div class="kpi"><span class="muted">Caída máxima</span><b class="">0.0%</b><span class="muted">límite 10 %</span></div>
+</section>
+<section><h2>Capital frente a la cesta</h2><svg viewBox="0 0 520 240" role="img" aria-label="Capital en papel frente a la cesta"><line x1="58" x2="496" y1="24.0" y2="24.0" class="zero"/><polyline class="basket" fill="none" stroke-width="2.5" points="58.0,24.0 145.6,44.7 233.2,216.0 320.8,167.5 408.4,131.2 496.0,103.3"/><polyline class="equity" fill="none" stroke-width="2.5" points="58.0,24.0 145.6,24.0 233.2,24.0 320.8,24.0 408.4,24.0 496.0,24.0"/><text x="58" y="236" class="axis">2026-11-18</text><text x="496" y="236" class="axis" text-anchor="end">2026-11-23</text><text x="52" y="28" class="axis" text-anchor="end">+0.00%</text><text x="52" y="220" class="axis" text-anchor="end">-6.68%</text></svg><p class="legend"><span class="sw equity"></span>Bot en papel <span class="sw basket"></span>Cesta comprar y mantener</p><p>Posiciones: ninguna (liquidez)</p></section>
+<section><h2>Tarjeta de aciertos EN VIVO</h2>
+<p class="muted">Cada señal se puntúa con precios posteriores, se opere o no. Acierto = % de «largo» tras los que la moneda
+subió; base = % de veces que subió sin señal; ventaja = retorno tras «largo» menos tras «fuera» (en verde si es
+significativa al 95 %).</p><div class="scroll"><table><tr><th>señal</th><th>1 d: acierto</th><th>base</th><th>ventaja</th><th>7 d: acierto</th><th>base</th><th>ventaja</th><th>30 d: acierto</th><th>base</th><th>ventaja</th></tr><tr class="total"><th>conjunto</th><td>50% <small>(n=2)</small></td><td>52%</td><td class=''>+0.68%</td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr><tr><th>tsmom·100</th><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr><tr><th>tsmom·150</th><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr><tr><th>tsmom·20</th><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr><tr><th>tsmom·200</th><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr><tr><th>tsmom·50</th><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr><tr><th>xsmom·14</th><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr><tr><th>xsmom·28</th><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr><tr><th>xsmom·56</th><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr><tr><th>xsmom·7</th><td>50% <small>(n=2)</small></td><td>52%</td><td class=''>+0.68%</td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr><tr><th>xsmom·90</th><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td><td class="muted">—</td><td></td><td></td></tr></table></div></section>
+<section><h2>Señales de los últimos días</h2><div class="scroll"><table><tr><th>2026-11-23</th><td>SOLUSDT (1/10)</td></tr><tr><th>2026-11-22</th><td><span class="muted">todas «fuera»</span></td></tr><tr><th>2026-11-21</th><td>SOLUSDT (1/10), XRPUSDT (1/10)</td></tr><tr><th>2026-11-20</th><td><span class="muted">todas «fuera»</span></td></tr><tr><th>2026-11-19</th><td><span class="muted">todas «fuera»</span></td></tr><tr><th>2026-11-18</th><td><span class="muted">todas «fuera»</span></td></tr></table></div></section>
+<section><h2>Diario: órdenes en papel y avisos</h2><ul><li><b>2026-11-18 00:00</b> orden_papel: AVAXUSDT compra</li><li><b>2026-11-17 00:00</b> orden_papel: AVAXUSDT compra</li></ul></section>
+</main></body></html>

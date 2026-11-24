@@ -2,7 +2,7 @@
  "cash0": 100.0,
  "equity": 100.0,
  "peak": 100.0,
- "last_day": 1795305600000,
+ "last_day": 1795392000000,
  "start_day": 1794960000000,
  "halted": false,
  "books": {
@@ -19,7 +19,7 @@
  },
  "weights": {},
  "turnover": 0.0,
- "days": 4,
+ "days": 5,
  "basket0": {
   "BTCUSDT": 63068.22,
   "ETHUSDT": 1777.19,
