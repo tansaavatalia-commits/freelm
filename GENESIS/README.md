@@ -48,6 +48,7 @@ I dati stanno in `%LOCALAPPDATA%\GENESIS` (oppure nella cartella indicata da
 | `ask "testo" [--private]` / `providers` | chiede al router dei motori / mostra i motori e perché sono attivi o spenti |
 | `agents list / run ID "testo" / direct "obiettivo" / council "domanda" / runs` | agenti, Director e Consiglio |
 | `tools list` / `tools call NOME --params '{...}'` | strumenti (file nella cartella di lavoro, web, MCP) |
+| `lab datasets / run --dataset D --subject S [--baseline ID] / list / compare A B / reproduce ID / report ID` | Research Lab: esperimenti misurati e confronti statistici |
 | `status [--json]` | stato: profilo, progetti, compiti, approvazioni, audit |
 | `doctor [--json]` | hardware, profilo di esecuzione e controlli di salute |
 | `project add / list / archive` | gestione dei progetti |

@@ -89,6 +89,21 @@ async function main() {
     await page.getByRole("button", { name: "Invia" }).click();
     await page.locator(".approval .badge", { hasText: "riuscita" }).first().waitFor({ timeout: 15000 });
 
+    // Research Lab: baseline vs rule classifier, then a paired comparison with a statistical verdict
+    await page.getByRole("link", { name: "Laboratorio", exact: true }).click();
+    await page.getByLabel("Soggetto").selectOption("baseline:majority");
+    await page.getByRole("button", { name: "Avvia esperimento" }).click();
+    await page.getByText("in coda").first().waitFor();
+    await page.getByLabel("Soggetto").selectOption("classifier");
+    await page.getByRole("button", { name: "Avvia esperimento" }).click();
+    await page.locator("tbody .badge", { hasText: "completato" }).nth(1).waitFor({ timeout: 20000 });
+    const rows = page.locator("tbody tr").filter({ has: page.locator(".badge", { hasText: "completato" }) });
+    await rows.filter({ hasText: "baseline:majority" }).first().getByRole("checkbox").check();
+    await rows.filter({ hasText: /^.*classifier/ }).first().getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Confronta i 2 selezionati" }).click();
+    await page.getByText(/B migliore di A: dimostrato/).waitFor();
+    if (shots) await page.screenshot({ path: path.join(shots, "4-laboratorio.png"), fullPage: true });
+
     // Approvals page renders its empty state
     await page.getByRole("link", { name: "Approvazioni" }).click();
     await page.getByText("Nessuna richiesta in attesa.").waitFor();
@@ -117,7 +132,7 @@ async function main() {
     console.error("E2E FAILED:\n" + problems.join("\n"));
     process.exit(1);
   }
-  console.log("E2E OK: dashboard, progetti, compiti, agenti, backup, diagnostica, approvazioni, mobile, nessun errore nel browser");
+  console.log("E2E OK: dashboard, progetti, compiti, agenti, laboratorio, backup, diagnostica, approvazioni, mobile, nessun errore nel browser");
 }
 
 main().catch((err) => {

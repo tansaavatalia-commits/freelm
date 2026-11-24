@@ -81,9 +81,16 @@ export function Card({
   );
 }
 
-export function Meter({ used, total, label }: { used: number; total: number; label: string }) {
+export function Meter({ used, total, label, higherIsBetter = false }: {
+  used: number;
+  total: number;
+  label: string;
+  higherIsBetter?: boolean;
+}) {
   const ratio = total > 0 ? Math.min(1, Math.max(0, used / total)) : 0;
-  const tone = ratio > 0.9 ? "bad" : ratio > 0.75 ? "warn" : "ok";
+  const tone = higherIsBetter
+    ? (ratio >= 0.75 ? "ok" : ratio >= 0.5 ? "warn" : "bad")
+    : (ratio > 0.9 ? "bad" : ratio > 0.75 ? "warn" : "ok");
   return (
     <div className="meter" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100}
          aria-valuenow={Math.round(ratio * 100)}>

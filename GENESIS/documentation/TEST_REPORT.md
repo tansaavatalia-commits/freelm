@@ -1,5 +1,15 @@
 # Rapporto dei test
 
+## 2026-11-24 — Fase 6 (versione 0.6.0)
+
+- Python: **170 passati + 1 saltato** senza freelm (171 con freelm installato), Python 3.13, Linux.
+- Interfaccia: controllo dei tipi + build; test end-to-end nel browser **passato**, ora con il laboratorio:
+  due esperimenti avviati dall'interfaccia e confronto con verdetto «B migliore di A: dimostrato».
+- Risultati scientifici verificati dai test: classificatore 27/30 contro baseline 10/30 (p < 0,001);
+  motore locale 24/26 su `math-basic@1`; riproduzione identica elemento per elemento.
+- Difetti trovati guardando l'interfaccia e corretti: barra dell'accuratezza colorata come «memoria piena»;
+  stati in inglese; bordi delle tabelle disallineati nella colonna dei pulsanti (anche Progetti e Compiti).
+
 ## 2026-11-24 — Fase 2a (versione 0.2.0)
 
 | Controllo | Dove | Esito |

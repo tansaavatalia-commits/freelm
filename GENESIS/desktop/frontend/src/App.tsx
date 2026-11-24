@@ -7,6 +7,7 @@ import { Approvals } from "./views/Approvals";
 import { Dashboard } from "./views/Dashboard";
 import { Diagnostics } from "./views/Diagnostics";
 import { Projects } from "./views/Projects";
+import { ResearchLab } from "./views/ResearchLab";
 import { Tasks } from "./views/Tasks";
 
 const NAV: { page: string; label: string; icon: ReactNode }[] = [
@@ -14,6 +15,7 @@ const NAV: { page: string; label: string; icon: ReactNode }[] = [
   { page: "progetti", label: "Progetti", icon: <path d="M3 7h7l2 2h9v10H3z" /> },
   { page: "compiti", label: "Compiti", icon: <path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" /> },
   { page: "agenti", label: "Agenti", icon: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm-7 8c0-3.3 3.1-6 7-6s7 2.7 7 6" /> },
+  { page: "laboratorio", label: "Laboratorio", icon: <path d="M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3M7 15h10" /> },
   { page: "approvazioni", label: "Approvazioni", icon: <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zm-3 9l2 2 4-4" /> },
   { page: "diagnostica", label: "Diagnostica", icon: <path d="M3 12h4l3-7 4 14 3-7h4" /> },
 ];
@@ -40,6 +42,9 @@ export function App() {
       break;
     case "agenti":
       content = <Agents />;
+      break;
+    case "laboratorio":
+      content = <ResearchLab />;
       break;
     case "approvazioni":
       content = <Approvals onChange={status.refresh} />;

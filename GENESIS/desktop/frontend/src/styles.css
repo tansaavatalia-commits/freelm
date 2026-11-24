@@ -186,6 +186,8 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 
 .banner { padding: 10px 14px; border-radius: 10px; font-size: 14px; }
 .banner-bad { background: color-mix(in srgb, var(--bad) 12%, transparent); color: var(--bad); border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent); }
+.banner-info { background: color-mix(in srgb, var(--info) 10%, transparent); color: var(--text); border: 1px solid color-mix(in srgb, var(--info) 35%, transparent); }
+.banner p + p { margin-top: 4px; }
 .banner-ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); border: 1px solid color-mix(in srgb, var(--ok) 35%, transparent); }
 
 /* -- forms, buttons ----------------------------------------------------------- */
@@ -225,8 +227,10 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 tbody tr:hover { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
-.actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
-td.actions { white-space: nowrap; }
+div.actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+/* table cells stay table cells (flex on <td> breaks the row borders) */
+td.actions { white-space: nowrap; text-align: right; }
+td.actions > * + * { margin-left: 6px; }
 .details-row td { background: var(--bg-raised); }
 .details { display: flex; flex-direction: column; gap: 8px; padding: 6px 2px; }
 .pre {

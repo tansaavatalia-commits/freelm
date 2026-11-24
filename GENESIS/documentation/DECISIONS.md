@@ -27,3 +27,6 @@
 | D-23 | Director e Consiglio v0 basati su regole (scomposizione, confronto, accordo), senza modello coordinatore | trasparenti e misurabili; da confrontare con una baseline nel Research Lab | adottata |
 | D-24 | Strumenti in sandbox `<home>/workspace`; internet e MCP spenti finché il proprietario non li attiva | permessi minimi | adottata |
 | D-25 | Server MCP avviati per una sola richiesta, non residenti | RAM limitata (4 GB) e nessun processo dimenticato | adottata |
+| D-26 | Un miglioramento si dichiara solo con confronto appaiato sullo stesso hash del dataset, McNemar p < 0,05 e almeno 20 elementi | regola «nessun miglioramento senza prove comparabili» del Master Prompt | adottata |
+| D-27 | Esperimenti privati di default; con il remoto al massimo 40 chiamate stimate | quota gratuita OpenRouter (~50/giorno) | adottata |
+| D-28 | Dataset predefiniti registrati solo al primo uso del laboratorio | i comandi di sola lettura non devono scrivere (importazione su PC nuovo) | adottata |

@@ -163,3 +163,75 @@ export interface AgentRun {
   output: string | null;
   created_at: string;
 }
+
+export interface LabDataset {
+  ref: string;
+  name: string;
+  version: string;
+  description: string;
+  items: number;
+  hash: string;
+  builtin: boolean;
+}
+
+export interface LabMetrics {
+  n: number;
+  correct: number;
+  accuracy: number;
+  errors: number;
+  latency_ms_mean: number | null;
+  latency_ms_p95: number | null;
+  engines: Record<string, number>;
+}
+
+export interface LabExperiment {
+  id: string;
+  name: string;
+  subject: string;
+  subject_version: string;
+  status: "running" | "completed" | "failed" | "interrupted";
+  created_at: string;
+  dataset: string;
+  seed: number;
+  deterministic: boolean;
+  reproduced_from: string | null;
+  metrics: LabMetrics | null;
+  evaluation: string | null;
+}
+
+export interface LabResult {
+  item_idx: number;
+  input: string;
+  expected: unknown;
+  output: string | null;
+  correct: boolean;
+  latency_ms: number;
+  engine: string | null;
+  error: string | null;
+}
+
+export interface LabDetail {
+  experiment: LabExperiment & {
+    objective: string;
+    hypothesis: string;
+    dataset_hash: string;
+    resources: Record<string, number | null> | null;
+    environment: Record<string, unknown>;
+  };
+  results: LabResult[];
+}
+
+export interface LabComparison {
+  comparable: boolean;
+  verdict: string;
+  a_subject: string;
+  b_subject: string;
+  paired_items?: number;
+  accuracy_a?: number;
+  accuracy_b?: number;
+  only_a_correct?: number;
+  only_b_correct?: number;
+  mcnemar_p?: number;
+  diff_ci95?: [number, number];
+  significant?: boolean;
+}

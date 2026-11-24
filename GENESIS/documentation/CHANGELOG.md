@@ -2,6 +2,18 @@
 
 (Il `CHANGELOG.md` alla radice del repository riguarda `freelm`.)
 
+## 0.6.0 — 2026-11-24 — Fase 6: Research Lab
+
+- Dataset versionati con hash SHA-256 (`math-basic@1`, `classify-it@1`, `qa-facts@1`) e importazione da JSON;
+  modificare un dataset senza cambiarne la versione è rifiutato.
+- Esperimenti con i 12 campi del Master Prompt, risultati per elemento, risorse (tempo reale/CPU, RAM, picco).
+- Soggetti: classificatore, baseline di maggioranza, motore locale, router, agenti, Consiglio. Senza
+  `allow_remote` tutto resta sul PC; con il remoto, al massimo 40 chiamate stimate per esperimento.
+- Confronti solo sullo stesso hash: McNemar esatto + IC bootstrap con seed; il verdetto non dichiara
+  miglioramenti senza significatività e almeno 20 elementi appaiati.
+- Riproduzione con stessa configurazione, seed e ordine; rapporti Markdown in `<home>/reports`.
+- `genesis lab …`, API `/api/lab/*`, pagina «Laboratorio»; primo risultato in `RESEARCH_LOG.md`; 171 test.
+
 ## 0.5.0 — 2026-11-24 — Fase 5: Strumenti e MCP
 
 - Ogni strumento dichiara nome, descrizione, livello, rischi, costi, parametri, output e annullamento;
