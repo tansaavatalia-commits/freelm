@@ -397,8 +397,19 @@ function Paso-Energia {
 }
 
 function Paso-Arranque {
-    Titulo "5/7 Arranque automático (papel, velas de 5 min)"
+    Titulo "5/7 Bot experimental de 5 minutos (opcional)"
     if (-not (Test-Path $ModeFile)) { Set-Content -Path $ModeFile -Value "papel" -Encoding ASCII }
+    Write-Host "  La estrategia principal es el MOMENTUM DIARIO (paso 6): es la que mejor resultado dio en las pruebas."
+    Write-Host "  El bot de 105 agentes con velas de 5 minutos casi nunca opera (ninguna señal supera su filtro) y"
+    Write-Host "  mantiene el PC ocupado. Solo tiene sentido para investigar."
+    if (-not (SiNo "¿Arrancar también el bot experimental de 5 minutos al iniciar sesión?" $false)) {
+        $t = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        if ($t) { Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue; Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false }
+        Parar-Procesos
+        Ok "Bot experimental desactivado (se puede activar con la opción 20)."
+        Paso-Energia
+        return $true
+    }
     $tareaAccion = New-ScheduledTaskAction -Execute "powershell.exe" `
         -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Starter`""
     $disparo = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
@@ -410,6 +421,20 @@ function Paso-Arranque {
     Ok "El bot arranca solo al iniciar sesión, y ya está en marcha. Registros: $LogDir"
     Paso-Energia
     return $true
+}
+
+function Activar-Experimental {
+    Titulo "Bot experimental de 5 minutos (papel)"
+    if (-not (Test-Path $ModeFile)) { Set-Content -Path $ModeFile -Value "papel" -Encoding ASCII }
+    $tareaAccion = New-ScheduledTaskAction -Execute "powershell.exe" `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Starter`""
+    $disparo = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+    $ajustes = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1)
+    Register-ScheduledTask -TaskName $TaskName -Action $tareaAccion -Trigger $disparo -Settings $ajustes `
+        -Description "Bot de trading (freelm) en modo papel" -Force | Out-Null
+    Start-ScheduledTask -TaskName $TaskName
+    Ok "El bot experimental arranca solo al iniciar sesión, y ya está en marcha. Registros: $LogDir"
 }
 
 function Paso-Accesos {
@@ -441,14 +466,22 @@ function Instalacion-Completa {
     Paso-Diario | Out-Null
     Paso-Accesos | Out-Null
     Titulo "Listo"
-    Write-Host "  El bot funciona en PAPEL (dinero simulado). Revisa el informe cuando quieras (acceso 'Informe')."
-    Write-Host "  Los resultados del momentum y cuánto aciertan las señales: acceso 'Resultados' (panel)."
+    Write-Host "  Estrategia principal: MOMENTUM DIARIO en PAPEL (dinero simulado), cada día a las 01:30."
+    Write-Host "  Resultados y cuánto aciertan las señales: acceso 'Resultados' (panel) e 'Informe'."
     Write-Host "  Opcional: opción 17 (base de datos Supabase) y 18 (avisos por email)."
     Write-Host "  Dentro de 20 días, la opción 'Puerta del dinero real' te dirá si es apto. Si no lo es, no metas dinero."
 }
 
 function Ver-Informe {
-    Titulo "Informe"
+    Titulo "Estrategia principal: momentum diario (papel)"
+    Ejecutar-Bot @("momentum", "--report") | Out-Null
+    Ejecutar-Bot @("senales", "--live-only") | Out-Null
+    if (-not (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)) {
+        Write-Host ""
+        Write-Host "  (Bot experimental de 5 minutos desactivado: opción 20 para activarlo.)"
+        return
+    }
+    Titulo "Bot experimental de 5 minutos"
     Ejecutar-Bot @("report", "--plain") | Out-Null
     Titulo "Puerta del dinero real"
     Ejecutar-Bot @("gate") | Out-Null
@@ -528,7 +561,7 @@ function Menu {
         Write-Host "   1  Instalación completa (recomendado la primera vez)"
         Write-Host "   2  Ver informe y puerta del dinero real"
         Write-Host "   3  Cambiar claves (IA, Telegram, exchange)"
-        Write-Host "   4  Iniciar ahora en esta ventana (ver qué hace, Ctrl+C para salir)"
+        Write-Host "   4  Bot experimental de 5 min en esta ventana (ver qué hace, Ctrl+C para salir)"
         Write-Host "   5  Detener el bot"
         Write-Host "   6  Estado"
         Write-Host "   7  Optimizar ahora"
@@ -545,6 +578,7 @@ function Menu {
         Write-Host "  17  Configurar base de datos Supabase (opcional)"
         Write-Host "  18  Configurar avisos por email (webhook) y probarlos"
         Write-Host "  19  Programar la prueba diaria (01:30)"
+        Write-Host "  20  Activar el bot experimental de 5 minutos al iniciar sesión"
         Write-Host "   0  Salir"
         $op = Read-Host "  Elige"
         try {
@@ -573,6 +607,7 @@ function Menu {
                 "17" { Configurar-Supabase }
                 "18" { Configurar-Avisos }
                 "19" { Paso-Diario | Out-Null }
+                "20" { Activar-Experimental }
                 "0"  { return }
                 default { Aviso "Opción no válida." }
             }
