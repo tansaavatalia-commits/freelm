@@ -15,3 +15,4 @@
 | D-11 | Un profilo richiesto oltre le capacità dell'hardware viene ignorato | i motori pesanti restano spenti sui PC piccoli | adottata |
 | D-12 | CI su Linux e Windows (`genesis-core-ci.yml`), filtrata su `GENESIS/**` | verifica reale su Windows a costo zero (repo pubblico) | adottata |
 | D-13 | Lo script di avvio dell'ambiente cloud (pacchetti npm non verificati) è stato rimosso | rischio di supply chain; non serviva | eseguita con approvazione |
+| D-14 | `GENESIS/` (questo progetto) e `genesis-drop-engine/` (branch `claude/eloquent-newton-uke0z7`) sono **due progetti diversi**: restano separati | confermato dal proprietario il 2026-11-24; workflow già con nomi diversi. Entrambi usano il nome di pacchetto Python `genesis`: non installarli nello stesso ambiente | adottata |
