@@ -869,6 +869,7 @@ def test_windows_assistant_only_uses_existing_bot_commands():
         ["sync", "--soft"],
         ["notificar"],
         ["dashboard-data", "--dir", "state", "--out", "state/dashboard", "--limit", "3000"],
+        ["momentum", "--exchange", "testnet"],
     ):
         p.parse_args(argv)  # SystemExit si alguna opción no existe
 
@@ -1387,3 +1388,53 @@ def test_dashboard_data_builds_six_datasets(tmp_path):
     assert data["backtest"][0]["bot"] == pytest.approx(1.0) and any(r["strategy"] == "conjunto" for r in data["strategies"])
     paths = dashboard_data.write(str(tmp_path / "out"), data)
     assert len(paths) == 6 and all(os.path.getsize(p) > 1 for p in paths)
+
+
+import momentum_exchange as mx  # noqa: E402
+
+
+class _FakeEx:
+    def __init__(self):
+        self.orders, self.step_time = [], 0
+
+    def buy(self, s, qty, price):
+        self.orders.append(("buy", s, round(qty, 8), self.step_time))
+        return qty, price
+
+    def sell(self, s, qty, price, maker=False):
+        self.orders.append(("sell", s, round(qty, 8), self.step_time))
+        return price
+
+    def starting_cash(self):
+        return 1000.0
+
+
+def test_momentum_exchange_rebalances_book_and_skips_dust():
+    ex, book = _FakeEx(), mx.new_book(1000.0)
+    prices = {"A": 10.0, "B": 100.0}
+    fills = mx.rebalance(ex, book, {"A": 0.2, "B": 0.004}, prices, 86_400_000, fee=0.0)
+    assert [o[:2] for o in ex.orders] == [("buy", "A")]  # B: 4 USDT, por debajo del mínimo
+    assert book["qty"]["A"] == pytest.approx(20.0) and book["cash"] == pytest.approx(800.0) and len(fills) == 1
+    assert ex.orders[0][3] == 86_400_000 and book["last_day"] == 86_400_000  # ids de orden por día
+    prices = {"A": 12.0, "B": 100.0}
+    mx.rebalance(ex, book, {}, prices, 2 * 86_400_000, fee=0.0)  # señal «fuera»: lo vende todo
+    assert ex.orders[-1][:2] == ("sell", "A") and book["qty"] == {} and book["cash"] == pytest.approx(1040.0)
+    assert mx.book_equity(book, prices) == pytest.approx(1040.0)
+
+
+def test_momentum_testnet_mode_runs_once_per_day(tmp_path, monkeypatch, capsys):
+    import time as _t
+    t0 = int(_t.time() * 1000) // mpp.DAY_MS * mpp.DAY_MS - 300 * mpp.DAY_MS
+    series = {s: _daily([100 * (1.006 if i else 1.004) ** k for k in range(300)], t0)
+              for i, s in enumerate(["BTCUSDT", "ETHUSDT"])}
+    monkeypatch.setattr(bot, "fetch_candles", lambda s, interval, limit: series[s][-limit:])
+    fake = _FakeEx()
+    monkeypatch.setattr(bot, "CcxtExecutor", lambda *a, **k: fake)
+    args = ["momentum", "--symbols", "BTCUSDT,ETHUSDT", "--dir", str(tmp_path), "--exchange", "testnet",
+            "--target-vol", "10"]
+    assert bot.main(args) == 0
+    n = len(fake.orders)
+    assert n >= 1 and all(o[0] == "buy" for o in fake.orders)
+    assert bot.main(args) == 0 and len(fake.orders) == n  # mismo día: no repite órdenes
+    out = capsys.readouterr().out
+    assert "EXCHANGE (testnet)" in out and (tmp_path / "momentum_exchange_track.jsonl").exists()

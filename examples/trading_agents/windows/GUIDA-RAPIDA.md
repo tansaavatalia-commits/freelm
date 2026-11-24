@@ -47,7 +47,18 @@ chiede mai permessi di prelievo. Tutto ciò che salva resta in
 
 - **Opzione 17**: database Supabase (gratis) per avere i risultati anche nel cloud.
 - **Opzione 18**: avvisi via email con Zapier e Gmail.
-- **Opzione 11**: prova sulla testnet di Binance (conto demo, denaro finto).
+- **Opzione 11 (consigliata subito dopo l'installazione)**: testnet di Binance,
+  cioè un conto demo con denaro finto ma ordini veri. In 6 passi guidati:
+  1. entri con GitHub su testnet.binance.vision;
+  2. crei le chiavi;
+  3. le incolli;
+  4. il bot verifica la connessione;
+  5. parte il **momentum in testnet** (portafoglio proprio di 1000 USDT finti, ordini
+     ogni giorno alle 01:30) e, se vuoi, anche il bot a 5 minuti (scegli **b**);
+  6. ti spiega cosa controllare.
+
+  Così le prove vere sull'exchange girano insieme alla prova in carta.
+  Opzione 13 = rapporto della testnet.
 
 ## Se qualcosa va storto
 

@@ -30,6 +30,7 @@ $LogDir   = Join-Path $DataDir "registros"
 $Starter  = Join-Path $PSScriptRoot "iniciar-bot.ps1"
 $TaskName = "FreelmTradingBot"
 $DailyTask = "FreelmMomentumDiario"
+$TestnetTask = "FreelmTestnetBot"
 $PanelFile = Join-Path $DataDir "panel.html"
 $SqlFile  = Join-Path $BotDir "deploy\supabase.sql"
 $RepoZip  = "https://github.com/tansaavatalia-commits/freelm/archive/refs/heads/main.zip"
@@ -97,6 +98,11 @@ function Ejecutar-Bot([string[]]$argumentos, [switch]$Testnet) {
 function Momentum-Hoy {
     Titulo "Momentum en papel: procesar el último día cerrado"
     Ejecutar-Bot @("momentum") | Out-Null
+    Cargar-Entorno
+    if ($env:FREELM_TESTNET_KEY -and $env:FREELM_TESTNET_SECRET) {
+        Titulo "Momentum en la TESTNET (órdenes reales con dinero ficticio)"
+        Ejecutar-Bot @("momentum", "--exchange", "testnet") -Testnet | Out-Null
+    }
     Ejecutar-Bot @("senales", "--record", "--no-history", "--limit", "260") | Out-Null
     Ejecutar-Bot @("panel") | Out-Null
     Ejecutar-Bot @("sync", "--soft") | Out-Null
@@ -213,6 +219,7 @@ function Guardar-Clave([string]$k, [string]$v) {
 }
 
 function Parar-Testnet {
+    Stop-ScheduledTask -TaskName $TestnetTask -ErrorAction SilentlyContinue
     Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like "*bot.py*live*--exchange*testnet*" } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
@@ -226,7 +233,7 @@ function Probar-Testnet {
     Write-Host "  Para qué sirve: comprobar que las claves, las órdenes, el stop en el exchange y las órdenes"
     Write-Host "  límite funcionan, sin arriesgar nada. NO sirve para medir si la estrategia gana: los precios"
     Write-Host "  y la liquidez de la testnet no son los del mercado real (eso lo mide el modo papel)."
-    Write-Host "  Recomendado: 2-3 días, justo antes de pasar a dinero real."
+    Write-Host "  Funcionan a la vez: el MOMENTUM DIARIO (estrategia principal) y, si quieres, el bot de 5 minutos."
     if (-not (Test-Path $Py)) { Fallo "Primero instala el bot (opción 1)."; return }
 
     Titulo "Paso 1 de 6 · Entrar en la testnet"
@@ -264,32 +271,46 @@ function Probar-Testnet {
         if (-not (SiNo "¿Seguir de todos modos?" $false)) { return }
     } else { Ok "Conexión y órdenes verificadas." }
 
-    Titulo "Paso 5 de 6 · Poner el bot a funcionar en la testnet"
-    Write-Host "  a) En esta ventana: ves cada decisión en directo (Ctrl+C para parar)."
-    Write-Host "  b) En segundo plano: sigue funcionando aunque cierres esto (registro aparte)."
-    Write-Host "  El modo papel (el que cuenta los 20 días) sigue funcionando igual en ambos casos."
-    $op = Read-Host "  Elige a o b"
+    Titulo "Paso 5 de 6 · Poner los bots a funcionar en la testnet"
+    Write-Host "  MOMENTUM DIARIO: desde ahora, la tarea de las 01:30 también ejecuta sus pesos con órdenes"
+    Write-Host "  en la testnet (libro propio de 1000 USDT ficticios). Lo hago ya una vez:"
+    Ejecutar-Bot @("momentum", "--exchange", "testnet") -Testnet | Out-Null
+    if (-not (Get-ScheduledTask -TaskName $DailyTask -ErrorAction SilentlyContinue)) { Paso-Diario | Out-Null }
+    Write-Host ""
+    Write-Host "  BOT DE 5 MINUTOS (105 agentes, opcional): opera muy poco, pero prueba stops y órdenes límite."
+    Write-Host "  a) En esta ventana (ves cada decisión, Ctrl+C para parar)"
+    Write-Host "  b) En segundo plano, y que arranque solo al iniciar sesión"
+    Write-Host "  n) No"
+    $op = Read-Host "  Elige a, b o n"
     if ($op.Trim().ToLower() -eq "b") {
         Parar-Testnet
-        Start-Process powershell.exe -WindowStyle Minimized -ArgumentList @(
-            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$Starter`"", "-Modo", "testnet")
-        Ok "Bot de testnet en marcha en segundo plano (ventana minimizada)."
+        $tareaAccion = New-ScheduledTaskAction -Execute "powershell.exe" `
+            -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Starter`" -Modo testnet"
+        $disparo = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+        $ajustes = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+            -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1)
+        Register-ScheduledTask -TaskName $TestnetTask -Action $tareaAccion -Trigger $disparo -Settings $ajustes `
+            -Description "Bot de 5 minutos (freelm) en la testnet" -Force | Out-Null
+        Start-ScheduledTask -TaskName $TestnetTask
+        Ok "Bot de 5 minutos en la testnet en marcha (y arranca solo al iniciar sesión)."
         Write-Host "  Registro: $LogDir\testnet-AAAAMMDD.log"
-    } else {
+    } elseif ($op.Trim().ToLower() -eq "a") {
         Ejecutar-Bot @("live", "--interval", "5m", "--exchange", "testnet", "--entry-mode", "limit", "--llm") -Testnet | Out-Null
     }
 
     Titulo "Paso 6 de 6 · Qué revisar en 2-3 días"
-    Write-Host "  - Opción 13 del menú: informe de la testnet (operaciones, órdenes límite, errores)."
+    Write-Host "  - Opción 13 del menú: informe de la testnet (momentum y bot de 5 minutos)."
     Write-Host "  - En https://testnet.binance.vision verás las órdenes reales que colocó el bot."
     Write-Host "  - Que el stop aparezca como orden en el exchange en cada compra."
     Write-Host "  - Que no haya errores repetidos en el registro."
-    Write-Host "  Si todo va bien y la puerta (opción 2) dice APTO, ya puedes plantearte el dinero real (opción 9)."
+    Write-Host "  Dinero real: solo cuando la prueba en papel termine bien y lo autorices expresamente."
     Write-Host "  Para parar el bot de testnet: opción 12."
 }
 
 function Informe-Testnet {
-    Titulo "Informe de la testnet"
+    Titulo "Momentum en la testnet"
+    Ejecutar-Bot @("momentum", "--exchange", "testnet", "--report") -Testnet | Out-Null
+    Titulo "Bot de 5 minutos en la testnet"
     Ejecutar-Bot @("report", "--plain", "--exchange", "testnet") -Testnet | Out-Null
     $hoy = Join-Path $LogDir ("testnet-" + (Get-Date -Format "yyyyMMdd") + ".log")
     if (Test-Path $hoy) { Titulo "Últimas líneas del registro de testnet"; Get-Content $hoy -Tail 25 }
@@ -599,7 +620,12 @@ function Menu {
                 "9"  { Dinero-Real }
                 "10" { Volver-Papel }
                 "11" { Probar-Testnet }
-                "12" { Parar-Testnet; Ok "Bot de testnet parado." }
+                "12" {
+                    Parar-Testnet; Ok "Bot de 5 minutos de la testnet parado."
+                    if ((Get-ScheduledTask -TaskName $TestnetTask -ErrorAction SilentlyContinue) -and (SiNo "¿Quitar también su arranque automático?" $false)) {
+                        Unregister-ScheduledTask -TaskName $TestnetTask -Confirm:$false; Ok "Arranque automático quitado."
+                    }
+                }
                 "13" { Informe-Testnet }
                 "14" { Momentum-Hoy }
                 "15" { Ver-Panel }
