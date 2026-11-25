@@ -329,6 +329,33 @@ def cmd_engines(g: Genesis, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_models(g: Genesis, args: argparse.Namespace) -> int:
+    from .models.catalog import card_dict
+    from .models.feasibility import assess, best_option
+    from .models.finetune import plan, plan_markdown
+    if args.action == "list":
+        print(f"Hardware: RAM {g.hardware.ram_total_mb or '?'} MB, VRAM {g.hardware.max_vram_mb} MB, profilo {g.profile.name}")
+        for card in sorted(g.models.values(), key=lambda c: c.params_b):
+            best = best_option(card.params_b, g.hardware, g.profile)
+            print(f"{card.id:<26} {card.params_b:>5.2f} B  {card.license:<34} -> {best['verdict']} "
+                  f"({best['quant']}, {best['need']['total_gb']} GB)")
+        print("Dati dei modelli NON verificati: controllare sempre la scheda ufficiale prima dell'uso.")
+        return 0
+    card = g.models.get(args.id)
+    if card is None:
+        raise GenesisError(f"modello sconosciuto: {args.id} (vedi 'genesis models list')")
+    if args.action == "check":
+        _json({"model": card_dict(card), **assess(card.params_b, g.hardware, g.profile, args.quant, args.context)})
+        return 0
+    p = plan(card.params_b, args.method, args.examples, args.tokens, g.hardware, args.seq_len, args.batch, args.epochs)
+    folder = g.config.reports_dir
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"piano-{card.id}-{args.method}.md"
+    path.write_text(plan_markdown(card_dict(card), p), encoding="utf-8")
+    print(f"{p['verdict']}\nPiano scritto: {path}")
+    return 0
+
+
 def cmd_backup_create(g: Genesis, args: argparse.Namespace) -> int:
     print(f"Backup creato e verificato: {g.create_backup()}")
     return 0
@@ -527,6 +554,24 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("op")
     s.add_argument("--payload", default="{}", help="oggetto JSON")
     s.set_defaults(func=cmd_engines)
+
+    models = sub.add_parser("models", help="Model Development Lab: catalogo, fattibilità, piani").add_subparsers(
+        dest="action", required=True)
+    models.add_parser("list", help="modelli aperti e fattibilità su questo PC").set_defaults(func=cmd_models)
+    s = models.add_parser("check", help="fattibilità dettagliata")
+    s.add_argument("id")
+    s.add_argument("--quant", default="q4_k_m", choices=["f16", "q8_0", "q6_k", "q5_k_m", "q4_k_m", "q3_k_m", "q2_k"])
+    s.add_argument("--context", type=int, default=4096)
+    s.set_defaults(func=cmd_models)
+    s = models.add_parser("plan", help="piano di fine-tuning (non addestra nulla)")
+    s.add_argument("id")
+    s.add_argument("--method", default="qlora", choices=["full", "lora", "qlora"])
+    s.add_argument("--examples", type=int, default=1000)
+    s.add_argument("--tokens", type=int, default=300, help="token medi per esempio")
+    s.add_argument("--seq-len", type=int, default=1024)
+    s.add_argument("--batch", type=int, default=4)
+    s.add_argument("--epochs", type=int, default=3)
+    s.set_defaults(func=cmd_models)
 
     s = sub.add_parser("online", help="accende o spegne il motore online (OpenRouter gratuito)")
     s.add_argument("action", choices=["enable", "disable"])

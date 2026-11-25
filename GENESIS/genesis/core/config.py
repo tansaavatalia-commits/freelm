@@ -33,6 +33,7 @@ _KNOWN_KEYS = {
     "intelligence": {"remote_enabled", "remote_free_verified"},
     "tools": {"internet_enabled"},
     "mcp": {"servers"},
+    "models": {"local"},
 }
 MCP_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 
@@ -62,6 +63,7 @@ class Config:
     remote_free_verified: bool = False  # owner checked their free terms (COST_POLICY.md)
     internet_enabled: bool = False  # web.fetch tool
     mcp_servers: Mapping[str, Mapping[str, Any]] = field(default_factory=lambda: MappingProxyType({}))
+    local_model: Mapping[str, Any] | None = None  # [models.local]: OpenAI-compatible server on this PC
 
     @property
     def data_dir(self) -> Path:
@@ -203,5 +205,19 @@ def _build(home: Path, raw: Mapping[str, Any], source: Path) -> Config:
             raise ConfigError(f"{where}: level 3-5, timeout 1-300 secondi")
         servers[name] = MappingProxyType({"command": tuple(command), "level": lvl, "timeout": timeout})
 
+    local = raw.get("models", {}).get("local")
+    local_model = None
+    if local is not None:
+        where = f"{source}: [models.local]"
+        if not isinstance(local, Mapping) or set(local) - {"endpoint", "model", "allow_on_lite", "timeout"}:
+            raise ConfigError(f"{where}: chiavi ammesse endpoint, model, allow_on_lite, timeout")
+        if not isinstance(local.get("endpoint"), str) or not isinstance(local.get("model"), str) or not local["model"]:
+            raise ConfigError(f"{where}: endpoint e model sono obbligatori")
+        if not isinstance(local.get("allow_on_lite", False), bool):
+            raise ConfigError(f"{where}: allow_on_lite deve essere true o false")
+        if not (_is_int(local.get("timeout", 120)) and 5 <= local.get("timeout", 120) <= 600):
+            raise ConfigError(f"{where}: timeout tra 5 e 600 secondi")
+        local_model = MappingProxyType(dict(local))
+
     return Config(home=home, profile=profile, log_level=level, backup_keep=keep, grants=MappingProxyType(grants),
-                  internet_enabled=internet, mcp_servers=MappingProxyType(servers), **flags)
+                  internet_enabled=internet, mcp_servers=MappingProxyType(servers), local_model=local_model, **flags)

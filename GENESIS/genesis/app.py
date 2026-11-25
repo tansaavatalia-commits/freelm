@@ -27,9 +27,11 @@ from .hardware.detect import HardwareInfo, detect
 from .hardware.profiles import select_profile
 from .intelligence.base import Request
 from .intelligence.local import LocalEngine
+from .intelligence.local_model import LocalModelProvider
 from .intelligence.online import FreelmProvider
 from .intelligence.router import Router
 from .memory.db import Database, list_backups
+from .models.catalog import load_catalog
 from .research.lab import ResearchLab
 from .security.audit import AuditLog
 from .security.permissions import OWNER, Level, PermissionManager
@@ -63,13 +65,15 @@ class Genesis:
             self.permissions = PermissionManager(self.db, self.audit, self.config.grants, now=now)
             self.projects = ProjectStore(self.db, self.permissions, self.bus, now=now)
             self.tasks = TaskManager(self.db, self.bus, self.permissions, self.log.getChild("tasks"), now=now)
-            self.router = Router([LocalEngine(), FreelmProvider()], remote_enabled=self.config.remote_enabled,
+            self.router = Router([LocalEngine(), LocalModelProvider(self.config.local_model, self.profile.local_models),
+                                  FreelmProvider()], remote_enabled=self.config.remote_enabled,
                                  remote_free_verified=self.config.remote_free_verified, audit=self.audit)
             self.tools = ToolRegistry(self.permissions, self.audit, self.config.workspace_dir,
                                       internet_enabled=self.config.internet_enabled, mcp_servers=self.config.mcp_servers)
             self.agents = AgentRunner(self.db, self.permissions, self.router, load_agents(self.config.home), now=now,
                                       tools=self.tools)
             self.engines = EngineRegistry(self)
+            self.models = load_catalog(self.config.home)
             self.lab = ResearchLab(self, now=now)
             self._register_builtin_tasks()
         except BaseException:

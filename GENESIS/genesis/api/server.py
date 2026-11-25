@@ -223,6 +223,7 @@ class ApiServer:
             ("GET", r"/api/agents", self._agents),
             ("GET", r"/api/tools", self._tools),
             ("GET", r"/api/genesis-engines", self._genesis_engines),
+            ("GET", r"/api/models", self._models),
             ("GET", r"/api/lab/datasets", self._lab_datasets),
             ("GET", r"/api/lab/subjects", self._lab_subjects),
             ("GET", r"/api/lab/experiments", self._lab_experiments),
@@ -371,6 +372,19 @@ class ApiServer:
         if not a or not b:
             raise ApiError(400, "servono i parametri a e b")
         return 200, self.core.run(lambda g: g.lab.compare(a, b))
+
+    def _models(self, query: dict[str, list[str]], **_: Any) -> tuple[int, Any]:
+        from ..models.catalog import card_dict
+        from ..models.feasibility import best_option
+        context = _int_param(query, "context", 4096, 256, 131072)
+
+        def collect(g: Genesis) -> dict[str, Any]:
+            cards = sorted(g.models.values(), key=lambda c: c.params_b)
+            return {"hardware": {"ram_mb": g.hardware.ram_total_mb, "vram_mb": g.hardware.max_vram_mb,
+                                 "os": g.hardware.os_name, "profile": g.profile.name},
+                    "models": [{**card_dict(c), "best": best_option(c.params_b, g.hardware, g.profile, context)}
+                               for c in cards]}
+        return 200, self.core.run(collect)
 
     def _genesis_engines(self, **_: Any) -> tuple[int, Any]:
         return 200, self.core.run(lambda g: g.engines.describe())
