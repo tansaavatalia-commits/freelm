@@ -235,3 +235,72 @@ export interface LabComparison {
   diff_ci95?: [number, number];
   significant?: boolean;
 }
+
+export interface EngineComponent {
+  name: string;
+  kind: "algoritmo" | "strumento" | "modello esterno";
+  description: string;
+  available: boolean;
+}
+
+export interface EngineOperation {
+  name: string;
+  level: number;
+  description: string;
+  params: string;
+}
+
+export interface GenesisEngineManifest {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  uses_external_model: boolean;
+  components: EngineComponent[];
+  operations: EngineOperation[];
+}
+
+export interface ModelEntry {
+  id: string;
+  family: string;
+  params_b: number;
+  license: string;
+  context: number;
+  source: string;
+  notes: string;
+  verification: string;
+  best: { verdict: string; quant: string; where: string; need: { total_gb: number }; notes: string[] };
+}
+
+export interface ModelsResponse {
+  hardware: { ram_mb: number | null; vram_mb: number; os: string; profile: string };
+  models: ModelEntry[];
+}
+
+export interface ImprovableComponent {
+  name: string;
+  description: string;
+  active: string;
+  previous: string | null;
+  versions: string[];
+  benchmarks: string[];
+}
+
+export interface Proposal {
+  id: string;
+  component: string;
+  stable: string;
+  candidate: string;
+  problem: string;
+  cause: string;
+  proposal: string;
+  status: "proposed" | "evaluated" | "promoted" | "rejected" | "rolled_back";
+  decision: string | null;
+  created_at: string;
+  evaluation: {
+    results: { dataset: string; accuracy_stable: number; accuracy_candidate: number; verdict: string }[];
+    recommendation: string;
+    promotable: boolean;
+    caveat: string;
+  } | null;
+}

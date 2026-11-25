@@ -1,5 +1,14 @@
 # Rapporto dei test
 
+## 2026-11-25 — Fasi 7–9 (versione 0.9.0)
+
+- Python: **207 passati + 1 saltato** senza freelm (208 con freelm), Python 3.13, Linux.
+- Test end-to-end nel browser **passato** su tutte le pagine, compreso il ciclo completo di miglioramento
+  dall'interfaccia (rileva → valuta → raccomandazione «promuovere» → approvazione → v2 attiva → ritorno a v1).
+- Difetti trovati dai test e corretti: la memoria immediata non ignorava gli accenti; le etichette predefinite
+  erano rifiutate; un'aspettativa errata sulla memoria permanente (il modello dei permessi è più restrittivo).
+- Risultati misurati: vedi `RESEARCH_LOG.md` R-003 e R-004.
+
 ## 2026-11-24 — Fase 6 (versione 0.6.0)
 
 - Python: **170 passati + 1 saltato** senza freelm (171 con freelm installato), Python 3.13, Linux.

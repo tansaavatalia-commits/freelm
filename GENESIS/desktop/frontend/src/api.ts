@@ -65,3 +65,15 @@ export function usePolling<T>(load: () => Promise<T>, intervalMs: number, deps: 
 
   return { data, error, refresh };
 }
+
+/** Polls a queued task until it finishes; returns its result or throws its error. */
+export async function waitForTask<T>(id: string, timeoutMs = 60000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const task = await api<{ status: string; result: T; error: string | null }>(`/api/tasks/${id}`);
+    if (task.status === "succeeded") return task.result;
+    if (task.status === "failed" || task.status === "cancelled") throw new ApiError(400, task.error ?? task.status);
+    await new Promise((r) => window.setTimeout(r, 400));
+  }
+  throw new ApiError(408, "il compito sta impiegando troppo tempo: controlla la pagina Compiti");
+}

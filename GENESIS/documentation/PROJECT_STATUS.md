@@ -1,44 +1,37 @@
 # Stato del progetto
 
-Aggiornato: 2026-11-24 · Versione: 0.6.0 · Branch: `claude/genesis-phase-0-audit-zrvq7a`
+Aggiornato: 2026-11-25 · Versione: 0.9.0 · Branch: `claude/genesis-phase-0-audit-zrvq7a`
 
 | Fase | Stato |
 |---|---|
-| 0 — Audit | COMPLETATA, tranne l'hardware reale del PC (PENDENTE: serve l'output di `genesis doctor` dal PC) |
-| 1 — Core | IMPLEMENTATA e testata (Linux e Windows in CI). Sul PC del proprietario: PENDENTE |
-| 2a — Interfaccia nel browser | IMPLEMENTATA e testata (API + 5 sezioni + test end-to-end in Chromium). Sul PC: PENDENTE |
-| 2b — Finestra desktop Tauri | PENDENTE |
-| 3 — Intelligent Router | IMPLEMENTATA e testata: motore locale attivo; motore online (freelm) pronto ma spento, mai provato dal vivo (chiavi non funzionanti) |
-| 4 — Agenti | IMPLEMENTATA e testata (v0): 8 agenti, Verifier, Director, Consiglio; risposte libere solo con motore online attivo |
-| 5 — Strumenti e MCP | IMPLEMENTATA e testata (web.fetch provato dal vivo; internet e MCP spenti di default) |
-| 6 — Research Lab | IMPLEMENTATA e testata; primo risultato R-001 in RESEARCH_LOG.md |
-| 7–10 | PENDENTI |
-
-## Cosa funziona oggi (IMPLEMENTATO)
-
-- `genesis serve`: interfaccia nel browser su 127.0.0.1 con Dashboard, Progetti,
-  Compiti, Approvazioni e Diagnostica; i compiti girano in background.
-- CLI completa: `status`, `doctor`, progetti, compiti, approvazioni,
-  backup/ripristino, esportazione/importazione, audit.
-- Database SQLite (WAL) con migrazioni, backup verificati e portabilità.
-- Permessi a 5 livelli, approvazioni monouso, audit a catena di hash.
-- Un solo esecutore di compiti per cartella dati (lock del sistema operativo),
-  ripresa automatica dei compiti interrotti.
-- Rilevamento hardware e profilo automatico; RAM del processo misurata dal vivo.
+| 0 — Audit | completata; hardware reale del PC PENDENTE (`genesis doctor` sul PC) |
+| 1 — Core | implementata e testata (Linux + Windows in CI) |
+| 2a — Interfaccia nel browser | implementata e testata (test end-to-end in Chromium) |
+| 2b — Finestra Tauri | PENDENTE (dopo la prova sul PC) |
+| 3 — Intelligent Router | implementata; motore online OpenRouter gratuito pronto, mai provato dal vivo (chiave) |
+| 4 — Agenti | implementata (8 agenti, Verifier, Director, Consiglio v0) |
+| 5 — Strumenti e MCP | implementata (sandbox file, web.fetch provato dal vivo, MCP) |
+| 6 — Research Lab | implementata (esperimenti, confronti statistici, riproduzione) |
+| 7 — Motori GÉNESIS | implementata (6 motori; v2 sperimentali misurate in R-003/R-004) |
+| 8 — Model Development | implementata (catalogo, fattibilità, piani, modello locale) |
+| 9 — Auto-miglioramento | implementata (ciclo con prove, approvazione del proprietario, aree protette) |
+| 10 — Release | PENDENTE |
 
 ## Misure
 
-- Processo `genesis serve` (core + API + esecutore): **~28 MB di RAM** (Linux, misurato
-  nel test end-to-end). Sul PC Windows da 4 GB: PENDENTE.
-- Interfaccia: 68 KB di JavaScript e 3 KB di CSS compressi.
+- 207 test Python (208 con freelm installato) + test end-to-end nel browser su tutte le pagine.
+- Processo `genesis serve`: circa 32 MB di RAM (Linux). Sul PC Windows da 4 GB: PENDENTE.
+- Interfaccia: circa 75 KB di JavaScript compressi.
 
-## Cosa NON c'è ancora
+## Versioni attive dei componenti
 
-- Finestra desktop nativa (Fase 2b), provider di IA e router (Fase 3), agenti
-  (Fase 4), strumenti e MCP (Fase 5), laboratori e motori (Fasi 6–9).
+Di default `classifier = v1` e `math = v1`. Le v2 sono **sperimentali**: il ciclo della Fase 9 le raccomanda
+(miglioramento dimostrato sui dataset pre-registrati), ma la promozione spetta al proprietario
+(`genesis improve …` o pagina «Miglioramento»), sapendo che i benchmark sono interni (R-003).
 
 ## Problemi aperti
 
-1. Il core non è ancora stato eseguito sul PC del proprietario (Windows 10, 4 GB).
-2. Le chiavi OpenRouter e Gemini dell'ambiente cloud non funzionano (servono dalla Fase 3).
+1. GÉNESIS non è ancora stato eseguito sul PC del proprietario.
+2. Il motore online non ha mai risposto dal vivo (chiave OpenRouter da impostare sul PC).
 3. Licenza di GÉNESIS da scegliere (D-06).
+4. Serve un dataset scritto dal proprietario per una valutazione indipendente delle v2.

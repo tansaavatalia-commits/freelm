@@ -30,3 +30,10 @@
 | D-26 | Un miglioramento si dichiara solo con confronto appaiato sullo stesso hash del dataset, McNemar p < 0,05 e almeno 20 elementi | regola «nessun miglioramento senza prove comparabili» del Master Prompt | adottata |
 | D-27 | Esperimenti privati di default; con il remoto al massimo 40 chiamate stimate | quota gratuita OpenRouter (~50/giorno) | adottata |
 | D-28 | Dataset predefiniti registrati solo al primo uso del laboratorio | i comandi di sola lettura non devono scrivere (importazione su PC nuovo) | adottata |
+| D-29 | Dataset di verifica pre-registrati con commit separato prima dei motori v2 | rende verificabile che i dati non sono stati cambiati dopo | adottata |
+| D-30 | Errori trovati sui dati di verifica non vengono corretti nella stessa versione | evitare di adattarsi alla prova; vanno in una v3 da valutare su dati nuovi | adottata |
+| D-31 | Ogni motore dichiara i componenti come algoritmo / strumento / modello esterno | regola del Master Prompt sulla trasparenza | adottata |
+| D-32 | Modelli locali solo su indirizzi locali e spenti nel profilo lite-4gb | privacy e RAM | adottata |
+| D-33 | Promozione di un componente: miglioramento dimostrato + nessun peggioramento dimostrato + approvazione del proprietario (livello 4) | ciclo di auto-miglioramento controllato | adottata |
+| D-34 | Aree protette non migliorabili: permessi, sicurezza, audit, costi, accessi, configurazione, il ciclo stesso | Master Prompt §9 | adottata |
+| D-35 | Le v2 restano sperimentali (attive v1) finché il proprietario non decide | i benchmark sono interni (R-003) | adottata |

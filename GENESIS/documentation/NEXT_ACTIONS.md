@@ -9,25 +9,14 @@
    py -3 -m genesis doctor
    py -3 -m genesis serve
    ```
-   Incollare in chat il testo di `doctor`; dire se la pagina si apre e quanta RAM
-   indica la Dashboard («GÉNESIS ora usa … MB»). Se il clone esiste già:
-   `cd freelm; git pull` invece di `git clone`.
-2. Scegliere la licenza di GÉNESIS (D-06).
-3. (Dalla Fase 3) Sistemare le chiavi OpenRouter/Gemini dell'ambiente cloud.
+   (Se la cartella esiste già: `cd freelm; git pull; cd GENESIS`.) Incollare in chat il testo di `doctor`.
+2. **Motore online** (facoltativo): chiave gratuita OpenRouter, poi `README.md` → «Motore online».
+3. **Decidere sulle v2**: pagina «Miglioramento» → «Rileva, proponi e valuta» → approvare o rifiutare.
+4. **Dataset indipendente** (consigliato): 20–40 richieste scritte da te, importate con `genesis lab import`.
+5. Scegliere la licenza (D-06).
 
 ## Per lo sviluppo — passo esatto successivo
 
-Fase 3 fatta (router + motore locale). Restano due strade:
-1. **Prova dal vivo del motore online**, appena una chiave gratuita funziona.
-2. **Fase 4 — Agenti** (Director, Researcher, …) costruiti sopra il router.
-
-### Prima opzione già descritta
-
-**Fase 2b (Tauri)** — da fare solo dopo la prova sul PC, per sapere se WebView2 è
-presente e quanta RAM resta: shell Tauri 2 che avvia `genesis serve --no-browser`
-come processo figlio e apre la stessa interfaccia in una finestra nativa; build
-Windows su GitHub Actions (gratuita, repo pubblico); nessuna build locale.
-
-In alternativa, se il proprietario preferisce l'intelligenza prima della finestra:
-**Fase 3** — interfaccia Provider propria, registro, router con filtro «solo
-gratuito», Local Engine deterministico, adattatore `freelm` disattivato di default.
+**Fase 10 (Release):** validazione integrale sul PC reale (doctor, serve, RAM), test di portabilità
+(export → import su un'altra cartella/PC), pacchetto Windows (Tauri compilato in GitHub Actions oppure
+avvio con un collegamento `.bat` che lancia `py -3 -m genesis serve`), documentazione d'uso finale.

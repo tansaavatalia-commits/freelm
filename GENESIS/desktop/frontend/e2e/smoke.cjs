@@ -104,6 +104,25 @@ async function main() {
     await page.getByText(/B migliore di A: dimostrato/).waitFor();
     if (shots) await page.screenshot({ path: path.join(shots, "4-laboratorio.png"), fullPage: true });
 
+    // Engines: run the Reasoning Engine from the form
+    page.on("dialog", (d) => d.accept());
+    await page.getByRole("link", { name: "Motori", exact: true }).click();
+    await page.getByLabel("Operazione").selectOption("solve");
+    await page.getByRole("button", { name: "Esegui" }).click();
+    await page.getByLabel("Risultato del motore").getByText('"answer": "60"').waitFor({ timeout: 20000 });
+    await page.getByText("solo algoritmi propri").first().waitFor();
+    await page.getByRole("cell", { name: "qwen2.5-0.5b-instruct" }).waitFor();
+
+    // Self-improvement: cycle for the classifier, evidence-based recommendation, owner approval, promotion
+    await page.getByRole("link", { name: "Miglioramento", exact: true }).click();
+    await page.getByRole("button", { name: "Rileva, proponi e valuta" }).click();
+    await page.getByText(/Raccomandazione: promuovere/).waitFor({ timeout: 60000 });
+    if (shots) await page.screenshot({ path: path.join(shots, "5-miglioramento.png"), fullPage: true });
+    await page.getByRole("button", { name: "Approva e promuovi" }).click();
+    await page.getByText("attiva v2").waitFor({ timeout: 15000 });
+    await page.getByRole("button", { name: "Torna a v1" }).click();
+    await page.getByText("attiva v1").first().waitFor({ timeout: 15000 });
+
     // Approvals page renders its empty state
     await page.getByRole("link", { name: "Approvazioni" }).click();
     await page.getByText("Nessuna richiesta in attesa.").waitFor();
@@ -132,7 +151,7 @@ async function main() {
     console.error("E2E FAILED:\n" + problems.join("\n"));
     process.exit(1);
   }
-  console.log("E2E OK: dashboard, progetti, compiti, agenti, laboratorio, backup, diagnostica, approvazioni, mobile, nessun errore nel browser");
+  console.log("E2E OK: dashboard, progetti, compiti, agenti, laboratorio, motori, miglioramento, backup, diagnostica, approvazioni, mobile, nessun errore nel browser");
 }
 
 main().catch((err) => {

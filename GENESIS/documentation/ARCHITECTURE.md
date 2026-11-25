@@ -86,3 +86,19 @@ genesis/api/static/     interfaccia compilata (React + TS), sorgenti in desktop/
 - **Esecutore unico:** `core/worker.py` prende un lock esclusivo del sistema
   operativo; `task run` da CLI e `serve` non possono eseguire compiti insieme, e il
   ripristino di un backup è rifiutato mentre un esecutore è attivo.
+
+## Fasi 3–9 in breve
+
+```
+genesis/
+  intelligence/  router (classificazione, filtro gratuito/privato, fallback), motore locale, modello locale, freelm
+  agents/        catalogo versionato, runtime con Verifier, Director, Consiglio
+  tools/         registro con manifest, sandbox file, web.fetch, client MCP
+  research/      dataset con hash, soggetti, esperimenti, statistica (McNemar, bootstrap), rapporti
+  engines/       Reasoning, Code, Research, Data, Memory (FTS5), Multimodal + registro con permessi
+  models/        catalogo modelli aperti, fattibilità, piani di fine-tuning
+  improvement/   componenti con versioni, ciclo di miglioramento, aree protette
+```
+
+Schema del database: v1 (core) · v2 agent_runs · v3 datasets/experiments · v4 memories (+ FTS5 creato all'avvio)
+· v5 improvements/component_versions. Esportazione/importazione includono tutte le tabelle.

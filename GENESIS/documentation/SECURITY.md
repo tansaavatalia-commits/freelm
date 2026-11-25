@@ -87,3 +87,12 @@ Per vulnerabilità in `freelm` vale il `SECURITY.md` alla radice del repository.
   racchiusi in delimitatori che non possono essere chiusi dal contenuto.
 - MCP: solo i server scritti dal proprietario in `genesis.toml`; ogni processo vive per una sola
   richiesta ed è terminato allo scadere del tempo.
+
+## Motori, modelli e auto-miglioramento (Fasi 7–9)
+
+- Ogni operazione dei motori passa dall'autorizzazione centrale; i motori leggono file solo nella cartella di lavoro.
+- Memoria: i segreti vengono oscurati prima del salvataggio; la memoria permanente scritta da un agente richiede
+  livello 4 **e** un'approvazione; la ricerca usa termini tra virgolette (nessuna iniezione di sintassi FTS).
+- Modelli locali: accettati solo endpoint su loopback, chiamati senza proxy; nessun download o installazione.
+- Auto-miglioramento: aree protette rifiutate in codice (test); promozione e ritorno indietro richiedono
+  un'approvazione monouso di livello 4; ogni passo è nell'audit.

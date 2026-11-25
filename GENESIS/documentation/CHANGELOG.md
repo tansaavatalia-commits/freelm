@@ -2,6 +2,30 @@
 
 (Il `CHANGELOG.md` alla radice del repository riguarda `freelm`.)
 
+## 0.9.0 — 2026-11-25 — Fase 9: Auto-miglioramento controllato
+
+- Componenti migliorabili con versioni (classificatore v1/v2, calcolo v1/v2) e benchmark associati.
+- Ciclo: rilevamento (misura ed errori) → proposta (problema, prove, causa) → prove isolate (stabile contro
+  candidata su ogni benchmark) → raccomandazione → approvazione del proprietario (livello 4) → promozione;
+  rifiuto e ritorno alla versione precedente. Aree protette (permessi, sicurezza, audit, costi, accessi, il ciclo stesso)
+  non modificabili.
+- Promozione solo con miglioramento dimostrato e nessun peggioramento dimostrato; avvertenza se i benchmark sono interni.
+- Router, motore locale e agenti leggono la versione attiva a ogni chiamata (vale subito anche per l'esecutore).
+- Pagine «Motori» (motori, componenti, prova dal vivo, catalogo modelli) e «Miglioramento»; schema v5; 207 test.
+
+## 0.8.0 — 2026-11-25 — Fase 8: Model Development Lab
+
+- Catalogo di 12 modelli aperti (dati segnati come non verificati, licenze evidenziate) + aggiunte del proprietario.
+- Stime di fattibilità (pesi per quantizzazione, cache, riserva del sistema) e piani di fine-tuning (full/LoRA/QLoRA).
+- Fornitore per un modello locale compatibile OpenAI, solo su indirizzi locali, spento nel profilo lite-4gb.
+
+## 0.7.0 — 2026-11-25 — Fase 7: Motori GÉNESIS
+
+- Dataset pre-registrati `classify-holdout@1` e `math-words@1` (commit separato, prima dei motori).
+- Reasoning (classificatore v2, calcolo in parole, problemi a parole), Code (analisi statica), Research (riassunto
+  estrattivo, parole chiave, fonti), Data (CSV), Memory (4 livelli, FTS5), Multimodal (metadati). Ogni motore dichiara
+  la natura dei componenti. Risultati R-003/R-004 con il limite metodologico dichiarato.
+
 ## 0.6.0 — 2026-11-24 — Fase 6: Research Lab
 
 - Dataset versionati con hash SHA-256 (`math-basic@1`, `classify-it@1`, `qa-facts@1`) e importazione da JSON;

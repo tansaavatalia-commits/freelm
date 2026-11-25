@@ -10,7 +10,7 @@
 | 4 | Agent Factory (8 agenti), Intelligence Council v0 | nessuna auto-escalation; il Council si misura contro una baseline | implementata (v0); misura contro baseline nel Research Lab (Fase 6) |
 | 5 | Strumenti, connettori, MCP con autorizzazione centrale | ogni chiamata autorizzata e registrata | implementata e testata |
 | 6 | Research Lab: esperimenti e benchmark riproducibili | un esperimento si ripete con lo stesso risultato | implementata e verificata (riproduzione identica) |
-| 7 | Motori GÉNESIS (Reasoning, Code, Research, Data, Memory, Multimodal) | ogni motore dichiara cosa è proprio e cosa è esterno | PENDENTE |
-| 8 | Model Development Lab | nessun training sul PC da 4 GB | PENDENTE |
-| 9 | Self-Improvement controllato | sicurezza, permessi e costi immutabili dal sistema | PENDENTE |
+| 7 | Motori GÉNESIS (Reasoning, Code, Research, Data, Memory, Multimodal) | ogni motore dichiara cosa è proprio e cosa è esterno | implementata e testata |
+| 8 | Model Development Lab | nessun training sul PC da 4 GB | implementata (catalogo, stime, piani, modello locale) |
+| 9 | Self-Improvement controllato | sicurezza, permessi e costi immutabili dal sistema | implementata e testata |
 | 10 | Release e test di portabilità | migrazione su un altro PC senza ricostruire | PENDENTE |
