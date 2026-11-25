@@ -145,6 +145,24 @@ CREATE TABLE experiment_results (
 );
 """,
     ),
+    (
+        4,
+        "memory engine: project, permanent and operational memories (Phase 7)",
+        """
+CREATE TABLE memories (
+    id         TEXT PRIMARY KEY,
+    level      TEXT NOT NULL CHECK (level IN ('project', 'permanent', 'operational')),
+    project_id TEXT REFERENCES projects (id) ON DELETE CASCADE,
+    content    TEXT NOT NULL,
+    tags       TEXT NOT NULL DEFAULT '',
+    source     TEXT NOT NULL DEFAULT '',
+    principal  TEXT NOT NULL,
+    deleted    INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX idx_memories_level ON memories (level, deleted);
+""",
+    ),
 )
 
 

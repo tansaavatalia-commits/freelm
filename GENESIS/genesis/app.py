@@ -22,6 +22,7 @@ from .core.logs import close_handler, setup_logging
 from .core.projects import ProjectStore
 from .core.tasks import TaskManager
 from .core.worker import LOCK_FILENAME, WorkerLock
+from .engines.registry import EngineRegistry
 from .hardware.detect import HardwareInfo, detect
 from .hardware.profiles import select_profile
 from .intelligence.base import Request
@@ -68,6 +69,7 @@ class Genesis:
                                       internet_enabled=self.config.internet_enabled, mcp_servers=self.config.mcp_servers)
             self.agents = AgentRunner(self.db, self.permissions, self.router, load_agents(self.config.home), now=now,
                                       tools=self.tools)
+            self.engines = EngineRegistry(self)
             self.lab = ResearchLab(self, now=now)
             self._register_builtin_tasks()
         except BaseException:
@@ -122,6 +124,9 @@ class Genesis:
                  'Esperimento: {"dataset": "classify-it", "subject": "classifier", "seed": 0}.')
         register("lab.reproduce", lambda ctx: self.lab.reproduce(_s(ctx, "experiment_id")), Level.READ,
                  'Riproduce un esperimento: {"experiment_id": "..."}.')
+        register("engines.run", lambda ctx: self.engines.run(ctx.task["principal"], _s(ctx, "engine"), _s(ctx, "op"),
+                                                             ctx.payload.get("payload") or {}), Level.READ,
+                 'Operazione di un motore: {"engine": "reasoning", "op": "solve", "payload": {"text": "..."}}.')
         register("memory.backup", lambda ctx: {"path": str(self._backup())}, Level.WORKSPACE_WRITE,
                  "Crea un backup verificato del database.")
 

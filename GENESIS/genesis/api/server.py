@@ -222,6 +222,7 @@ class ApiServer:
             ("GET", r"/api/engines", self._engines),
             ("GET", r"/api/agents", self._agents),
             ("GET", r"/api/tools", self._tools),
+            ("GET", r"/api/genesis-engines", self._genesis_engines),
             ("GET", r"/api/lab/datasets", self._lab_datasets),
             ("GET", r"/api/lab/subjects", self._lab_subjects),
             ("GET", r"/api/lab/experiments", self._lab_experiments),
@@ -370,6 +371,9 @@ class ApiServer:
         if not a or not b:
             raise ApiError(400, "servono i parametri a e b")
         return 200, self.core.run(lambda g: g.lab.compare(a, b))
+
+    def _genesis_engines(self, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: g.engines.describe())
 
     def _tools(self, **_: Any) -> tuple[int, Any]:
         return 200, self.core.run(lambda g: [s.manifest() for s in g.tools.specs()])

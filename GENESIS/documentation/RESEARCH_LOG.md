@@ -34,3 +34,31 @@ versione e hash. Nessun miglioramento è dichiarato senza un confronto appaiato 
 - `qa-facts@1` con `agent:researcher` (max 40 chiamate per esperimento per rispettare la quota gratuita).
 - Consiglio contro singolo agente sullo stesso dataset: il Consiglio usa 3 chiamate per domanda, quindi
   conviene un campione di 10–13 elementi per esperimento e più esperimenti con seed diversi.
+
+## R-003 — 2026-11-25 — Classificatore v2 contro v1 su dati pre-registrati
+
+- **Metodo:** `classify-holdout@1` (40 richieste, 8 per categoria; sha256 `ef006e8e0f69…`) è stato
+  committato **prima** di scrivere la v2 (commit `a8fb109`). La v2 corregge i 3 limiti trovati in R-001.
+- **Risultati:**
+
+  | Dataset | v1 | v2 |
+  |---|---|---|
+  | `classify-it@1` | 27/30 | 29/30 |
+  | `classify-holdout@1` | 17/40 | 39/40 |
+
+  Sul holdout: McNemar esatto p < 0,001, differenza dimostrata.
+- **Scoperta importante:** la v1 generalizzava male (90% sui dati originali, 42,5% su dati nuovi).
+- **Errori nuovi della v2, NON corretti** (correggerli dopo averli visti vorrebbe dire adattarsi alla prova):
+  «le **api** sono importanti» → `code` (api = insetti); «query SQL per **contare le righe**» → `text.stats`.
+- **Limite metodologico dichiarato:** le regole v2 sono state scritte dallo stesso autore che ha scritto e
+  letto il holdout. La pre-registrazione dimostra che i dati non sono stati cambiati, **non** che la valutazione
+  sia alla cieca. Per una prova indipendente serve un dataset scritto dal proprietario
+  (`genesis lab import file.json`). La v2 resta **sperimentale** finché non passa il ciclo della Fase 9.
+
+## R-004 — 2026-11-25 — Calcolo v2 (aritmetica a parole e problemi) contro v1
+
+- **Dati:** `math-basic@1` e `math-words@1` (20 problemi pre-registrati, sha256 `8b48daf18493…`).
+- **Risultati:** `math-basic@1` 24/26 → 26/26; `math-words@1` 0/20 → 20/20.
+- **Stesso limite di R-003:** il risolutore è stato scritto dopo aver letto i problemi pre-registrati.
+  È un risolutore a un passo con parole indizio: problemi con tre numeri o due passaggi vengono rifiutati
+  («problema non riconosciuto») invece di dare una risposta inventata.

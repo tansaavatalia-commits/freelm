@@ -310,6 +310,25 @@ def cmd_lab(g: Genesis, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_engines(g: Genesis, args: argparse.Namespace) -> int:
+    if args.action == "list":
+        for e in g.engines.describe():
+            ext = "usa un modello esterno" if e["uses_external_model"] else "solo algoritmi propri"
+            print(f"{e['id']:<11} {e['name']} v{e['version']} - {ext}")
+            for c in e["components"]:
+                note = "" if c["available"] else " [non disponibile]"
+                print(f"             · {c['name']} ({c['kind']}){note}")
+            print("             operazioni: " + ", ".join(o["name"] for o in e["operations"]))
+        return 0
+    try:
+        payload = json.loads(args.payload)
+    except ValueError as exc:
+        print(f"errore: --payload non è JSON valido ({exc})", file=sys.stderr)
+        return 2
+    _json(g.engines.run(OWNER, args.engine, args.op, payload))
+    return 0
+
+
 def cmd_backup_create(g: Genesis, args: argparse.Namespace) -> int:
     print(f"Backup creato e verificato: {g.create_backup()}")
     return 0
@@ -499,6 +518,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("id")
     s.add_argument("--compare", help="id dell'esperimento di riferimento")
     s.set_defaults(func=cmd_lab)
+
+    engines = sub.add_parser("engines", help="motori GÉNESIS: elenco ed esecuzione").add_subparsers(
+        dest="action", required=True)
+    engines.add_parser("list", help="motori, componenti e operazioni").set_defaults(func=cmd_engines)
+    s = engines.add_parser("run", help="esegue un'operazione come proprietario")
+    s.add_argument("engine")
+    s.add_argument("op")
+    s.add_argument("--payload", default="{}", help="oggetto JSON")
+    s.set_defaults(func=cmd_engines)
 
     s = sub.add_parser("online", help="accende o spegne il motore online (OpenRouter gratuito)")
     s.add_argument("action", choices=["enable", "disable"])

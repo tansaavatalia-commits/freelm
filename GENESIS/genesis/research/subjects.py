@@ -17,7 +17,7 @@ from .datasets import Dataset, Item
 if TYPE_CHECKING:
     from ..app import Genesis
 
-FIXED = ("classifier", "baseline:majority", "local.math", "router", "council")
+FIXED = ("classifier", "classifier@v2", "baseline:majority", "local.math", "math@v2", "router", "council")
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,14 @@ def make_subject(app: Genesis, spec: str, dataset: Dataset, allow_remote: bool) 
     if spec == "classifier":
         return Subject(spec, f"regole@{__version__}", True, 0,
                        _guard(lambda it: {"output": classify(it.input), "engine": "regole", "error": None}))
+    if spec == "classifier@v2":
+        from ..engines.reasoning import classify_v2
+        return Subject(spec, f"regole-v2@{__version__}", True, 0,
+                       _guard(lambda it: {"output": classify_v2(it.input), "engine": "regole-v2", "error": None}))
+    if spec == "math@v2":
+        from ..engines.reasoning import math_v2
+        return Subject(spec, f"math-v2@{__version__}", True, 0,
+                       _guard(lambda it: {"output": math_v2(it.input)[0], "engine": "reasoning", "error": None}))
     if spec == "baseline:majority":
         label = Counter(str(i.expected) for i in dataset.items).most_common(1)[0][0]
         return Subject(spec, f"maggioranza={label}", True, 0,
