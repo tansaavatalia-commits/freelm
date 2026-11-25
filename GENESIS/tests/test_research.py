@@ -42,7 +42,7 @@ def test_builtin_datasets_are_valid_and_correct():
     math_ds = next(d for d in BUILTIN if d.name == "math-basic")
     for item in math_ds.items[:24]:  # the computable ones: expected values verified independently
         assert evaluate(extract_expression(item.input)) == pytest.approx(item.expected)
-    assert len({d.ref for d in BUILTIN}) == 3 and all(len(d.hash) == 64 for d in BUILTIN)
+    assert len({d.ref for d in BUILTIN}) == 5 and all(len(d.hash) == 64 for d in BUILTIN)
 
 
 @pytest.mark.parametrize("bad", [{"name": "X"}, {"items": []}, {"items": [{"input": "a", "expected": "x", "scorer": "numeric"}]},

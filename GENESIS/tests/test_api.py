@@ -170,7 +170,7 @@ def test_lab_endpoints(server):
     _, base_task, _ = call(server, "POST", "/api/tasks", {"kind": "lab.run", "payload": {
         "dataset": "classify-it", "subject": "baseline:majority"}})
     base_id = wait_for(server, base_task["id"])["result"]["experiment_id"]
-    assert len(call(server, "GET", "/api/lab/datasets")[1]) == 3
+    assert len(call(server, "GET", "/api/lab/datasets")[1]) == 5
     assert "classifier" in call(server, "GET", "/api/lab/subjects")[1]
     assert call(server, "GET", "/api/lab/experiments")[1][0]["id"] in (exp_id, base_id)
     detail = call(server, "GET", f"/api/lab/experiments/{exp_id}")[1]
