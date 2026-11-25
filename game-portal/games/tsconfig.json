@@ -1,5 +1,5 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": { "allowJs": true, "checkJs": true, "lib": ["ES2022", "DOM", "DOM.Iterable"], "types": [] },
-  "include": ["sdk", "mines", "sudoku", "nonogram", "test"]
+  "include": ["sdk", "mines", "sudoku", "nonogram", "klondike", "test"]
 }

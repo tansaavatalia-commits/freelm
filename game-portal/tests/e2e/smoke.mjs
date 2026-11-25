@@ -36,11 +36,11 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
 page.on("console", (m) => { if (m.type() === "error") errors.push(`console: ${m.text()}`); });
 
-await step("home: mostra i 3 giochi", async () => {
+await step("home: mostra i 4 giochi", async () => {
   await page.goto(WEB);
   await page.getByRole("heading", { level: 1 }).waitFor();
   const cards = await page.locator(".card").count();
-  assert.equal(cards, 3);
+  assert.equal(cards, 4);
 });
 
 await step("pagina gioco: il gioco invia 'ready' e il portale lo accetta", async () => {
@@ -113,6 +113,19 @@ await step("sudoku e nonogram si caricano e rispondono", async () => {
   assert.equal(await frame.locator("#board td button.fill").count(), 1);
 });
 
+await step("klondike: pesca dal mazzo, seleziona e annulla", async () => {
+  await page.goto(`${WEB}/play/klondike`);
+  await page.locator(".player-overlay").waitFor({ state: "detached", timeout: 10000 });
+  const f = page.frameLocator('iframe[title="Klondike Solitaire game"]');
+  await f.locator("#stock").click();
+  assert.equal(await f.locator("#waste .card").count(), 1);
+  assert.equal(await f.locator("#moves").textContent(), "1 moves");
+  await f.locator("#undo").click();
+  assert.equal(await f.locator("#waste .card").count(), 0);
+  await f.locator("#tableau .col").nth(6).locator(".card:not(.down)").click();
+  assert.equal(await f.locator(".card.sel").count(), 1);
+});
+
 await step("preferiti salvati localmente e mostrati", async () => {
   await page.goto(`${WEB}/play/nonogram`);
   await page.getByRole("button", { name: "☆ Save" }).click();
@@ -137,6 +150,15 @@ await step("mobile: nessuno scroll orizzontale (home e gioco)", async () => {
     await p.waitForTimeout(400);
     const over = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     assert.ok(over <= 0, `${path}: overflow ${over}px`);
+  }
+  // Anche dentro l'iframe: nessun gioco deve sbordare dallo schermo del telefono.
+  for (const slug of ["mines", "sudoku", "nonogram", "klondike"]) {
+    await p.goto(`${WEB}/play/${slug}`);
+    await p.locator(".player-overlay").waitFor({ state: "detached", timeout: 10000 });
+    const frame = p.frames().find((x) => x.url().includes(`/${slug}/`));
+    assert.ok(frame, `${slug}: frame non trovato`);
+    const inner = await frame.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    assert.ok(inner <= 0, `${slug}: il gioco sborda di ${inner}px`);
   }
   await m.close();
 });

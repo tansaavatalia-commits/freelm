@@ -1,0 +1,11 @@
+{
+  "slug": "klondike",
+  "title": "Klondike Solitaire",
+  "version": "1.0.0",
+  "category": "cards",
+  "tags": ["classic", "solitaire", "cards"],
+  "description": "The classic patience game. Build four foundations from Ace to King by moving cards between seven columns in alternating colours. Draw one or three cards, with unlimited undo.",
+  "aspect": "4:3",
+  "usesStorage": true,
+  "license": { "type": "internal", "rightsHolder": "Tabluo (titolare del progetto)", "thirdPartyAssets": [] }
+}

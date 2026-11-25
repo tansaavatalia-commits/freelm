@@ -16,6 +16,7 @@ export const ART: Record<string, { glyph: string; hue: number }> = {
   mines: { glyph: "✹", hue: 12 },
   sudoku: { glyph: "9", hue: 158 },
   nonogram: { glyph: "▦", hue: 215 },
+  klondike: { glyph: "♠", hue: 140 },
 };
 
 export function findGame(slug: string): CatalogEntry | undefined {

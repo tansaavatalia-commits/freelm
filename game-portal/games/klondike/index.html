@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Klondike Solitaire — Tabluo</title>
+  <link rel="stylesheet" href="../sdk/base.css" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="bar">
+    <label>Draw
+      <select id="draw">
+        <option value="1">1 card</option>
+        <option value="3">3 cards</option>
+      </select>
+    </label>
+    <button id="new">New game</button>
+    <button id="undo" disabled>↶ Undo</button>
+    <button id="auto" hidden>Finish ✓</button>
+    <span class="stat" id="moves" aria-label="Moves">0 moves</span>
+    <span class="stat" id="time" aria-label="Time">0:00</span>
+  </div>
+  <div id="table" aria-label="Solitaire table">
+    <div class="row top">
+      <button id="stock" class="pile" aria-label="Stock"></button>
+      <div id="waste" class="pile fan" aria-label="Waste"></div>
+      <div class="spacer"></div>
+      <div class="pile foundation" data-f="0" aria-label="Foundation 1"></div>
+      <div class="pile foundation" data-f="1" aria-label="Foundation 2"></div>
+      <div class="pile foundation" data-f="2" aria-label="Foundation 3"></div>
+      <div class="pile foundation" data-f="3" aria-label="Foundation 4"></div>
+    </div>
+    <div class="row tableau" id="tableau"></div>
+  </div>
+  <p class="message" id="message" role="status" aria-live="polite"></p>
+  <p class="sr-only">Select a card, then select where to move it. Double-click a card to send it to a foundation.</p>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

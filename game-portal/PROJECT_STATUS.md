@@ -1,6 +1,6 @@
 # Tabluo (GAME PORTAL) — Stato del progetto
 
-**Aggiornato:** 2026-11-19
+**Aggiornato:** 2026-11-25
 **Fase attuale:** FASI 4–6 in corso (sviluppo locale). FASI 0–3 completate.
 **Niente è pubblicato online. Nessuna spesa. Nessun account creato. Nessun contatto esterno.**
 
@@ -11,17 +11,17 @@
 - FASE 3: monorepo pnpm, TypeScript strict, test, build, CI pronta per il repo dedicato.
 - FASE 4 (parziale): portale con home, categorie, ricerca, pagina gioco, correlati, preferiti e cronologia locali, pagine info (bozze legali), mobile-first.
 - FASE 5 (parziale): API Hono + D1 — kill switch, eventi anonimi aggregati, ad server diretto, admin API con audit log.
-- FASE 6 (parziale): player sandbox su origin separato, SDK giochi, 3 giochi originali (Mines, Sudoku, Nonogram con puzzle del giorno).
+- FASE 6 (parziale): player sandbox su origin separato, SDK giochi, 4 giochi originali (Klondike Solitaire, Mines, Sudoku, Nonogram con puzzle del giorno).
 
-## Test (eseguiti davvero, 2026-11-19)
+## Test (eseguiti davvero, 2026-11-25)
 | Suite | Risultato |
 |---|---|
 | `shared` (manifest, licenze, protocollo) | 12/12 ✅ |
-| `games` (logica dei 3 giochi) | 17/17 ✅ |
+| `games` (logica dei 4 giochi) | 30/30 ✅ |
 | `backend` (API su SQLite reale con la migrazione di produzione) | 16/16 ✅ |
 | `frontend` (isolamento player, ricerca, storage, pagine, navigazione) | 16/16 ✅ |
 | script catalogo (regola bloccante licenze) | 6/6 ✅ |
-| **E2E in Chromium** (`pnpm e2e`: API wrangler/D1 locale + giochi + portale) | 12/12 ✅ |
+| **E2E in Chromium** (`pnpm e2e`: API wrangler/D1 locale + giochi + portale, desktop e telefono) | 13/13 ✅ |
 | Controllo tipi tutti i pacchetti + build | ✅ |
 | Test falliti | nessuno |
 
@@ -43,9 +43,10 @@
 - SEO: SPA senza prerendering (FASE 4); i18n non ancora attivo; Lighthouse CI da aggiungere (FASE 10).
 - Nessun rate limiting sull'API (FASE 5/9); account utente e Premium non iniziati (D-006, D-008).
 - Pagine privacy/termini: **bozze**, serve revisione legale (D-009).
-- Giochi: 3 su 10 di D-013.
+- Giochi: 4 su 10 di D-013.
 
 ## Prossimo passo
+**Beta pubblica a 0 €** — vedi `docs/LAUNCH.md`: servono 4 azioni del titolare (≈ 20 minuti).
 1. Spostamento nel repository dedicato appena esiste (`git subtree split`, storia preservata).
-2. Altri giochi (Klondike, FreeCell, Spider, Mahjong, Word, Dama, Scacchi).
+2. Altri giochi (FreeCell, Spider, Mahjong, Word, Dama, Scacchi).
 3. Prerendering SEO + i18n, SPA admin con passkey.

@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
 // Ogni gioco è una pagina statica indipendente, servita da un origin separato dal portale.
-const GAMES = ["mines", "sudoku", "nonogram"];
+const GAMES = ["mines", "sudoku", "nonogram", "klondike"];
 
 export default defineConfig({
   base: "./",

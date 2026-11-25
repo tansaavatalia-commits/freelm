@@ -39,7 +39,7 @@ describe("player: isolamento", () => {
 
 describe("catalogo e ricerca", () => {
   it("il catalogo generato contiene i giochi pubblicabili", () => {
-    expect(CATALOG.map((x) => x.slug).sort()).toEqual(["mines", "nonogram", "sudoku"]);
+    expect(CATALOG.map((x) => x.slug).sort()).toEqual(["klondike", "mines", "nonogram", "sudoku"]);
     expect(findGame("mines")?.title).toBe("Mines");
     expect(findGame("nope")).toBeUndefined();
   });

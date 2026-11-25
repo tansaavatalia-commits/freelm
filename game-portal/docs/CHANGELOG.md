@@ -1,5 +1,12 @@
 # GAME PORTAL — Changelog
 
+## 2026-11-25 — Klondike Solitaire e guida al lancio
+- Nuovo gioco **Klondike Solitaire** (pescata 1 o 3, annulla illimitato, doppio clic verso le fondazioni, completamento automatico); modello carte condiviso `games/sdk/cards.js` per i prossimi solitari.
+- 13 test della logica di Klondike, compresa una partita casuale di 2.000 mosse che verifica che non si perdano mai carte.
+- E2E: controllo che nessun gioco sbordi dallo schermo del telefono (dentro l'iframe).
+- Corretti dopo la revisione visiva: carta del mazzo fuori posizione, settima colonna tagliata su telefono.
+- `docs/LAUNCH.md`: i 4 passi (≈ 20 minuti, 0 €) per la beta pubblica; `scripts/screenshots.mjs`.
+
 ## 2026-11-19 — FASI 2–6 (parziali), sviluppo locale
 - Monorepo pnpm in `game-portal/`: `shared`, `backend` (Hono + D1), `frontend` (React + Vite), `games` (vanilla JS).
 - Giochi originali: Mines, Sudoku (soluzione unica), Nonogram (puzzle del giorno).
