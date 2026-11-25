@@ -356,6 +356,51 @@ def cmd_models(g: Genesis, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_improve(g: Genesis, args: argparse.Namespace) -> int:
+    lab = g.improvement
+    if args.action == "components":
+        for c in lab.components():
+            print(f"{c['name']:<11} attiva {c['active']}  (versioni: {', '.join(c['versions'])}; benchmark: "
+                  f"{', '.join(c['benchmarks'])})  {c['description']}")
+        return 0
+    if args.action == "list":
+        for i in lab.list():
+            rec = (i["evaluation"] or {}).get("recommendation", "")
+            print(f"{i['id'][:8]}  {i['status']:<11} {i['component']} {i['stable']} -> {i['candidate']}  {rec}")
+        return 0
+    if args.action == "detect":
+        _json(lab.detect(args.component))
+        return 0
+    if args.action == "propose":
+        result = lab.propose(args.component, args.candidate, cause=args.cause, proposal=args.proposal)
+        print(f"Proposta {result['id'][:8]} registrata: {result['problem']}")
+        return 0
+    if args.action == "evaluate":
+        ev = lab.evaluate(args.id)["evaluation"]
+        for r in ev["results"]:
+            print(f"{r['dataset']:<20} stabile {r['accuracy_stable']:.1%} -> candidata {r['accuracy_candidate']:.1%}  {r['verdict']}")
+        print(f"Raccomandazione: {ev['recommendation']}\n{ev['caveat']}")
+        return 0
+    if args.action == "reject":
+        lab.reject(args.id, args.reason)
+        print("Proposta rifiutata.")
+        return 0
+    if not args.confirm:
+        print("Questa azione cambia la versione di un componente in uso. Ripeti con --confirm.", file=sys.stderr)
+        return 2
+    target = lab.resolve(args.id) if args.action == "approve" else args.component
+    action = f"improve.promote:{lab.get(target)['component']}" if args.action == "approve" else f"improve.rollback:{target}"
+    approval_id = g.permissions.request_approval(OWNER, action, Level.SYSTEM_CHANGE, {"target": target})
+    g.permissions.decide(approval_id, True, decided_by=OWNER)
+    if args.action == "approve":
+        done = lab.approve(target, approval_id)
+        print(f"Promossa: {done['component']} ora usa {done['candidate']} (prima {done['stable']}).")
+    else:
+        done = lab.rollback(target, approval_id)
+        print(f"Ripristinata: {done['component']} ora usa {done['active']}.")
+    return 0
+
+
 def cmd_backup_create(g: Genesis, args: argparse.Namespace) -> int:
     print(f"Backup creato e verificato: {g.create_backup()}")
     return 0
@@ -572,6 +617,34 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--batch", type=int, default=4)
     s.add_argument("--epochs", type=int, default=3)
     s.set_defaults(func=cmd_models)
+
+    improve = sub.add_parser("improve", help="auto-miglioramento controllato").add_subparsers(dest="action", required=True)
+    improve.add_parser("components", help="componenti migliorabili e versioni attive").set_defaults(func=cmd_improve)
+    improve.add_parser("list", help="proposte di miglioramento").set_defaults(func=cmd_improve)
+    s = improve.add_parser("detect", help="misura la versione attiva e raccoglie gli errori")
+    s.add_argument("component")
+    s.set_defaults(func=cmd_improve)
+    s = improve.add_parser("propose", help="registra una proposta con le prove")
+    s.add_argument("component")
+    s.add_argument("candidate")
+    s.add_argument("--cause", default="")
+    s.add_argument("--proposal", default="")
+    s.set_defaults(func=cmd_improve)
+    s = improve.add_parser("evaluate", help="prove isolate e confronto con la versione stabile")
+    s.add_argument("id")
+    s.set_defaults(func=cmd_improve)
+    s = improve.add_parser("approve", help="promuove una proposta con prove sufficienti (livello 4)")
+    s.add_argument("id")
+    s.add_argument("--confirm", action="store_true")
+    s.set_defaults(func=cmd_improve)
+    s = improve.add_parser("reject", help="rifiuta una proposta")
+    s.add_argument("id")
+    s.add_argument("--reason", default="")
+    s.set_defaults(func=cmd_improve)
+    s = improve.add_parser("rollback", help="torna alla versione precedente (livello 4)")
+    s.add_argument("component")
+    s.add_argument("--confirm", action="store_true")
+    s.set_defaults(func=cmd_improve)
 
     s = sub.add_parser("online", help="accende o spegne il motore online (OpenRouter gratuito)")
     s.add_argument("action", choices=["enable", "disable"])

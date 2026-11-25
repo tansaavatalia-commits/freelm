@@ -25,6 +25,7 @@ from .core.worker import LOCK_FILENAME, WorkerLock
 from .engines.registry import EngineRegistry
 from .hardware.detect import HardwareInfo, detect
 from .hardware.profiles import select_profile
+from .improvement.cycle import ImprovementLab
 from .intelligence.base import Request
 from .intelligence.local import LocalEngine
 from .intelligence.local_model import LocalModelProvider
@@ -65,9 +66,12 @@ class Genesis:
             self.permissions = PermissionManager(self.db, self.audit, self.config.grants, now=now)
             self.projects = ProjectStore(self.db, self.permissions, self.bus, now=now)
             self.tasks = TaskManager(self.db, self.bus, self.permissions, self.log.getChild("tasks"), now=now)
-            self.router = Router([LocalEngine(), LocalModelProvider(self.config.local_model, self.profile.local_models),
+            self.improvement = ImprovementLab(self, now=now)
+            self.router = Router([LocalEngine(math=lambda: self.improvement.active_fn("math")),
+                                  LocalModelProvider(self.config.local_model, self.profile.local_models),
                                   FreelmProvider()], remote_enabled=self.config.remote_enabled,
-                                 remote_free_verified=self.config.remote_free_verified, audit=self.audit)
+                                 remote_free_verified=self.config.remote_free_verified, audit=self.audit,
+                                 classifier=lambda: self.improvement.active_fn("classifier"))
             self.tools = ToolRegistry(self.permissions, self.audit, self.config.workspace_dir,
                                       internet_enabled=self.config.internet_enabled, mcp_servers=self.config.mcp_servers)
             self.agents = AgentRunner(self.db, self.permissions, self.router, load_agents(self.config.home), now=now,
@@ -131,6 +135,8 @@ class Genesis:
         register("engines.run", lambda ctx: self.engines.run(ctx.task["principal"], _s(ctx, "engine"), _s(ctx, "op"),
                                                              ctx.payload.get("payload") or {}), Level.READ,
                  'Operazione di un motore: {"engine": "reasoning", "op": "solve", "payload": {"text": "..."}}.')
+        register("improve.cycle", lambda ctx: self._improve_task(ctx), Level.READ,
+                 'Ciclo di miglioramento fino alla valutazione: {"component": "classifier", "candidate": "v2"}.')
         register("memory.backup", lambda ctx: {"path": str(self._backup())}, Level.WORKSPACE_WRITE,
                  "Crea un backup verificato del database.")
 
@@ -140,6 +146,12 @@ class Genesis:
         if not isinstance(prompt, str) or not isinstance(private, bool) or not isinstance(task_type, (str, type(None))):
             raise ValueError('payload atteso: {"prompt": "testo", "task_type": null, "private": false}')
         return self.router.route(Request(prompt, task_type, private))
+
+    def _improve_task(self, ctx: Any) -> dict[str, Any]:
+        proposal = self.improvement.propose(_s(ctx, "component"), _s(ctx, "candidate"), principal=ctx.task["principal"])
+        evaluated = self.improvement.evaluate(proposal["id"], principal=ctx.task["principal"])
+        return {"improvement_id": evaluated["id"], "recommendation": evaluated["evaluation"]["recommendation"],
+                "promotable": evaluated["evaluation"]["promotable"]}
 
     def _lab_task(self, ctx: Any) -> dict[str, Any]:
         p = ctx.payload

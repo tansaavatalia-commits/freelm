@@ -224,6 +224,10 @@ class ApiServer:
             ("GET", r"/api/tools", self._tools),
             ("GET", r"/api/genesis-engines", self._genesis_engines),
             ("GET", r"/api/models", self._models),
+            ("GET", r"/api/improvement/components", self._components),
+            ("GET", r"/api/improvement/proposals", self._proposals),
+            ("POST", rf"/api/improvement/proposals/(?P<imp_id>{HEX_ID})/(?P<decision>approve|reject)", self._decide_proposal),
+            ("POST", r"/api/improvement/components/(?P<component>[a-z_]{1,32})/rollback", self._rollback),
             ("GET", r"/api/lab/datasets", self._lab_datasets),
             ("GET", r"/api/lab/subjects", self._lab_subjects),
             ("GET", r"/api/lab/experiments", self._lab_experiments),
@@ -372,6 +376,31 @@ class ApiServer:
         if not a or not b:
             raise ApiError(400, "servono i parametri a e b")
         return 200, self.core.run(lambda g: g.lab.compare(a, b))
+
+    def _components(self, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: g.improvement.components())
+
+    def _proposals(self, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: g.improvement.list())
+
+    def _decide_proposal(self, imp_id: str, decision: str, body: dict[str, Any], **_: Any) -> tuple[int, Any]:
+        if decision == "reject":
+            reason = _field(body, "reason", str, "")
+            return 200, self.core.run(lambda g: g.improvement.reject(imp_id, reason))
+
+        def approve(g: Genesis) -> dict[str, Any]:  # the owner clicking in the UI is the explicit approval
+            component = g.improvement.get(imp_id)["component"]
+            approval = g.permissions.request_approval(OWNER, f"improve.promote:{component}", 4, {"target": imp_id})
+            g.permissions.decide(approval, True, decided_by=OWNER)
+            return g.improvement.approve(imp_id, approval)
+        return 200, self.core.run(approve)
+
+    def _rollback(self, component: str, **_: Any) -> tuple[int, Any]:
+        def rollback(g: Genesis) -> dict[str, Any]:
+            approval = g.permissions.request_approval(OWNER, f"improve.rollback:{component}", 4, {"target": component})
+            g.permissions.decide(approval, True, decided_by=OWNER)
+            return g.improvement.rollback(component, approval)
+        return 200, self.core.run(rollback)
 
     def _models(self, query: dict[str, list[str]], **_: Any) -> tuple[int, Any]:
         from ..models.catalog import card_dict

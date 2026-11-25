@@ -16,7 +16,7 @@ from typing import Any
 from ..core.clock import Now, utcnow
 from ..errors import GenesisError, PermissionDenied
 from ..intelligence.base import Request
-from ..intelligence.local import LocalEngine, classify, evaluate, extract_expression
+from ..intelligence.local import LocalEngine, evaluate, extract_expression
 from ..intelligence.router import Router
 from ..memory.db import Database
 from ..security.permissions import Level, PermissionManager
@@ -85,7 +85,7 @@ class AgentRunner:
 
     def step(self, agent: AgentConfig, goal: str, private: bool = False, task_type: str | None = None) -> dict[str, Any]:
         """One model call by one agent, plus deterministic checks. Never raises for engine failures."""
-        task_type = task_type or classify(goal)
+        task_type = task_type or self.router.classify(goal)
         if task_type not in agent.task_types:
             return {"agent": agent.id, "task_type": task_type, "ok": False,
                     "error": f"{agent.name} non gestisce '{task_type}' (gestisce: {', '.join(agent.task_types)})"}
@@ -137,7 +137,7 @@ class AgentRunner:
         run_id = self._start(director, "director", goal)
         steps = []
         for sub in decompose(goal):
-            step = self.step(self.get(ASSIGN[classify(sub)]), sub, private)
+            step = self.step(self.get(ASSIGN[self.router.classify(sub)]), sub, private)
             steps.append({"subtask": sub, **step})
         report = "\n".join(
             f"{i}. {s['subtask']} -> {s['agent']}: " + (s["output"] if s["ok"] else f"NON RIUSCITO ({s['error'] if 'error' in s else 'controlli falliti'})")

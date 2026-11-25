@@ -177,3 +177,16 @@ def test_lab_endpoints(server):
     assert detail["experiment"]["metrics"]["correct"] == 27 and len(detail["results"]) == 30
     cmp = call(server, "GET", f"/api/lab/compare?a={base_id}&b={exp_id}")[1]
     assert cmp["significant"] and call(server, "GET", "/api/lab/compare?a=x")[0] == 400
+
+
+def test_improvement_endpoints(server):
+    _, task, _ = call(server, "POST", "/api/tasks", {"kind": "improve.cycle", "payload": {"component": "classifier",
+                                                                                         "candidate": "v2"}})
+    imp = wait_for(server, task["id"], timeout=30)["result"]["improvement_id"]
+    assert call(server, "GET", "/api/improvement/components")[1][0]["active"] == "v1"
+    assert call(server, "GET", "/api/improvement/proposals")[1][0]["evaluation"]["promotable"]
+    status, promoted, _ = call(server, "POST", f"/api/improvement/proposals/{imp}/approve", {})
+    assert status == 200 and promoted["status"] == "promoted"
+    assert call(server, "GET", "/api/improvement/components")[1][0]["active"] == "v2"
+    assert call(server, "POST", "/api/improvement/components/classifier/rollback", {})[1]["active"] == "v1"
+    assert call(server, "POST", "/api/improvement/components/permissions/rollback", {})[0] == 403

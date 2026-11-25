@@ -10,6 +10,7 @@ import ast
 import math
 import operator
 import re
+from typing import Callable
 
 from .. import __version__
 from .base import EngineError, Provider, ProviderSpec, Request
@@ -110,6 +111,9 @@ def classify(prompt: str) -> str:
 
 
 class LocalEngine(Provider):
+    def __init__(self, math: Callable[[], Callable[[str], str]] | None = None) -> None:
+        self._math = math  # active math version, read at call time
+
     spec = ProviderSpec(
         id="local", name="Motore locale GÉNESIS", version=__version__, kind="local",
         capabilities=frozenset({"math", "text.stats"}), cost="free", quality=5, method="deterministico",
@@ -118,6 +122,8 @@ class LocalEngine(Provider):
 
     def run(self, request: Request, task_type: str) -> str:
         if task_type == "math":
+            if self._math is not None:
+                return self._math()(request.prompt)
             return format_number(evaluate(extract_expression(request.prompt)))
         if task_type == "text.stats":
             return text_stats(request.prompt)

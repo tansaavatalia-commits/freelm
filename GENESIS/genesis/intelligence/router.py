@@ -32,11 +32,13 @@ class Router:
         remote_free_verified: bool = False,
         audit: AuditLog | None = None,
         clock: Callable[[], float] = time.monotonic,
+        classifier: Callable[[], Callable[[str], str]] | None = None,
     ) -> None:
         self.providers = list(providers)
         self.remote_enabled = remote_enabled
         self.remote_free_verified = remote_free_verified
         self.audit = audit
+        self._classifier = classifier
         self._clock = clock
         self._stats: dict[str, dict[str, Any]] = {p.spec.id: {"ok": 0, "fail": 0, "ms": None} for p in self.providers}
 
@@ -71,7 +73,7 @@ class Router:
         return out
 
     def plan(self, request: Request) -> tuple[str, list[Provider], list[dict[str, str]]]:
-        task_type = request.task_type or classify(request.prompt)
+        task_type = request.task_type or self.classify(request.prompt)
         if task_type not in TASK_TYPES:
             raise RouterError(f"tipo di richiesta sconosciuto: {task_type} (ammessi: {', '.join(TASK_TYPES)})")
         chosen, rejected = [], []
@@ -88,6 +90,10 @@ class Router:
                 rejected.append({"id": p.spec.id, "reason": reason})
         chosen.sort(key=self._score)
         return task_type, chosen[:MAX_ATTEMPTS], rejected
+
+    def classify(self, prompt: str) -> str:
+        """Classify with the active classifier version (read at call time)."""
+        return (self._classifier() if self._classifier else classify)(prompt)
 
     def _score(self, p: Provider) -> tuple[float, int, float, float]:
         st = self._stats[p.spec.id]

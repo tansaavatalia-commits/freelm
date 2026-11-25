@@ -163,6 +163,37 @@ CREATE TABLE memories (
 CREATE INDEX idx_memories_level ON memories (level, deleted);
 """,
     ),
+    (
+        5,
+        "self-improvement: proposals and active component versions (Phase 9)",
+        """
+CREATE TABLE improvements (
+    id          TEXT PRIMARY KEY,
+    component   TEXT NOT NULL,
+    stable      TEXT NOT NULL,
+    candidate   TEXT NOT NULL,
+    problem     TEXT NOT NULL,
+    evidence    TEXT NOT NULL,
+    cause       TEXT NOT NULL,
+    proposal    TEXT NOT NULL,
+    status      TEXT NOT NULL CHECK (status IN ('proposed', 'evaluated', 'promoted', 'rejected', 'rolled_back')),
+    evaluation  TEXT,
+    decision    TEXT,
+    approval_id TEXT,
+    proposed_by TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+CREATE TABLE component_versions (
+    component      TEXT PRIMARY KEY,
+    active         TEXT NOT NULL,
+    previous       TEXT,
+    improvement_id TEXT,
+    updated_at     TEXT NOT NULL,
+    updated_by     TEXT NOT NULL
+);
+""",
+    ),
 )
 
 
