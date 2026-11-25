@@ -1,8 +1,8 @@
 # GÉNESIS — Fase 0: audit tecnico (sola lettura)
 
 - **Data:** 2026-11-23
-- **Stato del documento:** PARZIALE. La sezione hardware del PC Windows è
-  **PENDENTE**: il PC non era raggiungibile da questa sessione.
+- **Stato del documento:** COMPLETO. La sezione hardware del PC Windows è stata
+  verificata sul PC reale il 2026-11-25 (sezioni 1a e 2).
 - **Stato di GÉNESIS:** nessun componente è implementato. Questo documento è
   solo un audit e un piano.
 
@@ -27,18 +27,24 @@ file esistenti. L'unico file creato è questo documento.
 
 ## 1. Rapporto hardware
 
-### 1a. PC Windows (target di esecuzione) — PENDENTE
+### 1a. PC Windows (target di esecuzione) — VERIFICATO il 2026-11-25
+
+Rilevato sul PC del proprietario con comandi di sola lettura (Appendice A) e
+con `genesis doctor`, da una sessione Claude Code locale.
 
 | Voce | Valore | Stato |
 |---|---|---|
-| Sistema operativo | Windows 10 | dichiarato dal proprietario, NON VERIFICATO (build/edizione ignote) |
-| RAM | 4 GB | dichiarato dal proprietario, NON VERIFICATO |
-| CPU | ? | PENDENTE |
-| GPU / VRAM | ? | PENDENTE |
-| Disco (tipo HDD/SSD, spazio libero) | ? | PENDENTE |
-| File di paging | ? | PENDENTE |
-| WebView2 (necessario a Tauri) | ? | PENDENTE |
-| Aggiornamenti di sicurezza Windows | ? | PENDENTE — vedi rischio R2 |
+| Sistema operativo | Windows 10 Pro, build 19045, 64 bit | VERIFICATO |
+| RAM | 3,4 GB visibili (3468 MB); solo 0,4–0,6 GB liberi durante l'audit | VERIFICATO — la RAM libera è molto bassa |
+| CPU | Intel Celeron N3060 @ 1,60 GHz, 2 core / 2 thread | VERIFICATO |
+| GPU / VRAM | Intel HD Graphics, ~1024 MB (memoria condivisa) | VERIFICATO |
+| Disco | TOSHIBA MQ01ABF050, **HDD** 466 GB; C: 141,8 GB liberi, D: 270,3 GB liberi | VERIFICATO — HDD lento (rischio R4) |
+| File di paging | C:\pagefile.sys 3641 MB allocati, 859 MB usati (picco 954 MB) | VERIFICATO |
+| WebView2 (necessario a Tauri) | 158.0.4370.33 | VERIFICATO — presente |
+| Aggiornamenti di sicurezza Windows | ultimo: KB5071959 del 2026-11-12 | VERIFICATO — il PC riceve ancora aggiornamenti (R2 non si presenta per ora) |
+
+Profilo scelto da `genesis doctor`: **`lite-4gb`** (automatico: RAM 3468 MB < 7500 MB),
+come atteso.
 
 ### 1b. Container cloud (solo sviluppo, effimero)
 
@@ -72,10 +78,17 @@ sessione, quindi tutto ciò che conta va committato e pushato.
 | ruff | 0.16.9 |
 | Browser per test UI | Chromium + Playwright preinstallati |
 
-### PC Windows — PENDENTE
+### PC Windows — VERIFICATO il 2026-11-25
 
-Python, Git, Node, Rust, MSVC Build Tools, WebView2, winget: da rilevare con
-l'Appendice A.
+| Strumento | Versione | Note |
+|---|---|---|
+| Python | 3.15.2 (`%LOCALAPPDATA%\Python\pythoncore-3.15-64`) | Installato **involontariamente**: `py -3 --version` ha avviato il Python Install Manager, che ha scaricato e installato 3.15.2 da python.org (firma verificata) senza chiedere. Interrotto dopo l'estrazione; il proprietario ha deciso di tenerlo. Gli alias in `Python\bin` non sono stati creati: usare il percorso completo di `python.exe`. |
+| pytest | 9.2.0 | installato con approvazione (`pip install --user`) |
+| Git | 2.56.1 | installato con approvazione (`winget install -e --id Git.Git`) |
+| Node.js | 26.13.0 | già presente |
+| WebView2 | 158.0.4370.33 | già presente |
+| winget | presente | |
+| Rust / MSVC Build Tools | non rilevati | non servono (Tauri si compila su GitHub Actions) |
 
 ### Repository
 
@@ -163,7 +176,7 @@ separato da GÉNESIS.
 | R1 | **4 GB di RAM**: Windows 10 a riposo ne usa già ~1,5–2,5 GB (STIMA) | Alto | Massimo 2 processi (Core + UI), worker sequenziale, niente modelli locali, limiti di cache e log, profilo `lite-4gb` di default. |
 | R2 | **Windows 10 fuori supporto**: fine supporto 14/10/2025; l'ESU consumer è terminato il 13/10/2026. Il PC probabilmente non riceve più patch di sicurezza (NON VERIFICATO) | Alto per una piattaforma che naviga ed esegue strumenti | Internet e strumenti disattivati di default, contenuti esterni trattati come non fidati, nessun servizio in ascolto oltre `127.0.0.1`; architettura portabile per migrare a un PC supportato. |
 | R3 | Compilare Rust/Tauri con 4 GB | Medio | Build sul runner Windows di GitHub Actions (gratuito su repo pubblico); in locale solo con `-j 1` e file di paging ampio. |
-| R4 | Disco sconosciuto (HDD lento o poco spazio) | Medio | PENDENTE l'audit; SQLite in modalità WAL, backup a rotazione, log limitati. |
+| R4 | Disco sconosciuto (HDD lento o poco spazio) | Medio | Confermato: HDD meccanico (spazio abbondante, 141 GB liberi); SQLite in modalità WAL, backup a rotazione, log limitati. |
 | R5 | **Repo pubblico**: tutto ciò che viene committato è visibile a chiunque | Alto | Dati, database, memoria, log e chiavi solo fuori dal repo (cartella utente), `.gitignore` dedicato, test che blocca file `.db`/`.env` nel commit. |
 | R6 | Livelli gratuiti instabili: limiti e termini cambiano; alcuni piani gratuiti possono usare i prompt per addestramento (NON VERIFICATO per singolo provider) | Medio | Ogni provider resta disattivato finché i termini non sono verificati e registrati in `COST_POLICY.md`; flag di privacy per provider; il router può escluderli per i dati sensibili. |
 | R7 | Convivenza con `freelm` nello stesso repo: regola di parità Python/TS, CI esistente, file root con lo stesso nome (`SECURITY.md`, `CHANGELOG.md`) | Medio | Tutto GÉNESIS dentro `GENESIS/`, con CI propria filtrata per percorso; non toccare i file di `freelm`. |

@@ -103,6 +103,44 @@ ANSI («GÉNESIS» mostrato come «G?NESIS» nei log). Ora la CLI scrive sempre 
 
 ### Non eseguito
 
-- **PC del proprietario (Windows 10, 4 GB):** non collegato alla sessione.
-  PENDENTE: `py -3 -m genesis doctor` sul PC.
 - Test di `freelm` (non toccato da questa fase).
+
+## PC del proprietario (2026-11-25)
+
+Eseguito dal PC reale con una sessione Claude Code locale, commit `3d4b123`.
+Python 3.15.2 (percorso completo `%LOCALAPPDATA%\Python\pythoncore-3.15-64\python.exe`).
+
+### `genesis doctor`
+
+```
+GÉNESIS 0.9.0 - diagnostica
+Sistema:    Windows 10 (10.0.19045) AMD64 · Python 3.15.2
+CPU:        Intel(R) Celeron(R) CPU  N3060  @ 1.60GHz · 2 thread logici
+RAM:        3.4 GB totali · 0.4 GB disponibili ora
+Disco:      140.1 GB liberi su 194.0 GB (C:\Users\<proprietario>\AppData\Local\GENESIS)
+GPU:        Intel(R) HD Graphics (VRAM 1024 MB)
+Profilo:    lite-4gb - automatico: RAM 3468 MB < 7500 MB
+            compiti in parallelo 1 · chiamate IA in parallelo 1 · modelli locali no
+Controlli:  7/7 [OK] (Python >= 3.11, SQLite 3.53.4 con FTS5, integrità DB,
+            catena di audit intatta, cartella dati scrivibile, spazio disco, RAM)
+```
+
+Profilo `lite-4gb` come atteso.
+
+### pytest
+
+`python -m pytest -q` dalla cartella `GENESIS` (report JUnit):
+**208 test, 206 passati, 0 falliti, 0 errori, 2 saltati**, 98 s (130 s al primo giro).
+
+Saltati:
+- `tests/test_intelligence.py:165` — `freelm` non installato (atteso: serve solo per il motore online).
+- `tests/test_tools.py:63` — «symlink non consentiti su questo sistema» (Windows senza
+  modalità sviluppatore/diritti di amministratore: atteso).
+
+Nota: il riepilogo finale di pytest non compariva nell'output catturato da PowerShell;
+i numeri vengono dal report `--junitxml`.
+
+### Ancora da fare sul PC
+
+- Passo 4: `genesis serve`, tutte le pagine, RAM del processo e del browser.
+- Passo 5: prova di portabilità (export/import/audit verify).

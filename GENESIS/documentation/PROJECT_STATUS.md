@@ -4,7 +4,7 @@ Aggiornato: 2026-11-25 · Versione: 0.9.0 · Branch: `claude/genesis-phase-0-aud
 
 | Fase | Stato |
 |---|---|
-| 0 — Audit | completata; hardware reale del PC PENDENTE (`genesis doctor` sul PC) |
+| 0 — Audit | completata, anche sull'hardware reale del PC (2026-11-25) |
 | 1 — Core | implementata e testata (Linux + Windows in CI) |
 | 2a — Interfaccia nel browser | implementata e testata (test end-to-end in Chromium) |
 | 2b — Finestra Tauri | PENDENTE (dopo la prova sul PC) |
@@ -20,7 +20,10 @@ Aggiornato: 2026-11-25 · Versione: 0.9.0 · Branch: `claude/genesis-phase-0-aud
 ## Misure
 
 - 207 test Python (208 con freelm installato) + test end-to-end nel browser su tutte le pagine.
-- Processo `genesis serve`: circa 32 MB di RAM (Linux). Sul PC Windows da 4 GB: PENDENTE.
+- Processo `genesis serve`: circa 32 MB di RAM (Linux). Sul PC Windows da 4 GB: PENDENTE (Passo 4).
+- PC del proprietario (2026-11-25): Windows 10 Pro 19045, Celeron N3060 2 core, 3,4 GB di RAM
+  (0,4–0,6 GB liberi), HDD 466 GB, WebView2 presente. `genesis doctor`: 7/7 controlli OK, profilo
+  `lite-4gb`. Test: 208 raccolti, **206 passati, 0 falliti, 2 saltati** (Python 3.15.2, ~100–130 s).
 - Interfaccia: circa 75 KB di JavaScript compressi.
 
 ## Versioni attive dei componenti
@@ -31,7 +34,8 @@ Di default `classifier = v1` e `math = v1`. Le v2 sono **sperimentali**: il cicl
 
 ## Problemi aperti
 
-1. GÉNESIS non è ancora stato eseguito sul PC del proprietario.
+1. Sul PC del proprietario mancano ancora: interfaccia e RAM reale (`serve`, Passo 4) e prova di
+   portabilità (Passo 5). La RAM libera del PC è molto bassa (0,4–0,6 GB).
 2. Il motore online non ha mai risposto dal vivo (chiave OpenRouter da impostare sul PC).
 3. Licenza di GÉNESIS da scegliere (D-06).
 4. Serve un dataset scritto dal proprietario per una valutazione indipendente delle v2.
