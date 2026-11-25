@@ -62,3 +62,28 @@ versione e hash. Nessun miglioramento è dichiarato senza un confronto appaiato 
 - **Stesso limite di R-003:** il risolutore è stato scritto dopo aver letto i problemi pre-registrati.
   È un risolutore a un passo con parole indizio: problemi con tre numeri o due passaggi vengono rifiutati
   («problema non riconosciuto») invece di dare una risposta inventata.
+
+## R-005 — 2026-11-26 — Ricerca indicizzata `text.find` contro ricerca lineare `text.search`
+
+- **Dove:** PC del proprietario (Celeron N3060, 3,4 GB, HDD), Python 3.15.2, cartella temporanea.
+- **Dati:** cartella di lavoro sintetica generata con seme fisso (`random.seed(20261126)`): 1000 file di testo,
+  4,3 MB, 20 sottocartelle; tre parole rare inserite in 20 file. Query: 3 parole rare + 2 parole comuni.
+  Per ogni query si prende il migliore di 3 giri.
+- **Risultati:**
+
+  | Query | `text.search` | `text.find` |
+  |---|---|---|
+  | zafferano (7 righe) | 2570 ms | 100 ms |
+  | ornitorinco (7 righe) | 2334 ms | 73 ms |
+  | quarzo (6 righe) | 2748 ms | 79 ms |
+  | progetto (100 righe, limite) | 234 ms | 84 ms |
+  | verifica (100 righe, limite) | 216 ms | 77 ms |
+
+  Righe trovate identiche per le parole rare. Per le parole comuni entrambe si fermano a 100 righe, ma in ordine
+  diverso (alfabetico contro pertinenza BM25), quindi gli insiemi differiscono: è atteso.
+- **Costi:** prima costruzione dell'indice 11,3 s su 1000 file nuovi (probabilmente pesa anche l'antivirus che
+  esamina i file appena creati: NON VERIFICATO); dopo la modifica di un file 310 ms.
+- **Errore trovato durante la misura:** la prima versione usava `Path.resolve()` su ogni file: 1,6 s per ricerca e
+  47 s per l'indice. Passata a `os.scandir` (salta collegamenti simbolici e junction): i numeri sopra.
+- **Limiti:** dati sintetici, una sola macchina, cache del disco di Windows probabilmente calda dopo il primo giro.
+  Il confronto è stato fatto con uno script fuori dal Research Lab (il Lab misura agenti e motori, non strumenti).

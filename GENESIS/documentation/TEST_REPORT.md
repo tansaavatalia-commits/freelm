@@ -140,6 +140,13 @@ Saltati:
 Nota: il riepilogo finale di pytest non compariva nell'output catturato da PowerShell;
 i numeri vengono dal report `--junitxml`.
 
+### 2026-11-26 — dopo l'aggiunta di `text.find`
+
+`python -m pytest -q`: **210 test, 208 passati, 0 falliti, 0 errori, 2 saltati** (gli stessi due), 93 s.
+Nuovi test: `test_text_find_indexed` (classifica, accenti, tutte le parole, aggiornamento dopo modifica e
+cancellazione, sintassi FTS neutralizzata, indice fuori dalla sandbox) e `test_text_find_falls_back_without_fts5`.
+`ruff` NON eseguito (non installato sul PC).
+
 ### Ancora da fare sul PC
 
 - Passo 4: `genesis serve`, tutte le pagine, RAM del processo e del browser.

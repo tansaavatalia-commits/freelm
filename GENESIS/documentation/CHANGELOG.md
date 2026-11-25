@@ -2,6 +2,16 @@
 
 (Il `CHANGELOG.md` alla radice del repository riguarda `freelm`.)
 
+## Non rilasciato — 2026-11-26
+
+- Nuovo strumento `text.find` (livello 1): ricerca per parole nella cartella di lavoro con indice SQLite FTS5
+  (classifica BM25, accenti e maiuscole ignorati, tutte le parole richieste). L'indice è una cache eliminabile in
+  `<home>/cache/workspace-index.sqlite` (mai esportata né nel backup) e si aggiorna da solo: rilegge solo i file
+  nuovi o cambiati (dimensione + data). Collegamenti simbolici e junction vengono ignorati. Senza FTS5 ripiega
+  sulla ricerca lineare. Disponibile per Researcher, Developer e Analyst; `text.search` resta invariato.
+- Misurato sul PC del proprietario (R-005): parole rare 75–100 ms invece di 2,3–2,7 s su 1000 file.
+- Audit dell'hardware reale del PC; 210 test.
+
 ## 0.9.0 — 2026-11-25 — Fase 9: Auto-miglioramento controllato
 
 - Componenti migliorabili con versioni (classificatore v1/v2, calcolo v1/v2) e benchmark associati.

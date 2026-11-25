@@ -17,6 +17,7 @@ from ..security.audit import AuditLog
 from ..security.permissions import Level, PermissionManager
 from ..security.redact import redact
 from . import mcp, web
+from .index import WorkspaceIndex
 
 MAX_FILE = 1_000_000
 MAX_MATCHES = 100
@@ -72,9 +73,12 @@ class Workspace:
 class ToolRegistry:
     def __init__(self, permissions: PermissionManager, audit: AuditLog, workspace: Path, *,
                  internet_enabled: bool = False, mcp_servers: Mapping[str, Mapping[str, Any]] | None = None,
-                 opener: Any = None) -> None:
+                 opener: Any = None, index_path: Path | None = None) -> None:
         self.permissions, self.audit = permissions, audit
         self.workspace = Workspace(workspace)
+        # disposable cache next to the workspace (never exported or backed up)
+        self.index = WorkspaceIndex(self.workspace.root,
+                                    index_path or self.workspace.root.parent / "cache" / "workspace-index.sqlite")
         self._opener = opener
         self._specs = {s.name: s for s in self._local_tools() + [self._web_tool(internet_enabled)]
                        + self._mcp_tools(mcp_servers or {})}
@@ -121,7 +125,20 @@ class ToolRegistry:
                      "nessuno: sola lettura", params={"query": (str, True), "path": (str, False)},
                      output=f"fino a {MAX_MATCHES} righe trovate", cancel="controllato a ogni file",
                      run=self._search, **common),
+            ToolSpec("text.find", "Ricerca veloce per parole nei file della cartella di lavoro (indice FTS5).",
+                     Level.READ, "nessuno: sola lettura; l'indice è una cache locale eliminabile",
+                     params={"query": (str, True), "limit": (int, False)},
+                     output=f"fino a {MAX_MATCHES} righe, file più pertinenti prima (BM25, accenti ignorati)",
+                     cancel="controllato a ogni file", run=self._find, **common),
         ]
+
+    def _find(self, p: dict[str, Any], cancelled: Cancel) -> dict[str, Any]:
+        limit = p.get("limit", MAX_MATCHES)
+        if not 1 <= limit <= MAX_MATCHES:
+            raise ToolError(f"limit tra 1 e {MAX_MATCHES}")
+        if not self.index.available():  # SQLite without FTS5: honest fallback to the linear search
+            return {"indexed": False, "matches": self._search({"query": p["query"]}, cancelled)[:limit]}
+        return {"indexed": True, "matches": self.index.search(p["query"], limit, cancelled)}
 
     def _list(self, p: dict[str, Any], cancelled: Cancel) -> list[dict[str, Any]]:
         folder = self.workspace.path(p.get("path", "."))

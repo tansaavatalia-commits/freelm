@@ -54,6 +54,37 @@ def test_sandboxed_files(app):
             call("files.read", path=bad)
 
 
+def test_text_find_indexed(app):
+    call = lambda name, **p: app.tools.call(OWNER, name, p)["result"]  # noqa: E731
+    call("files.write", path="a.txt", content="Il gatto dorme\nla città è grande")
+    call("files.write", path="sub/b.md", content="un gatto nero e un gatto bianco\nniente")
+    out = call("text.find", query="gatto")
+    assert out["indexed"] and {m["file"] for m in out["matches"]} == {"a.txt", "sub/b.md"}
+    assert out["matches"][0]["file"] == "sub/b.md"  # two hits: ranked first by BM25
+    assert call("text.find", query="CITTA")["matches"][0]["line"] == 2  # accents and case ignored
+    assert call("text.find", query="gatto città")["matches"][0]["file"] == "a.txt"  # all words required
+    assert call("text.find", query="gatto", limit=1)["matches"].__len__() == 1
+    # changes and deletions are picked up without a manual rebuild
+    call("files.write", path="a.txt", content="ora parla di cani", overwrite=True)
+    (app.config.workspace_dir / "sub" / "b.md").unlink()
+    assert call("text.find", query="gatto")["matches"] == []
+    assert call("text.find", query="cani")["matches"][0]["file"] == "a.txt"
+    assert call("text.find", query='"OR NEAR(* ')["matches"] == []  # FTS syntax is neutralised
+    with pytest.raises(ToolError, match="parole"):
+        call("text.find", query="!!!")
+    with pytest.raises(ToolError, match="limit"):
+        call("text.find", query="x", limit=0)
+    index = app.config.home / "cache" / "workspace-index.sqlite"
+    assert index.is_file() and app.config.workspace_dir not in index.parents  # cache lives outside the sandbox
+
+
+def test_text_find_falls_back_without_fts5(app, monkeypatch):
+    app.tools.call(OWNER, "files.write", {"path": "a.txt", "content": "riga con parola"})
+    monkeypatch.setattr(app.tools.index, "available", lambda: False)
+    out = app.tools.call(OWNER, "text.find", {"query": "parola"})["result"]
+    assert not out["indexed"] and out["matches"][0]["line"] == 1
+
+
 def test_symlink_escape_is_blocked(app, tmp_path):
     secret = tmp_path / "secret.txt"
     secret.write_text("segreto", encoding="utf-8")

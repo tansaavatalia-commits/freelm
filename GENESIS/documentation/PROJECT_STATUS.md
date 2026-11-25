@@ -24,6 +24,8 @@ Aggiornato: 2026-11-25 · Versione: 0.9.0 · Branch: `claude/genesis-phase-0-aud
 - PC del proprietario (2026-11-25): Windows 10 Pro 19045, Celeron N3060 2 core, 3,4 GB di RAM
   (0,4–0,6 GB liberi), HDD 466 GB, WebView2 presente. `genesis doctor`: 7/7 controlli OK, profilo
   `lite-4gb`. Test: 208 raccolti, **206 passati, 0 falliti, 2 saltati** (Python 3.15.2, ~100–130 s).
+- 2026-11-26: nuovo strumento `text.find` (ricerca indicizzata FTS5). Test: **210, 208 passati, 0 falliti,
+  2 saltati** sul PC. Misura R-005: 75–100 ms invece di 2,3–2,7 s per le parole rare su 1000 file.
 - Interfaccia: circa 75 KB di JavaScript compressi.
 
 ## Versioni attive dei componenti
