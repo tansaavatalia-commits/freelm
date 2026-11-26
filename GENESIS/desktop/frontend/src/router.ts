@@ -8,7 +8,7 @@ export interface Route {
 export function readRoute(): Route {
   const raw = window.location.hash.replace(/^#\/?/, "");
   const [page, query = ""] = raw.split("?");
-  return { page: page || "dashboard", params: new URLSearchParams(query) };
+  return { page: page || "nucleo", params: new URLSearchParams(query) };
 }
 
 export function navigate(page: string, params?: Record<string, string>) {

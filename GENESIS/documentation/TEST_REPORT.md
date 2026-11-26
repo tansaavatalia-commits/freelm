@@ -183,6 +183,22 @@ genesis audit verify (originale)                → Catena di audit intatta (5 v
 La voce in più nella copia è la registrazione dell'importazione stessa. Le cartelle di prova in `%TEMP%`
 sono state lasciate. Limite: copia sullo stesso PC, non su un secondo computer.
 
+### 2026-11-26 — Interfaccia «Núcleo» (globo)
+
+- `npm ci` + `npm run build` sul PC (Node 26.13): la ricompilazione senza modifiche produceva gli stessi file
+  (stessi hash), quindi la build è riproducibile; poi build con il globo: nessun errore TypeScript.
+- Browser interno dell'app, 1280×800, dati veri: 8 etichette degli agenti, pannelli popolati, nessun errore in
+  console, nessuno scorrimento orizzontale o verticale. Un'esecuzione reale (`genesis agents run analyst …`)
+  porta la barra dell'Analyst al 99% e compare in «Ultime attività» entro 4 s.
+- **Misura del carico (importante):** la prima versione senza limiti arrivava a 160.000–180.000 luci a 42–44
+  fotogrammi/s, ma toglieva CPU al resto: due test MCP (timeout 2 s) fallivano con il globo aperto e passavano con il
+  globo chiuso. Con il tetto `lite-4gb` (120.000 luci) e 30 fotogrammi/s: 120.000 luci a 30 fotogrammi/s e i test
+  MCP passano con il globo aperto. `genesis serve` 16 MB.
+- Suite completa con il globo aperto **e** il prototipo senza limiti ancora aperto in Chrome: 210 test, 207
+  passati, **1 fallito** (`test_mcp_list_call_errors_and_timeout`, timeout di 2 s del server MCP di prova per
+  carico del PC), 2 saltati. Lo stesso test passa da solo con il globo aperto. Da ripetere con Chrome chiuso.
+- NON eseguito: `e2e/smoke.cjs` (Playwright non installato sul PC); aggiornato per la nuova pagina iniziale.
+
 ### Ancora da fare sul PC
 
 - Passi 1–5 fatti. Restano: controllo visivo delle pagine da parte del proprietario, Passo 6 (facoltativo),

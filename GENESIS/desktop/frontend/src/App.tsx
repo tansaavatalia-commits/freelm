@@ -8,11 +8,13 @@ import { Dashboard } from "./views/Dashboard";
 import { Diagnostics } from "./views/Diagnostics";
 import { Engines } from "./views/Engines";
 import { Improvement } from "./views/Improvement";
+import { Nucleus } from "./views/Nucleus";
 import { Projects } from "./views/Projects";
 import { ResearchLab } from "./views/ResearchLab";
 import { Tasks } from "./views/Tasks";
 
 const NAV: { page: string; label: string; icon: ReactNode }[] = [
+  { page: "nucleo", label: "Núcleo", icon: <path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z" /> },
   { page: "dashboard", label: "Dashboard", icon: <path d="M4 13h6V4H4zm10 7h6V11h-6zM4 20h6v-5H4zm10-11h6V4h-6z" /> },
   { page: "progetti", label: "Progetti", icon: <path d="M3 7h7l2 2h9v10H3z" /> },
   { page: "compiti", label: "Compiti", icon: <path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2" /> },
@@ -62,6 +64,9 @@ export function App() {
     case "diagnostica":
       content = <Diagnostics />;
       break;
+    case "nucleo":
+      content = <Nucleus status={s} />;
+      break;
     default:
       content = <Dashboard status={s} error={status.error} refresh={status.refresh} />;
   }
@@ -69,7 +74,7 @@ export function App() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <a className="brand" href="#/dashboard" aria-label="GÉNESIS, dashboard">
+        <a className="brand" href="#/nucleo" aria-label="GÉNESIS, núcleo">
           <span className="brand-mark" aria-hidden="true" />
           <span className="brand-name">GÉNESIS</span>
         </a>
@@ -80,7 +85,7 @@ export function App() {
               href={`#/${item.page}`}
               aria-label={item.label}
               title={item.label}
-              className={`nav-item ${route.page === item.page || (item.page === "dashboard" && !NAV.some((n) => n.page === route.page)) ? "active" : ""}`}
+              className={`nav-item ${route.page === item.page || (item.page === "dashboard" && route.page !== "nucleo" && !NAV.some((n) => n.page === route.page)) ? "active" : ""}`}
               aria-current={route.page === item.page ? "page" : undefined}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">{item.icon}</svg>
@@ -97,7 +102,7 @@ export function App() {
           {s && <span className="version">v{s.version}</span>}
         </div>
       </aside>
-      <main className="content">{content}</main>
+      <main className={route.page === "nucleo" ? "content content-full" : "content"}>{content}</main>
     </div>
   );
 }

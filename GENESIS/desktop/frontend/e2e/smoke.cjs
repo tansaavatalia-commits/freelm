@@ -42,8 +42,14 @@ async function main() {
     page.on("console", (msg) => msg.type() === "error" && problems.push(`console: ${msg.text()}`));
     page.on("pageerror", (err) => problems.push(`page: ${err.message}`));
 
-    // Dashboard
+    // Núcleo (home page): the globe of agents. Headless browsers without WebGL show an explanation instead.
     await page.goto(server.url);
+    await page.getByText("Núcleo // mappa degli agenti").waitFor();
+    await page.locator(".globe-label, .hud-center").first().waitFor();
+    if (shots) await page.screenshot({ path: path.join(shots, "0-nucleo.png") });
+
+    // Dashboard
+    await page.getByRole("link", { name: "Dashboard", exact: true }).click();
     await page.getByRole("heading", { name: "GÉNESIS" }).waitFor();
     await page.getByText("Esecutore dei compiti attivo").waitFor();
     await page.getByText("GÉNESIS ora usa").waitFor();
@@ -151,7 +157,7 @@ async function main() {
     console.error("E2E FAILED:\n" + problems.join("\n"));
     process.exit(1);
   }
-  console.log("E2E OK: dashboard, progetti, compiti, agenti, laboratorio, motori, miglioramento, backup, diagnostica, approvazioni, mobile, nessun errore nel browser");
+  console.log("E2E OK: núcleo, dashboard, progetti, compiti, agenti, laboratorio, motori, miglioramento, backup, diagnostica, approvazioni, mobile, nessun errore nel browser");
 }
 
 main().catch((err) => {

@@ -11,6 +11,13 @@
   sulla ricerca lineare. Disponibile per Researcher, Developer e Analyst; `text.search` resta invariato.
 - Misurato sul PC del proprietario (R-005): parole rare 75–100 ms invece di 2,3–2,7 s su 1000 file.
 - Audit dell'hardware reale del PC; 210 test.
+- **Interfaccia «Núcleo»** (richiesta del proprietario, D-36): nuova pagina iniziale con un globo di luci in WebGL
+  (nessuna libreria aggiunta). Ogni agente ha una regione colorata; la regione si accende con le esecuzioni reali
+  degli agenti (in corso = piena, poi si spegne in 15 minuti), archi luminosi dal Director agli altri agenti,
+  pannelli tecnici (luci, fotogrammi/s, profilo, RAM, compiti, audit, attività per agente, ultime richieste).
+  Clic su un agente → pagina Agenti. Trascina per ruotare, rotella per lo zoom; si ferma quando la scheda non è
+  visibile e libera la memoria della scheda grafica quando si cambia pagina. Senza WebGL mostra una spiegazione e il
+  collegamento al pannello classico. Le altre pagine restano nel menu (la Dashboard è a `#/dashboard`).
 
 ## 0.9.0 — 2026-11-25 — Fase 9: Auto-miglioramento controllato
 
