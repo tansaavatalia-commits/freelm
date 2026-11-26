@@ -20,7 +20,8 @@ Aggiornato: 2026-11-25 · Versione: 0.9.0 · Branch: `claude/genesis-phase-0-aud
 ## Misure
 
 - 207 test Python (208 con freelm installato) + test end-to-end nel browser su tutte le pagine.
-- Processo `genesis serve`: circa 32 MB di RAM (Linux). Sul PC Windows da 4 GB: PENDENTE (Passo 4).
+- Processo `genesis serve`: circa 32 MB di RAM (Linux); sul PC Windows **43,9 MB** (picco 49,4 MB),
+  9 pagine su 9 senza errori, RAM libera del sistema 463 MB con GÉNESIS aperto (2026-11-26).
 - PC del proprietario (2026-11-25): Windows 10 Pro 19045, Celeron N3060 2 core, 3,4 GB di RAM
   (0,4–0,6 GB liberi), HDD 466 GB, WebView2 presente. `genesis doctor`: 7/7 controlli OK, profilo
   `lite-4gb`. Test: 208 raccolti, **206 passati, 0 falliti, 2 saltati** (Python 3.15.2, ~100–130 s).
@@ -36,8 +37,8 @@ Di default `classifier = v1` e `math = v1`. Le v2 sono **sperimentali**: il cicl
 
 ## Problemi aperti
 
-1. Sul PC del proprietario mancano ancora: interfaccia e RAM reale (`serve`, Passo 4) e prova di
-   portabilità (Passo 5). La RAM libera del PC è molto bassa (0,4–0,6 GB).
+1. Sul PC del proprietario manca ancora la prova di portabilità (Passo 5). La RAM libera del PC è molto
+   bassa (0,4–0,6 GB), occupata soprattutto da browser e app Claude, non da GÉNESIS.
 2. Il motore online non ha mai risposto dal vivo (chiave OpenRouter da impostare sul PC).
 3. Licenza di GÉNESIS da scegliere (D-06).
 4. Serve un dataset scritto dal proprietario per una valutazione indipendente delle v2.

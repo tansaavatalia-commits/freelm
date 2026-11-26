@@ -21,7 +21,7 @@
 - L'interfaccia (pagina strumenti) non è stata toccata: `text.find` compare già nell'elenco perché viene dal registro.
 - Sul PC usare Python con il percorso completo `%LOCALAPPDATA%\Python\pythoncore-3.15-64\python.exe`
   (il comando `py` riavvia l'installazione automatica di Python).
-- Prossimi passi sul PC: Passo 4 (`serve` + RAM), Passo 5 (portabilità).
+- Passo 4 fatto (43,9 MB, 9/9 pagine senza errori). Prossimo passo sul PC: Passo 5 (portabilità).
 - L'esperimento del motore online (Passo 6) prenderà il numero R-006.
 
 ## Per lo sviluppo — passo esatto successivo

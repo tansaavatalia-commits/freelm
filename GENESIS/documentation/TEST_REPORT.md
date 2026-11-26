@@ -147,7 +147,26 @@ Nuovi test: `test_text_find_indexed` (classifica, accenti, tutte le parole, aggi
 cancellazione, sintassi FTS neutralizzata, indice fuori dalla sandbox) e `test_text_find_falls_back_without_fts5`.
 `ruff` NON eseguito (non installato sul PC).
 
+### 2026-11-26 — Passo 4: interfaccia e RAM reale
+
+`python -m genesis serve` avviato in una finestra separata: `http://127.0.0.1:8765` risponde 200.
+Tutte le 9 pagine (Dashboard, Progetti, Compiti, Agenti, Laboratorio, Motori, Miglioramento, Approvazioni,
+Diagnostica) sono state aperte in automatico nel browser interno dell'app Claude: ogni pagina mostra il suo
+contenuto (264–1255 ms fino alla fine del caricamento), **nessun errore nella console**, tutte le 38 chiamate
+`/api/…` hanno risposto **200 OK**. La Dashboard mostra il profilo `lite-4gb`, l'esecutore attivo e l'audit integro.
+
+| Misura | Valore |
+|---|---|
+| Processo `genesis serve` | **43,9 MB** (picco 49,4 MB) |
+| Chrome (13 processi) | 221 MB |
+| Edge (8 processi) | 364 MB |
+| RAM libera del sistema | 647 MB prima dell'avvio → 463 MB con GÉNESIS e le pagine aperte (su 3469 MB) |
+| App Claude (per confronto) | ~1240 MB |
+
+Il consumo di GÉNESIS è piccolo; la RAM del PC è occupata soprattutto dai browser e dall'app Claude.
+NON VERIFICATO: il controllo visivo delle pagine da parte del proprietario (gli screenshot del browser interno
+sono scaduti per lentezza del PC; il controllo è stato fatto sul testo delle pagine e sulle chiamate di rete).
+
 ### Ancora da fare sul PC
 
-- Passo 4: `genesis serve`, tutte le pagine, RAM del processo e del browser.
 - Passo 5: prova di portabilità (export/import/audit verify).
