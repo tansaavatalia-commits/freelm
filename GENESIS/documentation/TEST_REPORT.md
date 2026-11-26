@@ -203,6 +203,21 @@ sono state lasciate. Limite: copia sullo stesso PC, non su un secondo computer.
   «1. … analyst: 81 / 2. … analyst: 25». Nessun errore in console. Vista telefono 375×812: niente scorrimento
   orizzontale o verticale, il globo riempie lo spazio. `tests/test_api.py`: 12 passati.
 
+### 2026-11-26 — Chat nel Núcleo
+
+- Nuovi test `tests/test_chat.py` (10): ciclo delle conversazioni e titoli, calcolo locale verificato, risposta
+  onesta senza motore online, «ricorda che» → memoria inviata al modello, cronologia ordinata e limitata,
+  conversazione privata mai online, flusso interrotto salvato come errore e non rimandato, export/import con le
+  conversazioni, API a eventi (`user → start → delta… → done`) con un motore finto, errori dell'API.
+- Suite completa sul PC: **220 test, 218 passati, 0 falliti, 2 saltati** (gli stessi due).
+- Prova reale nel browser interno (1280×800): «ricorda che…» → «Ricordato»; domanda libera senza motore online →
+  spiegazione chiara; formattazione corretta; nessun errore in console. Il proprietario ha scritto «ciao» dalla
+  sua scheda (la chat è visibile anche a lui).
+- Limite visto: il calcolatore locale v1 non capisce «il 15% di 240» (risponde il messaggio «motore spento»).
+  Non corretto ora (regola D-30: niente correzioni sui dati di prova nella stessa versione); con il motore online
+  la domanda andrà al modello.
+- NON verificato: lo streaming con un modello vero (serve la chiave OpenRouter, Passo 6).
+
 ### Ancora da fare sul PC
 
 - Passi 1–5 fatti. Restano: controllo visivo delle pagine da parte del proprietario, Passo 6 (facoltativo),

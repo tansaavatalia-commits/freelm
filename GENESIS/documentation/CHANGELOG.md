@@ -22,6 +22,16 @@
   scelto dal menu, dal pannello o cliccando il suo nome sul globo; opzione «privata». La risposta compare sopra la
   casella appena l'agente ha finito. Ogni richiesta (anche dalla pagina Agenti o dalla CLI) fa partire un'onda
   d'urto sulla regione dell'agente e un impulso lungo l'arco dal Director.
+- **Chat vera nel Núcleo** (RICERCA_CONCORRENTI.md, tappa 1): pannello a sinistra del globo con conversazioni
+  salvate (schema v6: tabelle `conversations` e `messages`, incluse in export/import), titolo automatico dalla
+  prima domanda, conversazioni private (mai online), nascondi (reversibile). Risposte che scorrono mentre vengono
+  scritte (`POST /api/chat/{id}/send`, server-sent events, lo streaming avviene fuori dal thread del core).
+  Calcoli e analisi di testo restano ai motori locali verificati; «ricorda che …» salva una memoria permanente
+  che entra nelle risposte successive; cronologia inviata al modello entro 12.000 caratteri; risposte interrotte
+  salvate come errore e non rimandate al modello. Senza motore online la risposta lo dice chiaramente.
+  Formattazione Markdown sicura (nessun HTML dal modello). Il menu del pannello manda anche richieste al Director
+  o a un agente. `FreelmProvider.stream()` per lo streaming dei modelli gratuiti.
+- `Avvia-GENESIS.bat`: avvio con doppio clic.
 
 ## 0.9.0 — 2026-11-25 — Fase 9: Auto-miglioramento controllato
 

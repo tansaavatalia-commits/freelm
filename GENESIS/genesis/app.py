@@ -15,6 +15,7 @@ from typing import Any
 from . import __version__
 from .agents.catalog import load_agents
 from .agents.runtime import AgentRunner
+from .chat import ChatStore
 from .core.clock import Now, file_stamp, utcnow
 from .core.config import Config, load_config
 from .core.events import EventBus
@@ -77,6 +78,7 @@ class Genesis:
             self.agents = AgentRunner(self.db, self.permissions, self.router, load_agents(self.config.home), now=now,
                                       tools=self.tools)
             self.engines = EngineRegistry(self)
+            self.chat = ChatStore(self.db, self.router, self.engines.memory, now=now)
             self.models = load_catalog(self.config.home)
             self.lab = ResearchLab(self, now=now)
             self._register_builtin_tasks()

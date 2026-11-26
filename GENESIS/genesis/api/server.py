@@ -26,10 +26,11 @@ import os
 import re
 import secrets
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 from urllib.parse import parse_qs, urlsplit
 
 from .. import __version__
@@ -37,7 +38,9 @@ from ..app import Genesis
 from ..core.worker import TaskWorker
 from ..errors import ApprovalRequired, GenesisError, PermissionDenied
 from ..hardware.detect import HardwareInfo, memory_now, process_memory_mb
+from ..intelligence.base import EngineError
 from ..security.permissions import OWNER
+from ..security.redact import redact
 
 DEFAULT_PORT = 8765
 MAX_BODY_BYTES = 64 * 1024
@@ -65,6 +68,13 @@ FALLBACK_PAGE = """<!doctype html><html lang="it"><meta charset="utf-8"><title>G
 </body></html>"""
 
 log = logging.getLogger("genesis.api")
+
+
+class EventStream:
+    """A handler result sent as ``text/event-stream`` (one JSON object per event) instead of JSON."""
+
+    def __init__(self, events: Iterator[dict[str, Any]]) -> None:
+        self.events = events
 
 
 class ApiError(Exception):
@@ -172,6 +182,7 @@ class ApiServer:
                 self.core.close()
             raise
         self.httpd.api = self
+        self._chat_lock = threading.Lock()
         self.port = int(self.httpd.server_address[1])
         self.allowed_hosts = {f"127.0.0.1:{self.port}", f"localhost:{self.port}"}
         self.allowed_origins = {f"http://{h}" for h in self.allowed_hosts}
@@ -234,6 +245,13 @@ class ApiServer:
             ("GET", rf"/api/lab/experiments/(?P<exp_id>{HEX_ID})", self._lab_experiment),
             ("GET", r"/api/lab/compare", self._lab_compare),
             ("GET", r"/api/agent-runs", self._agent_runs),
+            ("GET", r"/api/chat", self._chats),
+            ("POST", r"/api/chat", self._chat_create),
+            ("GET", r"/api/chat-status", self._chat_status),
+            ("GET", rf"/api/chat/(?P<cid>{HEX_ID})", self._chat_get),
+            ("POST", rf"/api/chat/(?P<cid>{HEX_ID})/rename", self._chat_rename),
+            ("POST", rf"/api/chat/(?P<cid>{HEX_ID})/delete", self._chat_delete),
+            ("POST", rf"/api/chat/(?P<cid>{HEX_ID})/send", self._chat_send),
         ]
         return [(m, re.compile(p), fn) for m, p, fn in table]
 
@@ -428,6 +446,70 @@ class ApiServer:
         limit = _int_param(query, "limit", 20, 1, 200)
         return 200, self.core.run(lambda g: g.agents.runs(limit))
 
+    # -- chat ---------------------------------------------------------------------------
+
+    def _chats(self, query: dict[str, list[str]], **_: Any) -> tuple[int, Any]:
+        limit = _int_param(query, "limit", 50, 1, 200)
+        return 200, self.core.run(lambda g: g.chat.list(limit))
+
+    def _chat_create(self, body: dict[str, Any], **_: Any) -> tuple[int, Any]:
+        title = _field(body, "title", str, "")
+        private = _field(body, "private", bool, False)
+        return 201, self.core.run(lambda g: g.chat.create(title, private))
+
+    def _chat_status(self, **_: Any) -> tuple[int, Any]:
+        def collect(g: Genesis) -> dict[str, Any]:
+            provider, reason = g.router.streamer(private=False)
+            return {"online": provider is not None, "engine": provider.spec.name if provider else None,
+                    "reason": reason}
+
+        return 200, self.core.run(collect)
+
+    def _chat_get(self, cid: str, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: g.chat.get(cid))
+
+    def _chat_rename(self, cid: str, body: dict[str, Any], **_: Any) -> tuple[int, Any]:
+        title = _field(body, "title", str)
+        return 200, self.core.run(lambda g: g.chat.rename(cid, title))
+
+    def _chat_delete(self, cid: str, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: g.chat.delete(cid))
+
+    def _chat_send(self, cid: str, body: dict[str, Any], **_: Any) -> tuple[int, Any]:
+        """Server-sent events: ``user`` → (``start`` → ``delta``…) → ``done``. Validation errors are plain
+        JSON errors because the turn is prepared before the stream opens."""
+        text = _field(body, "text", str)
+        plan = self.core.run(lambda g: g.chat.prepare(cid, text))
+        return 200, EventStream(self._chat_events(cid, plan))
+
+    def _chat_events(self, cid: str, plan: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        yield {"type": "user", "message": plan["user"]}
+        if plan["mode"] == "done":
+            yield {"type": "done", "message": plan["message"]}
+            return
+        provider, messages = plan["provider"], plan["messages"]
+        yield {"type": "start", "engine": provider.spec.id, "name": provider.spec.name}
+        parts: list[str] = []
+        error: str | None = None
+        start = time.monotonic()
+        try:
+            # One conversation streams at a time: the profile allows one online call, and the client is shared.
+            with self._chat_lock:
+                for delta in provider.stream(messages):
+                    parts.append(delta)
+                    yield {"type": "delta", "text": delta}
+        except GeneratorExit:
+            error = "interrotta: la pagina è stata chiusa"
+            raise
+        except Exception as exc:  # EngineError (already redacted) or an adapter bug
+            error = str(exc) if isinstance(exc, EngineError) else redact(f"{type(exc).__name__}: {exc}")
+        finally:
+            ms = round((time.monotonic() - start) * 1000, 1)
+            chars = sum(len(m["content"]) for m in messages)
+            message = self.core.run(lambda g: g.chat.finish(cid, provider, "".join(parts), ok=error is None, ms=ms,
+                                                            chars=chars, task_type=plan["task_type"], error=error))
+        yield {"type": "done", "message": message}
+
     def _backups(self, **_: Any) -> tuple[int, Any]:
         def collect(g: Genesis) -> list[dict[str, Any]]:
             return [{"name": p.name, "size_kb": p.stat().st_size // 1024} for p in reversed(g.backups())]
@@ -504,7 +586,10 @@ class _Handler(BaseHTTPRequestHandler):
                 if not hmac.compare_digest(token, api.token.encode("ascii")):
                     raise ApiError(401, "token mancante o non valido")
                 status, data = api.route(method, url.path, parse_qs(url.query), body)
-                self._send_json(status, data)
+                if isinstance(data, EventStream):
+                    self._send_events(data)
+                else:
+                    self._send_json(status, data)
             elif method == "GET":
                 self._send_static(api, url.path)
             else:
@@ -556,6 +641,33 @@ class _Handler(BaseHTTPRequestHandler):
         self._common_headers("application/json; charset=utf-8", len(payload))
         self.end_headers()
         self.wfile.write(payload)
+
+    def _send_events(self, stream: EventStream) -> None:
+        """No Content-Length: the connection is closed at the end of the stream."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        events = stream.events
+        try:
+            for event in events:
+                self.wfile.write(f"data: {json.dumps(event, ensure_ascii=False, default=str)}\n\n".encode("utf-8"))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            log.info("chat stream closed by the browser")
+        except Exception:  # headers are already sent: report inside the stream, never as a second response
+            log.exception("chat stream failed")
+            try:
+                self.wfile.write(b'data: {"type": "error", "error": "errore interno: dettagli nel log di GENESIS"}\n\n')
+            except OSError:
+                pass
+        finally:
+            close = getattr(events, "close", None)
+            if close:
+                close()  # runs the generator's cleanup: a partial answer is still stored
 
     def _send_static(self, api: ApiServer, path: str) -> None:
         root = api.static_dir.resolve()

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import time
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 from ..security.redact import redact
 from .base import EngineError, Provider, ProviderSpec, Request
@@ -58,20 +58,25 @@ class FreelmProvider(Provider):
             return False, "nessuna chiave OpenRouter (variabile OPENROUTER_API_KEY)"
         return True, "OpenRouter pronto (solo modelli gratuiti)"
 
+    def _ensure_client(self) -> Any:
+        if self._client is None:
+            if self._factory:
+                self._client = self._factory()
+            else:
+                module = _freelm()
+                if module is None:
+                    raise EngineError("libreria freelm non installata")
+                providers = _allowed(module)
+                if not providers:
+                    raise EngineError("nessuna chiave OpenRouter (variabile OPENROUTER_API_KEY)")
+                self._client = module.FreeLLM(providers=providers)
+        return self._client
+
     def run(self, request: Request, task_type: str) -> str:
-        module = _freelm()
-        if module is None:
+        if self._factory is None and _freelm() is None:
             raise EngineError("libreria freelm non installata")
         try:
-            if self._client is None:
-                if self._factory:
-                    self._client = self._factory()
-                else:
-                    providers = _allowed(module)
-                    if not providers:
-                        raise EngineError("nessuna chiave OpenRouter (variabile OPENROUTER_API_KEY)")
-                    self._client = module.FreeLLM(providers=providers)
-            text = self._client.text(request.prompt)
+            text = self._ensure_client().text(request.prompt)
         except EngineError:
             raise
         except Exception as exc:
@@ -79,6 +84,18 @@ class FreelmProvider(Provider):
         if not isinstance(text, str) or not text.strip():
             raise EngineError("risposta vuota")
         return text.strip()
+
+    def stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
+        """Text deltas for a whole conversation (OpenAI-style messages). freelm fails over between free
+        models before the first token only. Errors surface as EngineError, with secrets redacted."""
+        try:
+            for delta in self._ensure_client().stream(messages):
+                if isinstance(delta, str) and delta:
+                    yield delta
+        except EngineError:
+            raise
+        except Exception as exc:
+            raise EngineError(redact(f"{type(exc).__name__}: {exc}")) from exc
 
 
 def _allowed(module: ModuleType) -> list[Any]:

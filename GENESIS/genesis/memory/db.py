@@ -20,7 +20,8 @@ from . import migrations
 
 EXPORT_FORMAT = "genesis-export"
 EXPORT_TABLES = ("projects", "tasks", "approvals", "audit_log", "agent_runs", "datasets", "experiments",
-                 "experiment_results", "memories", "improvements", "component_versions")  # FK-safe insertion order
+                 "experiment_results", "memories", "improvements", "component_versions",
+                 "conversations", "messages")  # FK-safe insertion order
 BACKUP_GLOB = "genesis-*.db"
 
 

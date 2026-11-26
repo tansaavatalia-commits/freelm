@@ -28,6 +28,9 @@
 - Interfaccia «Núcleo» (globo, D-36) fatta sul PC con Node. Da fare nel cloud: eseguire `e2e/smoke.cjs` con
   Playwright (non eseguito sul PC). Console sul globo fatta. Possibile sviluppo: luci per compiti e motori,
   non solo agenti.
+- Chat nel Núcleo fatta (tappa 1 di RICERCA_CONCORRENTI.md). Prossimo: Passo 6 (chiave OpenRouter del
+  proprietario + `pip install --user ..` con il suo permesso + `genesis online enable --confirm`), poi provare lo
+  streaming dal vivo; poi tappe 4–6 (documenti, ricerca con fonti, consiglio multi-modello sul globo).
 - Il test `test_mcp_list_call_errors_and_timeout` usa un timeout di 2 s: sul PC carico (globo + browser) è
   fallito una volta. Valutare un timeout più largo solo nel test.
 

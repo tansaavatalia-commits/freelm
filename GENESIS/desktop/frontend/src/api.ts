@@ -34,6 +34,41 @@ export async function api<T>(path: string, options: { method?: "GET" | "POST"; b
   return data as T;
 }
 
+/** POST that answers with server-sent events (one JSON object per `data:` line). */
+export async function streamEvents(path: string, body: unknown, onEvent: (e: Record<string, unknown>) => void) {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      method: "POST",
+      headers: { "X-Genesis-Token": TOKEN, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+  } catch {
+    throw new ApiError(0, "GÉNESIS non risponde: la finestra di 'genesis serve' è ancora aperta?");
+  }
+  if (!response.ok || !response.body) {
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new ApiError(response.status, data.error ?? `errore ${response.status}`);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (value) buffer += decoder.decode(value, { stream: true });
+    let cut: number;
+    while ((cut = buffer.indexOf("\n\n")) >= 0) {
+      const chunk = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      for (const line of chunk.split("\n")) {
+        if (line.startsWith("data: ")) onEvent(JSON.parse(line.slice(6)) as Record<string, unknown>);
+      }
+    }
+    if (done) break;
+  }
+}
+
 export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

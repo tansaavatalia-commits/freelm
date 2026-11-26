@@ -57,6 +57,31 @@ class Router:
                 return False, "costo non verificato"
         return True, "ammesso"
 
+    def allows(self, provider: Provider, private: bool) -> tuple[bool, str]:
+        """Public form of the policy (free only, remote only if enabled+verified, private stays local)."""
+        return self._policy(provider, private)
+
+    def streamer(self, private: bool) -> tuple[Provider | None, str]:
+        """The first provider that can stream a conversation and is allowed and ready, or why there is none."""
+        reasons = []
+        for p in self.providers:
+            if not callable(getattr(p, "stream", None)) or "chat" not in p.spec.capabilities:
+                continue
+            ok, reason = self._policy(p, private)
+            if ok:
+                ok, reason = p.status()
+            if ok:
+                return p, "pronto"
+            reasons.append(f"{p.spec.name}: {reason}")
+        return None, "; ".join(reasons) or "nessun motore di conversazione installato"
+
+    def record_remote(self, provider: Provider, ok: bool, ms: float, chars: int, task_type: str = "chat") -> None:
+        """Statistics + audit for a call made outside :meth:`route` (chat streaming)."""
+        self._record(provider, ok=ok, ms=ms)
+        if provider.spec.kind == "remote" and self.audit is not None:
+            self.audit.record("system", "intelligence.remote_call", "ok" if ok else "failed", 1,
+                              {"provider": provider.spec.id, "task_type": task_type, "chars_sent": chars})
+
     def describe(self) -> list[dict[str, Any]]:
         out = []
         for p in self.providers:

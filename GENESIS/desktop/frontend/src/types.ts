@@ -164,6 +164,34 @@ export interface AgentRun {
   created_at: string;
 }
 
+export interface Conversation {
+  id: string;
+  title: string;
+  private: boolean;
+  created_at: string;
+  updated_at: string;
+  messages?: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  seq: number;
+  role: "user" | "assistant";
+  content: string;
+  status: "ok" | "error";
+  engine: string | null;
+  task_type: string | null;
+  ms: number | null;
+  created_at: string;
+}
+
+export interface ChatStatus {
+  online: boolean;
+  engine: string | null;
+  reason: string;
+}
+
 export interface LabDataset {
   ref: string;
   name: string;

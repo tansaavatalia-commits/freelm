@@ -84,11 +84,11 @@ function buildArcs(centers: Vec3[]): Float32Array {
 }
 
 const COMMON = `
-uniform mat3 uRot; uniform float uAspect, uZoom;
+uniform mat3 uRot; uniform float uAspect, uZoom, uShift;
 vec4 project(vec3 p, out float depth) {
   vec3 q = uRot * p; float d = 3.2 - q.z; depth = q.z;
   vec2 xy = q.xy / d * 2.3 * uZoom;
-  return vec4(xy.x / uAspect, xy.y, 0.0, 1.0);
+  return vec4(xy.x / uAspect + uShift, xy.y, 0.0, 1.0);
 }`;
 
 const LIGHTS_VS = `
@@ -174,6 +174,7 @@ export class GlobeRenderer {
   private readonly rendererName: string;
   readonly activity = new Float32Array(MAX_AGENTS);
   private bursts = new Float32Array(MAX_AGENTS).fill(-100);
+  private shiftPx = 0;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -274,7 +275,7 @@ export class GlobeRenderer {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) ?? "link");
     const sizes = [3, 1, 1, 1];
     const u: Record<string, WebGLUniformLocation | null> = {};
-    for (const name of ["uRot", "uAspect", "uZoom", "uTime", "uScale", "uAct[0]", "uCol[0]", "uBurst[0]"]) {
+    for (const name of ["uRot", "uAspect", "uZoom", "uShift", "uTime", "uScale", "uAct[0]", "uCol[0]", "uBurst[0]"]) {
       u[name] = gl.getUniformLocation(prog, name);
     }
     return { prog, attribs: names.map((n, i) => [gl.getAttribLocation(prog, n), sizes[i]]), u };
@@ -303,11 +304,22 @@ export class GlobeRenderer {
     gl.uniformMatrix3fv(p.u.uRot, false, R);
     gl.uniform1f(p.u.uAspect, aspect);
     gl.uniform1f(p.u.uZoom, this.zoom * fit);
+    gl.uniform1f(p.u.uShift, this.shiftNdc());
     gl.uniform1f(p.u.uTime, t);
     gl.uniform1f(p.u.uScale, scale);
     gl.uniform1fv(p.u["uAct[0]"], this.activity);
     gl.uniform3fv(p.u["uCol[0]"], this.colors);
     gl.uniform1fv(p.u["uBurst[0]"], this.bursts);
+  }
+
+  /** Moves the globe's centre right by `px` CSS pixels (room for a side panel). */
+  setShift(px: number) {
+    this.shiftPx = px;
+  }
+
+  private shiftNdc(): number {
+    const w = this.canvas.clientWidth;
+    return w > 0 ? (2 * this.shiftPx) / w : 0;
   }
 
   /** Shockwave on an agent's region (a request was just sent to it). */
@@ -373,7 +385,7 @@ export class GlobeRenderer {
       const z = R[2] * p[0] + R[5] * p[1] + R[8] * p[2];
       const d = 3.2 - z;
       const el = this.labels[i];
-      el.style.left = `${((x / d) * k / aspect * 0.5 + 0.5) * w}px`;
+      el.style.left = `${((x / d) * k / aspect * 0.5 + 0.5) * w + this.shiftPx}px`;
       el.style.top = `${(0.5 - (y / d) * k * 0.5) * h}px`;
       const visible = z > -0.15;
       el.style.opacity = visible ? String(Math.min(1, 0.35 + z)) : "0";
