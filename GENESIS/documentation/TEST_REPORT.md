@@ -167,6 +167,23 @@ Il consumo di GÉNESIS è piccolo; la RAM del PC è occupata soprattutto dai bro
 NON VERIFICATO: il controllo visivo delle pagine da parte del proprietario (gli screenshot del browser interno
 sono scaduti per lentezza del PC; il controllo è stato fatto sul testo delle pagine e sulle chiamate di rete).
 
+### 2026-11-26 — Passo 5: portabilità
+
+Con `genesis serve` acceso nello stesso momento:
+
+```
+genesis project add "Prova portabilità"         → Progetto creato
+genesis export %TEMP%\genesis-export.json       → projects 1 · tasks 2 · audit_log 5 · agent_runs 2 · datasets 5 · altro 0
+genesis --home %TEMP%\genesis-nuovo-pc import … → Importazione completata (stessi conteggi)
+genesis --home %TEMP%\genesis-nuovo-pc project list → Prova portabilità  active
+genesis --home %TEMP%\genesis-nuovo-pc audit verify → Catena di audit intatta (6 voci), uscita 0
+genesis audit verify (originale)                → Catena di audit intatta (5 voci)
+```
+
+La voce in più nella copia è la registrazione dell'importazione stessa. Le cartelle di prova in `%TEMP%`
+sono state lasciate. Limite: copia sullo stesso PC, non su un secondo computer.
+
 ### Ancora da fare sul PC
 
-- Passo 5: prova di portabilità (export/import/audit verify).
+- Passi 1–5 fatti. Restano: controllo visivo delle pagine da parte del proprietario, Passo 6 (facoltativo),
+  Passo 7 (decisioni), Passo 8 (Release).

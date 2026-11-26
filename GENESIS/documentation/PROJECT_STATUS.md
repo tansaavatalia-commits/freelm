@@ -37,8 +37,9 @@ Di default `classifier = v1` e `math = v1`. Le v2 sono **sperimentali**: il cicl
 
 ## Problemi aperti
 
-1. Sul PC del proprietario manca ancora la prova di portabilità (Passo 5). La RAM libera del PC è molto
-   bassa (0,4–0,6 GB), occupata soprattutto da browser e app Claude, non da GÉNESIS.
+1. Passi 1–5 verificati sul PC del proprietario (portabilità: export → import in una cartella nuova, progetto
+   presente, catena di audit intatta). La RAM libera del PC è molto bassa (0,4–0,6 GB), occupata soprattutto
+   da browser e app Claude, non da GÉNESIS.
 2. Il motore online non ha mai risposto dal vivo (chiave OpenRouter da impostare sul PC).
 3. Licenza di GÉNESIS da scegliere (D-06).
 4. Serve un dataset scritto dal proprietario per una valutazione indipendente delle v2.
