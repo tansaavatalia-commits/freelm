@@ -124,7 +124,7 @@ def test_validation_errors(server):
         "Host": f"127.0.0.1:{server.port}", "X-Genesis-Token": server.token, "Content-Type": "application/json"})
     assert conn.getresponse().status == 400
     conn.close()
-    big = {"name": "x" * (70 * 1024)}
+    big = {"name": "x" * (2 * 1024 * 1024 + 16)}
     assert call(server, "POST", "/api/projects", big)[0] == 413
 
 

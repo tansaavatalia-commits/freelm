@@ -190,6 +190,13 @@ export interface ChatStatus {
   online: boolean;
   engine: string | null;
   reason: string;
+  web: boolean;
+}
+
+export interface DocumentFile {
+  name: string;
+  size: number;
+  modified: number;
 }
 
 export interface LabDataset {

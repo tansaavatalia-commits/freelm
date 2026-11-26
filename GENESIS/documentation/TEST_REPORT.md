@@ -230,6 +230,19 @@ sono state lasciate. Limite: copia sullo stesso PC, non su un secondo computer.
   gratuiti senza chiave sono deboli e cambiano da una chiamata all'altra.
 - Nuovi test: `test_keyless_services_only_when_the_owner_allows_them`, `test_online_enable_keyless_command`.
   Test di router, configurazione e chat: tutti passati.
+### 2026-11-26 — Documenti e fonti (dal vivo)
+
+- Nuovi test `tests/test_documents.py` (10). Suite completa sul PC: **232 test, 231 passati, 0 falliti, 1 saltato**.
+- Documento di prova caricato via API, domanda «Quando e dove è la riunione del condominio?» con «documenti»:
+  risposta corretta «giovedì 4 dicembre alle 18:30 nella sala comune. [1]» + «Fonti: documenti/prova-genesis.txt
+  (riga 2)», 12,8 s. Documento poi tolto (spostato in `.cestino`).
+- Ricerca web acceso con il consenso del proprietario (`genesis internet enable --confirm`). 1ª prova: risposta
+  giusta ma 2 fonti su 3 fuori tema (si cercava tutta la frase) → corretto: si cercano solo le parole importanti
+  e si elencano solo le fonti citate. 2ª prova «Chi era Galileo Galilei?»: fonti «Galileo Galilei» e «Processo a
+  Galileo Galilei», risposta corretta con [1] e [2], 19,5 s. Il modello aggiungeva un suo elenco vuoto: istruzione
+  aggiunta (non riprovata dal vivo).
+- NON eseguito: prova dell'interfaccia documenti nel browser (riquadro del browser interno nascosto).
+
 - Osservato: subito dopo l'avvio la pagina può mostrare «motore spento» per qualche secondo (stato aggiornato ogni
   15 s); poi diventa «● Motore online».
 

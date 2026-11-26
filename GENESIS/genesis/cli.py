@@ -14,7 +14,7 @@ from typing import Any, Sequence
 
 from . import __version__
 from .app import Genesis, import_data
-from .core.config import load_config, set_online
+from .core.config import load_config, set_internet, set_online
 from .core.worker import TaskWorker
 from .errors import ConfigError, GenesisError
 from .intelligence.base import TASK_TYPES, Request
@@ -197,6 +197,23 @@ def cmd_providers(g: Genesis, args: argparse.Namespace) -> int:
         state = "ATTIVO" if e["usable"] else "spento"
         print(f"{e['id']:<8} {e['kind']:<7} costo {e['cost']:<5} {state:<7} {e['reason']}")
         print(f"         {e['name']} · capacità: {', '.join(e['capabilities'])}")
+    return 0
+
+
+def cmd_internet(g: Genesis, args: argparse.Namespace) -> int:
+    enable = args.action == "enable"
+    if enable and not args.confirm:
+        print("Accende l'accesso a internet degli strumenti: lettura di pagine web pubbliche (web.fetch) e\n"
+              "ricerca su Wikipedia nella chat («Cerca sul web»). Le parole cercate e gli indirizzi visitati\n"
+              "lasciano questo computer; ogni ricerca è registrata nell'audit. Le conversazioni private non\n"
+              "usano mai il web. Per procedere ripeti il comando aggiungendo --confirm.", file=sys.stderr)
+        return 2
+    action = "tools.internet_" + args.action
+    approval_id = g.permissions.request_approval(OWNER, action, Level.SYSTEM_CHANGE, {})
+    g.permissions.decide(approval_id, True, decided_by=OWNER)
+    g.permissions.require(OWNER, action, Level.SYSTEM_CHANGE, approval_id=approval_id)
+    path = set_internet(g.config.home, enable)
+    print(f"Accesso a internet degli strumenti {'acceso' if enable else 'spento'} ({path}).")
     return 0
 
 
@@ -656,6 +673,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--keyless", action="store_true",
                    help="consente anche Kilo e OVHcloud senza chiave (gratuiti; possono registrare le domande)")
     s.set_defaults(func=cmd_online)
+    s = sub.add_parser("internet", help="accende o spegne l'accesso a internet degli strumenti (pagine web, Wikipedia)")
+    s.add_argument("action", choices=["enable", "disable"])
+    s.add_argument("--confirm", action="store_true", help="conferma esplicita del proprietario")
+    s.set_defaults(func=cmd_internet)
     sub.add_parser("providers", help="motori disponibili e perché sono attivi o spenti").set_defaults(func=cmd_providers)
 
     s = sub.add_parser("serve", help="avvia l'interfaccia nel browser e l'esecuzione dei compiti")

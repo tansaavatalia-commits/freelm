@@ -119,6 +119,37 @@ class WorkspaceIndex:
                 except OSError:
                     continue
 
+    def passages(self, query: str, limit: int = 4, chars: int = 700,
+                 cancelled: Cancel = lambda: False) -> list[dict[str, Any]]:
+        """The most relevant pieces of text for a question (any word may match), for a model to read.
+        Each passage is a few lines around the best-matching line of one of the top files."""
+        words = words_of(query)
+        if not words:
+            return []
+        self.refresh(cancelled)
+        match = " OR ".join(f'"{w}"' for w in words)
+        with closing(self._connect()) as conn:
+            rows = conn.execute("SELECT f.path, bm25(docs) AS score FROM docs JOIN files f ON f.id = docs.rowid "
+                                "WHERE docs MATCH ? ORDER BY score LIMIT ?", (match, limit * 2)).fetchall()
+        out: list[dict[str, Any]] = []
+        for rel, score in rows:
+            if rel.startswith(".cestino/") or len(out) >= limit:
+                continue
+            try:
+                lines = (self.root / rel).read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+            hits = [sum(w in fold(line) for w in words) for line in lines]
+            if not hits or max(hits) == 0:
+                continue
+            best = hits.index(max(hits))
+            start, end, text = max(0, best - 2), best, ""
+            while end < len(lines) and len(text) < chars:  # grow the window downwards up to `chars`
+                text = "\n".join(lines[start:end + 1]).strip()
+                end += 1
+            out.append({"file": rel, "line": best + 1, "text": text[:chars], "score": round(-score, 4)})
+        return out
+
     def search(self, query: str, limit: int, cancelled: Cancel = lambda: False) -> list[dict[str, Any]]:
         words = words_of(query)
         if not words:

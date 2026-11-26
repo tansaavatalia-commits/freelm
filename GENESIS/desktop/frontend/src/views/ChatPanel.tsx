@@ -1,7 +1,77 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from "react";
 import { api, errorText, streamEvents, usePolling } from "../api";
 import { Markdown } from "../markdown";
-import type { Agent, AgentRun, ChatMessage, ChatStatus, Conversation, Task } from "../types";
+import type { Agent, AgentRun, ChatMessage, ChatStatus, Conversation, DocumentFile, Task } from "../types";
+
+const TEXT_EXT = [".txt", ".md", ".csv", ".json", ".html", ".htm", ".xml", ".log", ".py", ".js", ".ts", ".css",
+  ".ini", ".toml", ".yaml", ".yml", ".srt"];
+
+function size(bytes: number): string {
+  return bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function Documents({ onClose }: { onClose: () => void }) {
+  const docs = usePolling(() => api<DocumentFile[]>("/api/documents"), 0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function upload(files: FileList | null) {
+    setError(null);
+    setNotice(null);
+    const done: string[] = [];
+    for (const file of Array.from(files ?? [])) {
+      try {
+        if (file.size > 1_000_000) throw new Error(`${file.name}: troppo grande (massimo 1 MB)`);
+        const content = await file.text();
+        const exists = (docs.data ?? []).some((d) => d.name === file.name);
+        if (exists && !window.confirm(`${file.name} esiste già: lo sostituisco?`)) continue;
+        await api("/api/documents", { body: { name: file.name, content, overwrite: exists } });
+        done.push(file.name);
+      } catch (e) {
+        setError(errorText(e));
+      }
+    }
+    if (done.length) setNotice(`Caricati: ${done.join(", ")}`);
+    await docs.refresh();
+  }
+
+  async function remove(name: string) {
+    if (!window.confirm(`Togliere ${name}? Finisce nel cestino di GÉNESIS, non viene cancellato.`)) return;
+    try {
+      await api("/api/documents/remove", { body: { name } });
+      await docs.refresh();
+    } catch (e) {
+      setError(errorText(e));
+    }
+  }
+
+  return (
+    <div className="docs" role="dialog" aria-label="I miei documenti">
+      <div className="docs-head">
+        <span>I miei documenti</span>
+        <button type="button" className="hud-close" onClick={onClose} aria-label="Chiudi">×</button>
+      </div>
+      <p className="docs-note">File di testo (.txt, .md, .csv, .json, .html…), massimo 1 MB. Restano sul PC; con «Usa i miei
+        documenti» i passaggi pertinenti vengono letti dal modello. PDF e Word non ancora.</p>
+      <label className="docs-upload">
+        ＋ Carica file
+        <input type="file" multiple accept={TEXT_EXT.join(",")} onChange={(e) => { void upload(e.target.files); e.target.value = ""; }} />
+      </label>
+      {notice && <p className="docs-ok">{notice}</p>}
+      {error && <p className="chat-error">{error}</p>}
+      <ul className="docs-list">
+        {(docs.data ?? []).length === 0 && <li className="docs-note">Nessun documento caricato.</li>}
+        {(docs.data ?? []).map((d) => (
+          <li key={d.name}>
+            <span className="docs-name">{d.name}</span>
+            <span className="docs-note">{size(d.size)}</span>
+            <button type="button" onClick={() => void remove(d.name)} aria-label={`Togli ${d.name}`}>🗑</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export const CHAT = "genesis";
 const DIRECTOR = "director";
@@ -43,6 +113,9 @@ export function ChatPanel({
   const [isPrivate, setPrivate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [useDocs, setUseDocs] = useState(false);
+  const [useWeb, setUseWeb] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const names = new Map(agents.map((a) => [a.id, a.name]));
 
@@ -84,9 +157,14 @@ export function ChatPanel({
     const id = activeId ?? (await newConversation(isPrivate));
     setStreaming({ text: "", engine: "" });
     onActivity(null);
-    await streamEvents(`/api/chat/${id}/send`, { text: goal }, (e) => {
+    const web = useWeb && (chatStatus.data?.web ?? false);
+    await streamEvents(`/api/chat/${id}/send`, { text: goal, docs: useDocs, web }, (e) => {
       if (e.type === "user") setMessages((m) => [...m, e.message as ChatMessage]);
-      else if (e.type === "start") setStreaming({ text: "", engine: String(e.name ?? e.engine ?? "") });
+      else if (e.type === "status") setStreaming({ text: "", engine: String(e.text ?? "") });
+      else if (e.type === "start") {
+        const n = Array.isArray(e.sources) ? e.sources.length : 0;
+        setStreaming({ text: "", engine: `${String(e.name ?? e.engine ?? "")}${n ? ` · legge ${n} fonti` : ""}` });
+      }
       else if (e.type === "delta") {
         setStreaming((s) => ({ engine: s?.engine ?? "", text: (s?.text ?? "") + String(e.text ?? "") }));
         onActivity(null);
@@ -158,7 +236,9 @@ export function ChatPanel({
         <button type="button" onClick={() => { setActiveId(null); setMessages([]); setAsks([]); inputRef.current?.focus(); }}
                 title="Nuova conversazione">＋ Nuova</button>
         {activeId && <button type="button" onClick={remove} title="Nascondi la conversazione" aria-label="Nascondi la conversazione">🗑</button>}
+        <button type="button" onClick={() => setDocsOpen((o) => !o)} aria-expanded={docsOpen} title="I miei documenti">📄 Documenti</button>
       </header>
+      {docsOpen && <Documents onClose={() => setDocsOpen(false)} />}
 
       <p className={`chat-engine ${online ? "chat-engine-on" : ""}`}>
         {online
@@ -223,6 +303,18 @@ export function ChatPanel({
             </label>
           )}
         </div>
+        {target === CHAT && (
+          <div className="chat-row chat-toggles">
+            <label title="I passaggi pertinenti dei tuoi documenti vengono dati al modello, con le fonti citate">
+              <input type="checkbox" checked={useDocs} onChange={(e) => setUseDocs(e.target.checked)} /> 📄 Usa i miei documenti
+            </label>
+            <label title={chatStatus.data?.web ? "Cerca su Wikipedia e cita le fonti" : "Ricerca web spenta: si accende con 'genesis internet enable --confirm'"}
+                   className={chatStatus.data?.web ? "" : "chat-off"}>
+              <input type="checkbox" checked={useWeb && (chatStatus.data?.web ?? false)} disabled={!chatStatus.data?.web || isPrivate}
+                     onChange={(e) => setUseWeb(e.target.checked)} /> 🌐 Cerca sul web
+            </label>
+          </div>
+        )}
         <div className="chat-row">
           <textarea
             ref={inputRef}

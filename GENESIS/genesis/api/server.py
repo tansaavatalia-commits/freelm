@@ -35,15 +35,17 @@ from urllib.parse import parse_qs, urlsplit
 
 from .. import __version__
 from ..app import Genesis
+from ..chat import sources_block
 from ..core.worker import TaskWorker
 from ..errors import ApprovalRequired, GenesisError, PermissionDenied
 from ..hardware.detect import HardwareInfo, memory_now, process_memory_mb
 from ..intelligence.base import EngineError
 from ..security.permissions import OWNER
 from ..security.redact import redact
+from ..tools import wiki
 
 DEFAULT_PORT = 8765
-MAX_BODY_BYTES = 64 * 1024
+MAX_BODY_BYTES = 2 * 1024 * 1024  # documents up to 1 MB of text, JSON-escaped
 TOKEN_FILENAME = "api_token"
 TOKEN_PLACEHOLDER = "%GENESIS_TOKEN%"
 STATIC_DIR = Path(__file__).with_name("static")
@@ -252,6 +254,9 @@ class ApiServer:
             ("POST", rf"/api/chat/(?P<cid>{HEX_ID})/rename", self._chat_rename),
             ("POST", rf"/api/chat/(?P<cid>{HEX_ID})/delete", self._chat_delete),
             ("POST", rf"/api/chat/(?P<cid>{HEX_ID})/send", self._chat_send),
+            ("GET", r"/api/documents", self._documents),
+            ("POST", r"/api/documents", self._document_save),
+            ("POST", r"/api/documents/remove", self._document_remove),
         ]
         return [(m, re.compile(p), fn) for m, p, fn in table]
 
@@ -461,7 +466,7 @@ class ApiServer:
         def collect(g: Genesis) -> dict[str, Any]:
             provider, reason = g.router.streamer(private=False)
             return {"online": provider is not None, "engine": provider.spec.name if provider else None,
-                    "reason": reason}
+                    "reason": reason, "web": g.config.internet_enabled}
 
         return 200, self.core.run(collect)
 
@@ -479,16 +484,60 @@ class ApiServer:
         """Server-sent events: ``user`` → (``start`` → ``delta``…) → ``done``. Validation errors are plain
         JSON errors because the turn is prepared before the stream opens."""
         text = _field(body, "text", str)
-        plan = self.core.run(lambda g: g.chat.prepare(cid, text))
+        docs = _field(body, "docs", bool, False)
+        web = _field(body, "web", bool, False)
+
+        def prepare(g: Genesis) -> dict[str, Any]:
+            if web and not g.config.internet_enabled:
+                raise ApiError(400, "la ricerca sul web è spenta: si accende con 'genesis internet enable --confirm'")
+            return g.chat.prepare(cid, text, docs=docs, web=web)
+
+        plan = self.core.run(prepare)
         return 200, EventStream(self._chat_events(cid, plan))
+
+    def _web_sources(self, plan: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        """Wikipedia search in this (HTTP) thread, then the sources go into the system prompt."""
+        yield {"type": "status", "text": "Cerco su Wikipedia…"}
+        try:
+            found = wiki.search(plan["web_query"])
+            outcome, error = "ok", None
+        except Exception as exc:  # ToolError or network trouble: answer anyway, and say so
+            found, outcome, error = [], "failed", str(exc)
+        self.core.run(lambda g: g.audit.record(OWNER, "web.search", outcome, 1,
+                                               {"source": "wikipedia", "results": len(found)}))
+        if error:
+            plan["notes"].append(f"Ricerca su Wikipedia non riuscita: {redact(error)}")
+        elif not found:
+            plan["notes"].append("Su Wikipedia non ho trovato niente di pertinente.")
+        plan["sources"] += [{"label": f"Wikipedia: {s['title']}", "text": s["text"], "url": s["url"]} for s in found]
+        if plan["sources"]:
+            plan["messages"][0]["content"] = plan["system_base"] + sources_block(plan["sources"])
+
+    # -- documents --------------------------------------------------------------------
+
+    def _documents(self, **_: Any) -> tuple[int, Any]:
+        return 200, self.core.run(lambda g: g.documents.list())
+
+    def _document_save(self, body: dict[str, Any], **_: Any) -> tuple[int, Any]:
+        name = _field(body, "name", str)
+        content = _field(body, "content", str)
+        overwrite = _field(body, "overwrite", bool, False)
+        return 201, self.core.run(lambda g: g.documents.save(name, content, overwrite))
+
+    def _document_remove(self, body: dict[str, Any], **_: Any) -> tuple[int, Any]:
+        name = _field(body, "name", str)
+        return 200, self.core.run(lambda g: g.documents.remove(name))
 
     def _chat_events(self, cid: str, plan: dict[str, Any]) -> Iterator[dict[str, Any]]:
         yield {"type": "user", "message": plan["user"]}
         if plan["mode"] == "done":
             yield {"type": "done", "message": plan["message"]}
             return
+        if plan.get("web_query"):
+            yield from self._web_sources(plan)
         provider, messages = plan["provider"], plan["messages"]
-        yield {"type": "start", "engine": provider.spec.id, "name": provider.spec.name}
+        yield {"type": "start", "engine": provider.spec.id, "name": provider.spec.name,
+               "sources": [{"label": s["label"], "url": s.get("url")} for s in plan.get("sources", [])]}
         parts: list[str] = []
         error: str | None = None
         start = time.monotonic()
@@ -507,7 +556,8 @@ class ApiServer:
             ms = round((time.monotonic() - start) * 1000, 1)
             chars = sum(len(m["content"]) for m in messages)
             message = self.core.run(lambda g: g.chat.finish(cid, provider, "".join(parts), ok=error is None, ms=ms,
-                                                            chars=chars, task_type=plan["task_type"], error=error))
+                                                            chars=chars, task_type=plan["task_type"], error=error,
+                                                            sources=plan.get("sources"), notes=plan.get("notes")))
         yield {"type": "done", "message": message}
 
     def _backups(self, **_: Any) -> tuple[int, Any]:

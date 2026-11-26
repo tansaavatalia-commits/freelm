@@ -32,6 +32,14 @@
   Formattazione Markdown sicura (nessun HTML dal modello). Il menu del pannello manda anche richieste al Director
   o a un agente. `FreelmProvider.stream()` per lo streaming dei modelli gratuiti.
 - `Avvia-GENESIS.bat`: avvio con doppio clic.
+- **Documenti e fonti** (tappe 4–5 di RICERCA_CONCORRENTI.md): pulsante «📄 Documenti» nella chat per caricare
+  file di testo (fino a 1 MB; PDF e Word non ancora) in `workspace/documenti`; «Togli» li sposta in
+  `workspace/.cestino` (mai cancellati). Interruttore «Usa i miei documenti»: i passaggi più pertinenti
+  (indice FTS5, `WorkspaceIndex.passages`) vanno al modello come dati non fidati e numerati. Interruttore «Cerca
+  sul web»: ricerca su **Wikipedia** (API pubblica, gratuita, senza account) dal thread HTTP, mai dal core; si
+  cercano solo le parole importanti. Sotto ogni risposta GÉNESIS scrive lui l'elenco «Fonti» (solo quelle citate,
+  con indirizzo); le conversazioni private non usano mai il web. Nuovi comandi `genesis internet enable|disable
+  --confirm`; API `/api/documents`; corpo massimo delle richieste 2 MB.
 
 ## 0.9.0 — 2026-11-25 — Fase 9: Auto-miglioramento controllato
 

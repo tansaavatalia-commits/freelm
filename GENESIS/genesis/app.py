@@ -23,6 +23,7 @@ from .core.logs import close_handler, setup_logging
 from .core.projects import ProjectStore
 from .core.tasks import TaskManager
 from .core.worker import LOCK_FILENAME, WorkerLock
+from .documents import DocumentStore
 from .engines.registry import EngineRegistry
 from .hardware.detect import HardwareInfo, detect
 from .hardware.profiles import select_profile
@@ -79,7 +80,8 @@ class Genesis:
             self.agents = AgentRunner(self.db, self.permissions, self.router, load_agents(self.config.home), now=now,
                                       tools=self.tools)
             self.engines = EngineRegistry(self)
-            self.chat = ChatStore(self.db, self.router, self.engines.memory, now=now)
+            self.chat = ChatStore(self.db, self.router, self.engines.memory, now=now, tools=self.tools)
+            self.documents = DocumentStore(self.tools)
             self.models = load_catalog(self.config.home)
             self.lab = ResearchLab(self, now=now)
             self._register_builtin_tasks()

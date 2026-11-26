@@ -136,6 +136,26 @@ def set_online(home: Path | str | None, enabled: bool, keyless: bool | None = No
     return path
 
 
+def set_internet(home: Path | str | None, enabled: bool) -> Path:
+    """Write [tools] internet_enabled into <home>/genesis.toml (owner action): web.fetch and web sources."""
+    root = Path(home).expanduser() if home is not None else default_home()
+    path = root / CONFIG_FILENAME
+    old = path.read_text(encoding="utf-8") if path.is_file() else ""
+    section = f"[tools]\ninternet_enabled = {'true' if enabled else 'false'}\n"
+    if re.search(r"^\[tools\]", old, re.M):
+        new = re.sub(r"^\[tools\][^\[]*", section + "\n", old, count=1, flags=re.M)
+    else:
+        new = (old.rstrip() + "\n\n" if old.strip() else "") + section
+    root.mkdir(parents=True, exist_ok=True)
+    path.write_text(new, encoding="utf-8")
+    try:
+        load_config(root)
+    except ConfigError:
+        path.write_text(old, encoding="utf-8")
+        raise
+    return path
+
+
 def _merge(base: Mapping[str, Any], extra: Mapping[str, Any]) -> dict[str, Any]:
     out = dict(base)
     for key, value in extra.items():
