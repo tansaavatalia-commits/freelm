@@ -46,6 +46,11 @@ async function main() {
     await page.goto(server.url);
     await page.getByText("Núcleo // mappa degli agenti").waitFor();
     await page.locator(".globe-label, .hud-center").first().waitFor();
+    // Command console on the globe: ask the analyst, the answer appears in place
+    await page.getByLabel("Destinatario").selectOption("analyst");
+    await page.getByLabel("Richiesta", { exact: true }).fill("quanto fa 12*(3+4)?");
+    await page.getByRole("button", { name: "Invia", exact: true }).click();
+    await page.locator(".hud-out", { hasText: "84" }).waitFor({ timeout: 15000 });
     if (shots) await page.screenshot({ path: path.join(shots, "0-nucleo.png") });
 
     // Dashboard

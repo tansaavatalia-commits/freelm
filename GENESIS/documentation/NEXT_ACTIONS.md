@@ -26,8 +26,8 @@
   Passo 6 (motore online) e Passo 7 (decisioni) dipendono dal proprietario.
 - L'esperimento del motore online (Passo 6) prenderà il numero R-006.
 - Interfaccia «Núcleo» (globo, D-36) fatta sul PC con Node. Da fare nel cloud: eseguire `e2e/smoke.cjs` con
-  Playwright (non eseguito sul PC). Possibili sviluppi chiesti dal proprietario: casella per inviare richieste
-  direttamente dal globo; luci per compiti e motori, non solo agenti.
+  Playwright (non eseguito sul PC). Console sul globo fatta. Possibile sviluppo: luci per compiti e motori,
+  non solo agenti.
 - Il test `test_mcp_list_call_errors_and_timeout` usa un timeout di 2 s: sul PC carico (globo + browser) è
   fallito una volta. Valutare un timeout più largo solo nel test.
 

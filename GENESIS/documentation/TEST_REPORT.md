@@ -198,6 +198,10 @@ sono state lasciate. Limite: copia sullo stesso PC, non su un secondo computer.
   passati, **1 fallito** (`test_mcp_list_call_errors_and_timeout`, timeout di 2 s del server MCP di prova per
   carico del PC), 2 saltati. Lo stesso test passa da solo con il globo aperto. Da ripetere con Chrome chiuso.
 - NON eseguito: `e2e/smoke.cjs` (Playwright non installato sul PC); aggiornato per la nuova pagina iniziale.
+- Console sul globo (provata nel browser interno, 1280×800, con clic e tastiera veri): «quanto fa 15*(2+5)?»
+  all'Analyst → risposta «105» sopra la casella in meno di 8 s; «calcola 9*9; quanto fa 100/4» al Director →
+  «1. … analyst: 81 / 2. … analyst: 25». Nessun errore in console. Vista telefono 375×812: niente scorrimento
+  orizzontale o verticale, il globo riempie lo spazio. `tests/test_api.py`: 12 passati.
 
 ### Ancora da fare sul PC
 

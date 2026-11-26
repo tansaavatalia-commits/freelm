@@ -94,6 +94,7 @@ vec4 project(vec3 p, out float depth) {
 const LIGHTS_VS = `
 attribute vec3 aPos; attribute float aAgent, aNear, aSeed;
 uniform float uTime, uScale; uniform float uAct[${MAX_AGENTS}]; uniform vec3 uCol[${MAX_AGENTS}];
+uniform float uBurst[${MAX_AGENTS}];
 varying vec3 vCol; varying float vA;
 ${COMMON}
 void main() {
@@ -102,15 +103,19 @@ void main() {
   float act = uAct[i];
   float tw = 0.55 + 0.45 * sin(uTime * (0.7 + aSeed * 2.6) + aSeed * 60.0);
   float wave = pow(max(0.0, 1.0 - abs(fract(uTime * 0.35 + aSeed * 0.05) - (1.0 - aNear)) * 6.0), 3.0) * act;
+  // shockwave from the agent's centre when a request is sent to it
+  float bt = uTime - uBurst[i];
+  float ring = bt >= 0.0 && bt < 3.0 ? exp(-pow((1.0 - aNear) - bt * 0.6, 2.0) * 60.0) * (1.0 - bt / 3.0) : 0.0;
   float face = 0.22 + 0.78 * smoothstep(-0.55, 0.9, depth);
-  vA = ((0.10 + 0.9 * aNear * aNear) * tw * (0.35 + 1.0 * act) + wave * 0.9) * face;
-  vCol = mix(vec3(0.55, 0.75, 0.9), uCol[i], 0.35 + 0.65 * aNear);
-  gl_PointSize = uScale * (0.8 + 1.6 * aNear * aNear + wave * 2.0) * (3.2 / (3.2 - depth)) * uZoom;
+  vA = ((0.10 + 0.9 * aNear * aNear) * tw * (0.35 + 1.0 * act) + wave * 0.9 + ring * 1.6) * face;
+  vCol = mix(mix(vec3(0.55, 0.75, 0.9), uCol[i], 0.35 + 0.65 * aNear), vec3(1.0), ring * 0.5);
+  gl_PointSize = uScale * (0.8 + 1.6 * aNear * aNear + wave * 2.0 + ring * 2.5) * (3.2 / (3.2 - depth)) * uZoom;
 }`;
 
 const ARCS_VS = `
 attribute vec3 aPos; attribute float aT, aArc, aTo;
 uniform float uTime, uScale; uniform float uAct[${MAX_AGENTS}]; uniform vec3 uCol[${MAX_AGENTS}];
+uniform float uBurst[${MAX_AGENTS}];
 varying vec3 vCol; varying float vA;
 ${COMMON}
 void main() {
@@ -119,10 +124,13 @@ void main() {
   float act = uAct[i];
   float head = fract(uTime * (0.18 + 0.04 * mod(aArc, 5.0)) + aArc * 0.137);
   float pulse = pow(max(0.0, 1.0 - abs(head - aT) * 10.0), 2.0);
+  // a request travelling along the arc right after it was sent
+  float bt = uTime - uBurst[i];
+  float send = bt >= 0.0 && bt < 1.6 ? pow(max(0.0, 1.0 - abs(bt / 1.2 - aT) * 8.0), 2.0) : 0.0;
   float face = 0.25 + 0.75 * smoothstep(-0.5, 0.9, depth);
-  vA = (0.05 + pulse * 1.3) * (0.15 + act) * face;
+  vA = ((0.05 + pulse * 1.3) * (0.15 + act) + send * 2.0) * face;
   vCol = uCol[i];
-  gl_PointSize = uScale * (1.0 + pulse * 2.5) * uZoom;
+  gl_PointSize = uScale * (1.0 + pulse * 2.5 + send * 3.0) * uZoom;
 }`;
 
 const POINT_FS = `
@@ -165,6 +173,7 @@ export class GlobeRenderer {
   private pixelScale = 1;
   private readonly rendererName: string;
   readonly activity = new Float32Array(MAX_AGENTS);
+  private bursts = new Float32Array(MAX_AGENTS).fill(-100);
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -199,7 +208,7 @@ export class GlobeRenderer {
       el.className = "globe-label";
       el.style.color = agentColor(i);
       el.textContent = a.name;
-      el.title = `Apri ${a.name}`;
+      el.title = `Scrivi a ${a.name}`;
       el.addEventListener("click", () => this.onPick(a.id));
       overlay.append(el);
       return el;
@@ -265,7 +274,7 @@ export class GlobeRenderer {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog) ?? "link");
     const sizes = [3, 1, 1, 1];
     const u: Record<string, WebGLUniformLocation | null> = {};
-    for (const name of ["uRot", "uAspect", "uZoom", "uTime", "uScale", "uAct[0]", "uCol[0]"]) {
+    for (const name of ["uRot", "uAspect", "uZoom", "uTime", "uScale", "uAct[0]", "uCol[0]", "uBurst[0]"]) {
       u[name] = gl.getUniformLocation(prog, name);
     }
     return { prog, attribs: names.map((n, i) => [gl.getAttribLocation(prog, n), sizes[i]]), u };
@@ -298,6 +307,17 @@ export class GlobeRenderer {
     gl.uniform1f(p.u.uScale, scale);
     gl.uniform1fv(p.u["uAct[0]"], this.activity);
     gl.uniform3fv(p.u["uCol[0]"], this.colors);
+    gl.uniform1fv(p.u["uBurst[0]"], this.bursts);
+  }
+
+  /** Shockwave on an agent's region (a request was just sent to it). */
+  burst(index: number) {
+    if (index >= 0 && index < MAX_AGENTS) this.bursts[index] = (performance.now() - this.t0) / 1000;
+  }
+
+  /** Highlights the label of the agent that will receive the next request (-1: none). */
+  select(index: number) {
+    this.labels.forEach((l, i) => l.classList.toggle("globe-label-selected", i === index));
   }
 
   private rotation(): Float32Array {

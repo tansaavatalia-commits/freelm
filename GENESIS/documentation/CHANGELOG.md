@@ -18,6 +18,10 @@
   Clic su un agente → pagina Agenti. Trascina per ruotare, rotella per lo zoom; si ferma quando la scheda non è
   visibile e libera la memoria della scheda grafica quando si cambia pagina. Senza WebGL mostra una spiegazione e il
   collegamento al pannello classico. Le altre pagine restano nel menu (la Dashboard è a `#/dashboard`).
+- **Console sul globo:** casella in basso per scrivere una richiesta al Director (scompone e delega) o a un agente
+  scelto dal menu, dal pannello o cliccando il suo nome sul globo; opzione «privata». La risposta compare sopra la
+  casella appena l'agente ha finito. Ogni richiesta (anche dalla pagina Agenti o dalla CLI) fa partire un'onda
+  d'urto sulla regione dell'agente e un impulso lungo l'arco dal Director.
 
 ## 0.9.0 — 2026-11-25 — Fase 9: Auto-miglioramento controllato
 
