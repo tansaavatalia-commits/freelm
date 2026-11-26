@@ -9,12 +9,26 @@ Write-Host '  1. Apri https://openrouter.ai/keys, entra e premi "Create Key" (gr
 Write-Host '  2. Copia la chiave (inizia con sk-or-) e incollala qui sotto con il tasto destro del mouse o Ctrl+V.'
 Write-Host '     Mentre incolli non vedrai nulla: e'' normale, la chiave resta nascosta.'
 Write-Host ''
-$secure = Read-Host '  Chiave' -AsSecureString
-$ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-try {
-    $key = ([Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)).Trim()
-} finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+$key = $null
+# Shortcut: if the owner already copied the key, take it from the clipboard (after asking), then clear it.
+Add-Type -AssemblyName System.Windows.Forms
+$clip = [System.Windows.Forms.Clipboard]::GetText().Trim()
+if ($clip.StartsWith('sk-or-') -and $clip -notmatch '\s') {
+    $answer = Read-Host '  Ho trovato una chiave OpenRouter negli appunti (copiata da te). La salvo? [S/N]'
+    if ($answer -match '^[sSyY]') {
+        $key = $clip
+        [System.Windows.Forms.Clipboard]::Clear()
+    }
+}
+$clip = $null
+if (-not $key) {
+    $secure = Read-Host '  Chiave' -AsSecureString
+    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try {
+        $key = ([Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)).Trim()
+    } finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+    }
 }
 if (-not $key) {
     Write-Host '  Nessuna chiave inserita: non ho cambiato nulla.' -ForegroundColor Yellow
