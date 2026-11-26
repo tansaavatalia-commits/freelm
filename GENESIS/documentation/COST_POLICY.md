@@ -21,7 +21,7 @@ l'approvazione esplicita del proprietario.
 | OpenRouter (solo modelli a prezzo zero) | motore online di GÉNESIS, spento finché `genesis online enable` | **0 € verificato (2026-11-24)**, vedi registro | privacy: le rotte gratuite possono registrare i prompt; comprare crediti è vietato |
 | Google AI Studio (Gemini) | Fase 3, disattivato | NON VERIFICATO | gratuito solo senza fatturazione sul progetto: da confermare dal proprietario |
 | Groq, Cerebras, Mistral, Cohere, Z.ai, NVIDIA NIM, Cloudflare | Fase 3, disattivati | NON VERIFICATO | da verificare uno per uno prima di attivarli |
-| Kilo / OVHcloud senza chiave | — | — | esclusi: le rotte gratuite possono registrare i prompt |
+| Kilo / OVHcloud senza chiave | motore online di GÉNESIS, **solo con `keyless_allowed = true`** (scelta del proprietario del 2026-11-26) | **0 €** (nessun account, nessuna chiave, nessun modo di pagare), vedi registro | privacy: le rotte gratuite possono registrare i prompt; limiti bassi (Kilo ~200 richieste/ora per IP, OVH 2/minuto per modello) |
 | Firma del codice, hosting, domini | — | a pagamento | non usati |
 
 ## Come si attiva un motore online (Fase 3)
@@ -36,8 +36,9 @@ remote_free_verified = true
 ```
 
 Servono anche la libreria `freelm` (`pip install freelm`, installazione = livello 4)
-e le chiavi gratuite nelle variabili d'ambiente. Gli endpoint senza chiave non
-vengono mai usati.
+e le chiavi gratuite nelle variabili d'ambiente. Gli endpoint senza chiave (Kilo,
+OVHcloud) si usano solo se il proprietario aggiunge `keyless_allowed = true`
+(`genesis online enable --keyless --confirm`).
 
 ## Registro delle verifiche
 
@@ -51,8 +52,18 @@ chiave funzionante: lo stato dell'account (crediti, limite giornaliero, di solit
 50 richieste/giorno senza crediti secondo i dati di freelm). Rischio residuo: la
 privacy dei modelli gratuiti, mitigata dall'opzione «privata» che resta locale.
 
+**2026-11-26 — Kilo Gateway e OVHcloud senza chiave, scelta del proprietario.**
+Il proprietario non ha creato la chiave OpenRouter e ha scelto esplicitamente i servizi senza chiave,
+dopo l'avviso sulla privacy. Perché costano 0 €: nessun account né chiave esiste, quindi non c'è un mezzo di
+pagamento; Kilo è usato con la guardia «solo gratuito» di freelm (solo rotte `:free`/a prezzo zero); OVHcloud
+solo nel livello anonimo (con una chiave sarebbe a consumo: freelm la scarta sempre). Limiti dichiarati da freelm
+(verificati 2026-10): Kilo ~200 richieste/ora per IP, OVH 2 richieste/minuto per IP e per modello. Rischio
+residuo: le domande inviate possono essere registrate dai servizi → le conversazioni «private» restano locali.
+Prova reale dal PC del proprietario: risposta corretta in italiano (vedi TEST_REPORT.md).
+
 | Data | Servizio | Esito |
 |---|---|---|
+| 2026-11-26 | Kilo/OVH senza chiave, `genesis ask` e chat in streaming | risposte ricevute; 1ª risposta in 26 s (avvio), poi 2,4 s |
 | 2026-11-23 | OpenRouter, elenco pubblico dei modelli | 476 modelli, 15 con prezzo 0/0 (chiamata gratuita, senza chiave) |
 | 2026-11-23 | OpenRouter, informazioni sulla chiave | 401: la chiave non viene inserita dal proxy |
 | 2026-11-23 | Gemini, endpoint OpenAI-compatibile | 404 su ogni modello dopo il nuovo salvataggio della chiave |

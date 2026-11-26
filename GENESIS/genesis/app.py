@@ -70,7 +70,8 @@ class Genesis:
             self.improvement = ImprovementLab(self, now=now)
             self.router = Router([LocalEngine(math=lambda: self.improvement.active_fn("math")),
                                   LocalModelProvider(self.config.local_model, self.profile.local_models),
-                                  FreelmProvider()], remote_enabled=self.config.remote_enabled,
+                                  FreelmProvider(keyless=self.config.keyless_allowed)],
+                                 remote_enabled=self.config.remote_enabled,
                                  remote_free_verified=self.config.remote_free_verified, audit=self.audit,
                                  classifier=lambda: self.improvement.active_fn("classifier"))
             self.tools = ToolRegistry(self.permissions, self.audit, self.config.workspace_dir,

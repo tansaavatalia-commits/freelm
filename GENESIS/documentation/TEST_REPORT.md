@@ -218,6 +218,21 @@ sono state lasciate. Limite: copia sullo stesso PC, non su un secondo computer.
   la domanda andrà al modello.
 - NON verificato: lo streaming con un modello vero (serve la chiave OpenRouter, Passo 6).
 
+### 2026-11-26 — Motore online dal vivo (senza chiave: Kilo/OVHcloud)
+
+- `genesis online enable --keyless --confirm` nella cartella dati vera → «pronto (solo modelli gratuiti): kilo, ovh».
+- `genesis ask "Spiegami in una frase che cos'è un buco nero."` → risposta corretta in italiano, motore `freelm`,
+  segnata «non verificato (modello esterno)».
+- Chat in streaming sul server avviato con `Avvia-GENESIS.bat` (API reale): 1ª domanda → eventi
+  `user, start, 52×delta, done`, primo pezzo dopo **26,1 s** (prima chiamata: scoperta dei modelli), totale 33,8 s,
+  risposta salvata (stato ok). 2ª domanda nella stessa conversazione → primo pezzo dopo **2,4 s**, totale 2,5 s.
+  Qualità: il riassunto della 2ª risposta era impreciso («ti ho salutato…» invece dei tre punti): i modelli
+  gratuiti senza chiave sono deboli e cambiano da una chiamata all'altra.
+- Nuovi test: `test_keyless_services_only_when_the_owner_allows_them`, `test_online_enable_keyless_command`.
+  Test di router, configurazione e chat: tutti passati.
+- Osservato: subito dopo l'avvio la pagina può mostrare «motore spento» per qualche secondo (stato aggiornato ogni
+  15 s); poi diventa «● Motore online».
+
 ### Ancora da fare sul PC
 
 - Passi 1–5 fatti. Restano: controllo visivo delle pagine da parte del proprietario, Passo 6 (facoltativo),

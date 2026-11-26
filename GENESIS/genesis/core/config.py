@@ -30,7 +30,7 @@ _KNOWN_KEYS = {
     "logging": {"level"},
     "backup": {"keep"},
     "permissions": {"grants"},
-    "intelligence": {"remote_enabled", "remote_free_verified"},
+    "intelligence": {"remote_enabled", "remote_free_verified", "keyless_allowed"},
     "tools": {"internet_enabled"},
     "mcp": {"servers"},
     "models": {"local"},
@@ -61,6 +61,7 @@ class Config:
     grants: Mapping[str, int] = field(default_factory=lambda: DEFAULT_GRANTS)
     remote_enabled: bool = False  # online engines allowed at all
     remote_free_verified: bool = False  # owner checked their free terms (COST_POLICY.md)
+    keyless_allowed: bool = False  # owner accepts no-signup endpoints (Kilo, OVHcloud) that may log prompts
     internet_enabled: bool = False  # web.fetch tool
     mcp_servers: Mapping[str, Mapping[str, Any]] = field(default_factory=lambda: MappingProxyType({}))
     local_model: Mapping[str, Any] | None = None  # [models.local]: OpenAI-compatible server on this PC
@@ -110,13 +111,17 @@ def load_config(home: Path | str | None = None, overrides: Mapping[str, Any] | N
     return _build(root, _merge(raw, dict(overrides or {})), path)
 
 
-def set_online(home: Path | str | None, enabled: bool) -> Path:
-    """Write [intelligence] remote_enabled/remote_free_verified into <home>/genesis.toml (owner action)."""
+def set_online(home: Path | str | None, enabled: bool, keyless: bool | None = None) -> Path:
+    """Write [intelligence] remote_enabled/remote_free_verified (and keyless_allowed) into <home>/genesis.toml
+    (owner action). ``keyless=None`` keeps the current keyless choice; turning online off also turns it off."""
     root = Path(home).expanduser() if home is not None else default_home()
     path = root / CONFIG_FILENAME
     old = path.read_text(encoding="utf-8") if path.is_file() else ""
+    if keyless is None:
+        keyless = enabled and load_config(root).keyless_allowed
     value = "true" if enabled else "false"
-    section = f"[intelligence]\nremote_enabled = {value}\nremote_free_verified = {value}\n"
+    section = (f"[intelligence]\nremote_enabled = {value}\nremote_free_verified = {value}\n"
+               f"keyless_allowed = {'true' if enabled and keyless else 'false'}\n")
     if re.search(r"^\[intelligence\]", old, re.M):
         new = re.sub(r"^\[intelligence\][^\[]*", section + "\n", old, count=1, flags=re.M)
     else:
@@ -180,7 +185,7 @@ def _build(home: Path, raw: Mapping[str, Any], source: Path) -> Config:
 
     intelligence = raw.get("intelligence", {})
     flags = {}
-    for key in ("remote_enabled", "remote_free_verified"):
+    for key in ("remote_enabled", "remote_free_verified", "keyless_allowed"):
         value = intelligence.get(key, False)
         if not isinstance(value, bool):
             raise ConfigError(f"{source}: [intelligence] {key} deve essere true o false")

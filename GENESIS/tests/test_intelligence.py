@@ -7,6 +7,7 @@ import pytest
 
 from genesis.app import Genesis
 from genesis.cli import main
+from genesis.core.config import load_config
 from genesis.errors import ConfigError
 from genesis.intelligence.base import EngineError, Provider, ProviderSpec, Request
 from genesis.intelligence.local import LocalEngine, classify, evaluate, extract_expression
@@ -120,6 +121,38 @@ def test_freelm_adapter_with_fake_library(monkeypatch):
     with pytest.raises(EngineError) as info:
         provider.run(Request("boom"), "chat")
     assert "k" * 40 not in str(info.value)
+
+
+def test_keyless_services_only_when_the_owner_allows_them(monkeypatch):
+    fake = types.ModuleType("freelm")
+    seen = []
+
+    def from_env(keyless=None):
+        seen.append(keyless)
+        return [types.SimpleNamespace(name="kilo", free_only=True, keyless=True),
+                types.SimpleNamespace(name="ovh", free_only=False, keyless=True),
+                types.SimpleNamespace(name="groq", free_only=False, keyless=False)] if keyless else []
+
+    fake.providers_from_env = from_env
+    monkeypatch.setitem(sys.modules, "freelm", fake)
+    assert FreelmProvider().status()[0] is False and seen[-1] is False  # default: never keyless
+    ok, reason = FreelmProvider(keyless=True).status()
+    assert ok and seen[-1] is True and reason == "pronto (solo modelli gratuiti): kilo, ovh"  # groq is not keyless
+    assert "Kilo" in FreelmProvider(keyless=True).spec.name
+
+
+def test_online_enable_keyless_command(home):
+    write_config(home, "")
+    assert main(["--home", str(home), "online", "enable", "--keyless", "--confirm"]) == 0
+    assert load_config(home).keyless_allowed is True
+    assert main(["--home", str(home), "online", "enable", "--confirm"]) == 0  # keeps the earlier choice
+    assert load_config(home).keyless_allowed is True
+    assert main(["--home", str(home), "online", "disable", "--confirm"]) == 0  # off means off
+    cfg = load_config(home)
+    assert not cfg.keyless_allowed and not cfg.remote_enabled
+    write_config(home, '[intelligence]\nkeyless_allowed = "si"\n')
+    with pytest.raises(ConfigError):
+        load_config(home)
 
 
 def test_freelm_missing_is_reported(monkeypatch):
