@@ -17,6 +17,17 @@
 
 ## Per lo sviluppo — note dalla sessione sul PC (2026-11-26)
 
+- **Attenzione: l'app desktop di Claude isola le scritture in AppData.** I comandi lanciati da una sessione
+  Claude Code sul PC scrivono `%LOCALAPPDATA%\GENESIS` e `%APPDATA%\Python` in una copia privata
+  (`%LOCALAPPDATA%\Packages\Claude_…\LocalCache\…`). GÉNESIS avviato dal proprietario (doppio clic su
+  `Avvia-GENESIS.bat`) usa la cartella vera. Conseguenze: le prove CLI dei Passi 3 e 5 sono avvenute nella copia
+  isolata (valide come test, ma il progetto «Prova portabilità» non è nella cartella vera); `pip install --user`
+  non è visibile al proprietario → freelm + httpx sono installati in `GENESIS\.pylibs` (escluso da Git) e
+  `Avvia-GENESIS.bat` imposta `PYTHONPATH`. Per agire sui dati veri: usare l'API del server avviato dal
+  proprietario, oppure un `.bat` avviato con `explorer.exe` (fuori dall'app).
+- Motore online acceso nella cartella vera (`remote_enabled` e `remote_free_verified` = true, con il consenso
+  del proprietario). Manca solo la chiave OpenRouter, che crea e salva lui (`setx OPENROUTER_API_KEY …`).
+
 - `ruff` non è installato sul PC: la CI controllerà `genesis/tools/index.py` e le modifiche a `registry.py`.
 - L'interfaccia (pagina strumenti) non è stata toccata: `text.find` compare già nell'elenco perché viene dal registro.
 - Sul PC usare Python con il percorso completo `%LOCALAPPDATA%\Python\pythoncore-3.15-64\python.exe`

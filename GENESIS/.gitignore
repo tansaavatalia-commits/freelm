@@ -17,3 +17,5 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+# local libraries installed on the owner's PC (freelm + httpx), see Avvia-GENESIS.bat
+.pylibs/
