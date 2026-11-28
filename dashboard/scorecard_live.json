@@ -1,1 +1,1 @@
-[{"signal":"xsmom·7","horizon_days":1,"n":3,"hit":0.3333,"base":0.5469,"edge":-0.00649,"edge_lo":-0.02618,"edge_hi":0.0132,"edge_real":false},{"signal":"conjunto","horizon_days":1,"n":3,"hit":0.3333,"base":0.5469,"edge":-0.00649,"edge_lo":-0.02618,"edge_hi":0.0132,"edge_real":false}]
+[{"signal":"xsmom·7","horizon_days":1,"n":4,"hit":0.5,"base":0.5556,"edge":-0.0016,"edge_lo":-0.01904,"edge_hi":0.01584,"edge_real":false},{"signal":"conjunto","horizon_days":1,"n":4,"hit":0.5,"base":0.5556,"edge":-0.0016,"edge_lo":-0.01904,"edge_hi":0.01584,"edge_real":false}]
